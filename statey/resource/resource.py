@@ -159,7 +159,7 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
 
         field_data = kwargs or (args and args[0]) or {}
 
-        self.schema_helper = SchemaHelper(self.Schema)
+        self.schema_helper = SchemaHelper(self.Schema, f"{type(self).__name__}Snapshot")
         self.field_data = self.schema_helper.load_input(field_data)
 
         # Configure snapshot instance
@@ -184,6 +184,9 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
         Retrieve the name of this resource
         """
         return self._name
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__}(type_name={self.type_name}, name={self.name})"
 
     @abc.abstractmethod
     def create(self, current: SchemaSnapshot) -> SchemaSnapshot:

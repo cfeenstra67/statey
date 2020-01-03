@@ -7,11 +7,12 @@ from typing import Tuple, Any, Type, Dict, Iterator, Callable, Optional
 
 import dataclasses as dc
 import marshmallow as ma
+import networkx as nx
 
 from statey import exc
 from .field import Field, _FieldWithModifiers, MISSING, FUTURE
 from .helpers import convert_ma_validation_error
-from .symbol import Symbol
+from .symbol import Symbol, CacheManager
 
 
 RESERVED_FIELDS = ("__meta__",)
@@ -98,16 +99,21 @@ class SchemaSnapshot:
 
     @classmethod
     @lru_cache(maxsize=10000)
-    def from_schema(cls, schema: Schema) -> Type["SchemaSnapshot"]:
+    def from_schema(
+        cls, schema: Type[Schema], name: Optional[str] = None
+    ) -> Type["SchemaSnapshot"]:
         """
         Create or retrieve a SchemaSnapsot subclass for the given
         schema class
         """
-        subcls = type(f"{type(schema).__name__}Snapshot", (cls,), {"_source_schema": schema})
+        if name is None:
+            name = f"{schema.__name__}Snapshot"
 
-        fields = [("__meta__", Dict[str, Any], dc.field(default_factory=dict))]
-        for name, field in schema.__fields__.items():
-            fields.append((name, *field.dataclass_field()))
+        subcls = type(name, (cls,), {"_source_schema": schema})
+
+        fields = [("__meta__", Dict[str, Any], dc.field(default_factory=dict, repr=False))]
+        for field_name, field in schema.__fields__.items():
+            fields.append((field_name, *field.dataclass_field()))
 
         return dc.make_dataclass(
             subcls.__name__, fields, bases=(subcls,), frozen=True, eq=cls._equals
@@ -184,18 +190,12 @@ class SchemaSnapshot:
         """
         return ((k, v) for k, v in self.__dict__.items() if k not in RESERVED_FIELDS)
 
-    # Simplify common schema snapshot operations
-    def update_fields(self, func: Callable[[str, Any], Any]) -> "SchemaSnapshot":
-        """
-        Update field value according to the given function
-        """
-        kws = {}
-        for key, val in self.items():
-            kws[key] = func(key, val)
-        return self.copy(**kws)
-
     def resolve(
-        self, graph: "ResourceGraph", field_filter: Optional[Callable[[Field], bool]] = None,
+        self,
+        graph: "ResourceGraph",
+        field_filter: Optional[Callable[[Field], bool]] = None,
+        compute_graph: Optional[nx.MultiDiGraph] = None,
+        cache: Optional[CacheManager] = None,
     ) -> "SchemaSnapshot":
         """
         Resolve all fields
@@ -204,21 +204,43 @@ class SchemaSnapshot:
             field_filter = lambda x: True
 
         kws = {}
+        cache = CacheManager() if cache is None else cache
+        compute_graph = nx.MultiDiGraph() if compute_graph is None else compute_graph
+
         for key, val in self.items():
+            if not isinstance(val, Symbol):
+                kws[key] = val
+                continue
             field = self.source_schema.__fields__[key]
+            compute_graph = val.compute_graph(graph, compute_graph, cache)
             if field_filter(field):
-                kws[key] = val.resolve(graph) if isinstance(val, Symbol) else val
+                kws[key] = val.resolve(graph, compute_graph, cache)
             else:
-                kws[key] = val.resolve_partial(graph) if isinstance(val, Symbol) else val
+                kws[key] = val.resolve_partial(graph, compute_graph, cache)
+
         return self.copy(**kws)
 
-    def resolve_partial(self, graph: "ResourceGraph") -> "SchemaSnapshot":
+    def resolve_partial(
+        self,
+        graph: "ResourceGraph",
+        compute_graph: Optional[nx.MultiDiGraph] = None,
+        cache: Optional[CacheManager] = None,
+    ) -> "SchemaSnapshot":
         """
         Partially resolve all fields
         """
-        return self.update_fields(
-            lambda key, val: val.resolve_partial(graph) if isinstance(val, Symbol) else val
-        )
+        cache = CacheManager() if cache is None else cache
+        compute_graph = nx.MultiDiGraph() if compute_graph is None else compute_graph
+
+        kws = {}
+        for key, val in self.items():
+            if not isinstance(val, Symbol):
+                kws[key] = val
+                continue
+            compute_graph = val.compute_graph(graph, compute_graph, cache)
+            kws[key] = val.resolve_partial(graph, compute_graph, cache)
+
+        return self.copy(**kws)
 
 
 class SchemaHelper:
@@ -227,14 +249,17 @@ class SchemaHelper:
     reducing the possible names we can use for attributes.
     """
 
-    def __init__(self, schema_class: Type[Schema]) -> None:
+    def __init__(self, schema_class: Type[Schema], name: Optional[str] = None) -> None:
         """
         Initialize the SchemaHelper object
 
         `schema_class` - a Schema subclass
         """
+        if name is None:
+            name = f"{schema_class.__name__}Snapshot"
+
         self.orig_schema_cls = schema_class
-        self.snapshot_cls = SchemaSnapshot.from_schema(schema_class)
+        self.snapshot_cls = SchemaSnapshot.from_schema(schema_class, name)
 
         self.input_schema_cls = self.construct_marshmallow_schema(is_input=True)
         self.schema_cls = self.construct_marshmallow_schema(is_input=False)

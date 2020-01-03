@@ -5,6 +5,9 @@ from functools import wraps
 from typing import Any, Dict, Tuple, Callable, Optional
 
 import marshmallow as ma
+import networkx as nx
+from networkx.algorithms.cycles import find_cycle
+from networkx.exception import NetworkXNoCycle
 
 from statey import exc
 
@@ -62,3 +65,24 @@ def convert_ma_validation_error(func: Callable) -> Callable:
             raise exc.InputValidationError(error.messages) from error
 
     return wrapped
+
+
+def detect_circular_references(graph: nx.MultiDiGraph) -> None:
+    """
+    Check the given compute graph for any circular references, which will cause
+    a infinite recursion error otherwise
+    """
+    try:
+        cycle = find_cycle(graph)
+    except NetworkXNoCycle:
+        return
+
+    symbols = []
+    for idx, (from_node, to_node, _) in enumerate(cycle):
+        if idx == 0:
+            from_symbol = graph.nodes[from_node]["obj"]
+            symbols.append(from_symbol)
+        to_symbol = graph.nodes[to_node]["obj"]
+        symbols.append(to_symbol)
+
+    raise exc.CircularReferenceDetected(symbols)

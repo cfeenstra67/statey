@@ -7,7 +7,7 @@ from typing import Optional, Union, Type, Callable
 import networkx as nx
 
 from statey import exc
-from statey.schema import Field, SchemaSnapshot, Symbol, QueryRef
+from statey.schema import Field, SchemaSnapshot, Symbol, QueryRef, CacheManager
 from .resource import Resource
 
 
@@ -158,7 +158,11 @@ class ResourceGraph:
         self._add_at_path(path, snapshot, exists, resource, resource_cls)
 
     def resolve_all(
-        self, field_filter: Optional[Callable[[Field], bool]] = None, partial: bool = False,
+        self,
+        field_filter: Optional[Callable[[Field], bool]] = None,
+        partial: bool = False,
+        cache: Optional[CacheManager] = None,
+        compute_graph: Optional[nx.MultiDiGraph] = None,
     ) -> "ResourceGraph":
         """
 		Resolve all entities or replace their snapshots with `None` if they can't be resolved
@@ -167,11 +171,13 @@ class ResourceGraph:
             raise ValueError("If `field_filter` is provided `partial` must be False.")
 
         instance = self.copy()
+        cache = CacheManager() if cache is None else cache
+        compute_graph = nx.MultiDiGraph() if compute_graph is None else compute_graph
 
         def _method(snapshot):
             if partial:
-                return snapshot.resolve_partial(instance)
-            return snapshot.resolve(instance, field_filter)
+                return snapshot.resolve_partial(instance, compute_graph, cache)
+            return snapshot.resolve(instance, field_filter, compute_graph, cache)
 
         for path in instance.graph:
             out_data = instance.query(path, False)

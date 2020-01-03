@@ -1,6 +1,8 @@
 """
 Exception classes for use in the Statey framework
 """
+from typing import Sequence
+
 import marshmallow as ma
 
 
@@ -70,6 +72,17 @@ class ResolutionError(StateyError):
     """
 	Error in resolving a symbol value
 	"""
+
+
+class CircularReferenceDetected(ResolutionError):
+    """
+	Error indicating that a circular reference was detected in a compute graph
+	"""
+
+    def __init__(self, nodes: Sequence["Symbol"]) -> None:
+        self.nodes = nodes
+        path = " -> ".join(map(str, nodes)) + " \u21ba"
+        super().__init__(f"Circular reference detected when resolving symbols. Path: {path}")
 
 
 class MissingReturnType(SymbolError):
