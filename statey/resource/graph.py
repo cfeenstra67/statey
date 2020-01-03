@@ -162,7 +162,6 @@ class ResourceGraph:
         field_filter: Optional[Callable[[Field], bool]] = None,
         partial: bool = False,
         cache: Optional[CacheManager] = None,
-        compute_graph: Optional[nx.MultiDiGraph] = None,
     ) -> "ResourceGraph":
         """
 		Resolve all entities or replace their snapshots with `None` if they can't be resolved
@@ -172,12 +171,11 @@ class ResourceGraph:
 
         instance = self.copy()
         cache = CacheManager() if cache is None else cache
-        compute_graph = nx.MultiDiGraph() if compute_graph is None else compute_graph
 
         def _method(snapshot):
             if partial:
-                return snapshot.resolve_partial(instance, compute_graph, cache)
-            return snapshot.resolve(instance, field_filter, compute_graph, cache)
+                return snapshot.resolve_partial(instance, cache)
+            return snapshot.resolve(instance, field_filter, cache)
 
         for path in instance.graph:
             out_data = instance.query(path, False)

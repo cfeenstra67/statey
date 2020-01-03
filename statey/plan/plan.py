@@ -144,7 +144,6 @@ class PlanKernel:
         if result is None:
             return result
         # No filter--after a change has been applied the snapshot _must_ fully resolve
-        print("SNAP", result)
         return result.resolve(self.state_graph)
 
 

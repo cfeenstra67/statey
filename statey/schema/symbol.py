@@ -34,10 +34,7 @@ class Symbol(abc.ABC):
 
     @abc.abstractmethod
     def compute_graph(
-        self,
-        values: "ResourceGraph",
-        instance: Optional[nx.MultiDiGraph] = None,
-        cache: Optional["CacheManager"] = None,
+        self, values: "ResourceGraph", cache: Optional["CacheManager"] = None,
     ) -> nx.MultiDiGraph:
         """
         Return a compute graph describing this symbol and all of its dependencies
@@ -47,21 +44,21 @@ class Symbol(abc.ABC):
     def resolve_partial(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional["CacheManager"] = None,
+        check_circular: bool = True,
     ) -> Any:
         """
 		Get a concrete value or another Symbol for this field. Optional.
 		By default, the behavior is the same as resolve()
 		"""
-        return self.resolve(values, graph, cache)
+        return self.resolve(values, cache, check_circular)
 
     @abc.abstractmethod
     def resolve(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional["CacheManager"] = None,
+        check_circular: bool = False,
     ) -> Any:
         """
 		Get the concrete value for this field given all concrete field values
@@ -78,7 +75,7 @@ class Symbol(abc.ABC):
 
 
 # pylint: disable=too-few-public-methods
-class Cache(abc.ABC):
+class Cache:
     """
     Base class for Cache implementations. These are really symbol-specific,
     so no logic here right now
@@ -93,6 +90,7 @@ class Cache(abc.ABC):
 
     def __init__(self, symbol: Symbol) -> None:
         self.symbol = symbol
+        self.computed_graph = False
 
 
 class CacheManager:
@@ -116,6 +114,7 @@ class CacheManager:
 
     def __init__(self) -> None:
         self.caches = {}
+        self.graph = nx.MultiDiGraph()
 
     def _handler_cls(self, symbol: Symbol) -> Type[Cache]:
         registered = filter(
@@ -168,41 +167,36 @@ class Reference(Symbol):
         return ((self.resource, self.field_name),)
 
     def compute_graph(
-        self,
-        values: "ResourceGraph",
-        instance: Optional[nx.MultiDiGraph] = None,
-        cache: Optional["CacheManager"] = None,
+        self, values: "ResourceGraph", cache: Optional["CacheManager"] = None,
     ) -> nx.MultiDiGraph:
         cache = CacheManager() if cache is None else cache
         my_cache = cache.get(self)
-        if my_cache.compute_graph is not my_cache.NOT_SET:
-            return my_cache.compute_graph
+        if my_cache.computed_graph:
+            return cache.graph
 
-        graph = nx.MultiDiGraph() if instance is None else instance
+        graph = cache.graph
 
         if id(self) not in graph:
             graph.add_node(id(self), obj=self)
 
         resolved = self._query_value(values)
         if isinstance(resolved, Symbol) and resolved is not self:
-            graph = resolved.compute_graph(values, graph, cache)
+            graph = resolved.compute_graph(values, cache)
 
             if id(resolved) not in graph[id(self)]:
                 graph.add_edge(id(self), id(resolved))
 
-        my_cache.compute_graph = graph
+        my_cache.computed_graph = True
         return graph
 
     def resolve_partial(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional["CacheManager"] = None,
+        check_circular: bool = True,
     ) -> Any:
         cache = CacheManager() if cache is None else cache
-        if graph is None:
-            graph = self.compute_graph(values, cache=cache)
-            detect_circular_references(graph)
+        graph = self.compute_graph(values, cache)
 
         if len(graph[id(self)]) == 0:
             return self._query_value(values)
@@ -215,15 +209,18 @@ class Reference(Symbol):
         obj_node = graph.nodes[obj_id]
         obj = obj_node["obj"]
 
-        return obj.resolve_partial(values, graph, cache)
+        resolved = obj.resolve_partial(values, cache, check_circular=False)
+        if check_circular:
+            detect_circular_references(graph)
+        return resolved
 
     def resolve(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional["CacheManager"] = None,
+        check_circular: bool = True,
     ) -> Any:
-        value = self.resolve_partial(values, graph, cache)
+        value = self.resolve_partial(values, cache, check_circular)
         if isinstance(value, Symbol):
             raise exc.ResolutionError(
                 f"Field {repr(self.field_name)} in resource {self.resource}"
@@ -245,14 +242,8 @@ class Reference(Symbol):
 @CacheManager.handles(Reference)
 class ReferenceCache(Cache):
     """
-    Cache class for literals
+    Cache class for references
     """
-
-    NOT_SET = object()
-
-    def __init__(self, symbol: Symbol):
-        super().__init__(symbol)
-        self.compute_graph = self.NOT_SET
 
 
 class FuncMeta(abc.ABCMeta):
@@ -388,18 +379,8 @@ class Func(Symbol, metaclass=FuncMeta):
         keys, values = zip(*self.kwargs.items()) if len(self.kwargs) > 0 else ((), ())
         self.kwargs = dict(zip(keys, map(self._detect_nested_symbols_value, values)))
 
-    def _resolve_args(
-        self, values: "ResourceGraph", graph: nx.MultiDiGraph, cache: CacheManager
-    ) -> Any:
-        if id(self) not in graph:
-            # We don't need to check for circular refs here--this happens because
-            # new Func instance get created during the evaluation of the graph. The new
-            # instance is just a partially resolved version of the old one, though, so
-            # there are no net new references to check
-            graph = self.compute_graph(values, graph, cache)
-
-        if len(graph[id(self)]) == 0:
-            return (), {}
+    def _resolve_args(self, values: "ResourceGraph", cache: CacheManager) -> Any:
+        graph = cache.graph
 
         args = {}
         kwargs = {}
@@ -407,7 +388,7 @@ class Func(Symbol, metaclass=FuncMeta):
             obj_node = graph.nodes[obj_id]
             obj = obj_node["obj"]
 
-            value = obj.resolve_partial(values, graph, cache)
+            value = obj.resolve_partial(values, cache, check_circular=False)
             for edge in edges.values():
                 if "arg" in edge:
                     args[edge["arg"]] = value
@@ -460,18 +441,15 @@ class Func(Symbol, metaclass=FuncMeta):
         return tuple(out)
 
     def compute_graph(
-        self,
-        values: "ResourceGraph",
-        instance: Optional[nx.MultiDiGraph] = None,
-        cache: Optional["CacheManager"] = None,
+        self, values: "ResourceGraph", cache: Optional["CacheManager"] = None,
     ) -> nx.MultiDiGraph:
 
         cache = CacheManager() if cache is None else cache
         my_cache = cache.get(self)
-        if my_cache.compute_graph is not my_cache.NOT_SET:
-            return my_cache.compute_graph
+        if my_cache.computed_graph:
+            return cache.graph
 
-        graph = nx.MultiDiGraph() if instance is None else instance
+        graph = cache.graph
 
         if id(self) not in graph:
             graph.add_node(id(self), obj=self)
@@ -479,7 +457,7 @@ class Func(Symbol, metaclass=FuncMeta):
         for idx, arg in enumerate(self.args):
             if not isinstance(arg, Symbol):
                 continue
-            graph = arg.compute_graph(values, graph, cache)
+            graph = arg.compute_graph(values, cache)
             if id(arg) not in graph[id(self)] or not any(
                 edge.get("arg") == idx for edge in graph[id(self)][id(arg)].values()
             ):
@@ -488,26 +466,24 @@ class Func(Symbol, metaclass=FuncMeta):
         for key, val in self.kwargs.items():
             if not isinstance(val, Symbol):
                 continue
-            graph = val.compute_graph(values, graph, cache)
+            graph = val.compute_graph(values, cache)
             if id(val) not in graph[id(self)] or not any(
                 edge.get("kwarg") == key for edge in graph[id(self)][id(val)].values()
             ):
                 graph.add_edge(id(self), id(val), kwarg=key)
 
-        my_cache.compute_graph = graph
+        my_cache.computed_graph = True
         return graph
 
     def resolve_partial(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional[CacheManager] = None,
+        check_circular: bool = True,
     ) -> Any:
         cache = CacheManager() if cache is None else cache
         my_cache = cache.get(self)
-        if graph is None:
-            graph = self.compute_graph(values, cache=cache)
-            detect_circular_references(graph)
+        graph = self.compute_graph(values, cache)
 
         if not self.contains_symbols():
             return self.func(*self.args, **self.kwargs)
@@ -515,22 +491,27 @@ class Func(Symbol, metaclass=FuncMeta):
         if len(my_cache.args) + len(my_cache.kwargs) > 0:
             args, kwargs = my_cache.args, my_cache.kwargs
         else:
-            new_args, new_kwargs = self._resolve_args(values, graph, cache)
+            new_args, new_kwargs = self._resolve_args(values, cache)
             args = tuple(new_args.get(idx, arg) for idx, arg in enumerate(self.args))
             kwargs = {k: new_kwargs.get(k, v) for k, v in self.kwargs.items()}
             my_cache.args, my_cache.kwargs = args, kwargs
 
         if tuple(args) == tuple(self.args) and kwargs == self.kwargs:
-            return self
-        return self(*args, **kwargs).resolve_partial(values, graph, cache)
+            resolved = self
+        else:
+            resolved = self(*args, **kwargs).resolve_partial(values, cache, check_circular=False)
+
+        if check_circular:
+            detect_circular_references(graph)
+        return resolved
 
     def resolve(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional[CacheManager] = None,
+        check_circular: bool = True,
     ) -> Any:
-        value = self.resolve_partial(values, graph, cache)
+        value = self.resolve_partial(values, cache, check_circular)
         if isinstance(value, Symbol):
             raise exc.ResolutionError(
                 f"Function {self} resolves to a symbol ({value}), this is not allowed."
@@ -562,13 +543,10 @@ class FuncCache(Cache):
     Simple cache object for the Func symbol
     """
 
-    NOT_SET = object()
-
     def __init__(self, symbol: Symbol) -> None:
         super().__init__(symbol)
         self.args = ()
         self.kwargs = {}
-        self.compute_graph = self.NOT_SET
 
 
 class Literal(Symbol):
@@ -586,27 +564,24 @@ class Literal(Symbol):
         return tuple((ref.resource, ref.field_name) for ref in self._refs)
 
     def compute_graph(
-        self,
-        values: "ResourceGraph",
-        instance: Optional[nx.MultiDiGraph] = None,
-        cache: Optional["CacheManager"] = None,
+        self, values: "ResourceGraph", cache: Optional["CacheManager"] = None,
     ) -> nx.MultiDiGraph:
         cache = CacheManager() if cache is None else cache
         my_cache = cache.get(self)
-        if my_cache.compute_graph is not my_cache.NOT_SET:
-            return my_cache.compute_graph
+        if my_cache.computed_graph:
+            return cache.graph
 
-        graph = nx.MultiDiGraph() if instance is None else instance
+        graph = cache.graph
 
         if id(self) not in graph:
             graph.add_node(id(self), obj=self)
 
         if isinstance(self.value, Symbol):
-            graph = self.value.compute_graph(values, graph, cache)
+            graph = self.value.compute_graph(values, cache)
             if id(self.value) not in graph[id(self)]:
                 graph.add_edge(id(self), id(self.value))
 
-        my_cache.compute_graph = graph
+        my_cache.computed_graph = True
         return graph
 
     def type(self) -> Field:
@@ -615,15 +590,15 @@ class Literal(Symbol):
     def resolve_partial(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional[CacheManager] = None,
+        check_circular: bool = True,
     ) -> Any:
         cache = CacheManager() if cache is None else cache
-        if graph is None:
-            graph = self.compute_graph(values, cache=cache)
-            detect_circular_references(graph)
+        graph = self.compute_graph(values, cache)
 
         if len(graph[id(self)]) == 0:
+            if check_circular:
+                detect_circular_references(graph)
             return self.value
 
         items = list(graph[id(self)].items())
@@ -634,15 +609,18 @@ class Literal(Symbol):
         obj_node = graph.nodes[obj_id]
         obj = obj_node["obj"]
 
-        return obj.resolve_partial(values, graph, cache)
+        resolved = obj.resolve_partial(values, cache, check_circular=False)
+        if check_circular:
+            detect_circular_references(graph)
+        return resolved
 
     def resolve(
         self,
         values: "ResourceGraph",
-        graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional[CacheManager] = None,
+        check_circular: bool = True,
     ) -> Any:
-        value = self.resolve_partial(values, graph, cache)
+        value = self.resolve_partial(values, cache, check_circular)
         if isinstance(value, Symbol):
             raise exc.ResolutionError(
                 f"Literal {self} resolves to a symbol ({value}), this is not allowed."
@@ -655,9 +633,3 @@ class LiteralCache(Cache):
     """
     Cache class for literals
     """
-
-    NOT_SET = object()
-
-    def __init__(self, symbol: Symbol):
-        super().__init__(symbol)
-        self.compute_graph = self.NOT_SET

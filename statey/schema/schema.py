@@ -7,7 +7,6 @@ from typing import Tuple, Any, Type, Dict, Iterator, Callable, Optional
 
 import dataclasses as dc
 import marshmallow as ma
-import networkx as nx
 
 from statey import exc
 from .field import Field, _FieldWithModifiers, MISSING, FUTURE
@@ -194,7 +193,6 @@ class SchemaSnapshot:
         self,
         graph: "ResourceGraph",
         field_filter: Optional[Callable[[Field], bool]] = None,
-        compute_graph: Optional[nx.MultiDiGraph] = None,
         cache: Optional[CacheManager] = None,
     ) -> "SchemaSnapshot":
         """
@@ -205,40 +203,33 @@ class SchemaSnapshot:
 
         kws = {}
         cache = CacheManager() if cache is None else cache
-        compute_graph = nx.MultiDiGraph() if compute_graph is None else compute_graph
 
         for key, val in self.items():
             if not isinstance(val, Symbol):
                 kws[key] = val
                 continue
             field = self.source_schema.__fields__[key]
-            compute_graph = val.compute_graph(graph, compute_graph, cache)
             if field_filter(field):
-                kws[key] = val.resolve(graph, compute_graph, cache)
+                kws[key] = val.resolve(graph, cache)
             else:
-                kws[key] = val.resolve_partial(graph, compute_graph, cache)
+                kws[key] = val.resolve_partial(graph, cache)
 
         return self.copy(**kws)
 
     def resolve_partial(
-        self,
-        graph: "ResourceGraph",
-        compute_graph: Optional[nx.MultiDiGraph] = None,
-        cache: Optional[CacheManager] = None,
+        self, graph: "ResourceGraph", cache: Optional[CacheManager] = None,
     ) -> "SchemaSnapshot":
         """
         Partially resolve all fields
         """
         cache = CacheManager() if cache is None else cache
-        compute_graph = nx.MultiDiGraph() if compute_graph is None else compute_graph
 
         kws = {}
         for key, val in self.items():
             if not isinstance(val, Symbol):
                 kws[key] = val
                 continue
-            compute_graph = val.compute_graph(graph, compute_graph, cache)
-            kws[key] = val.resolve_partial(graph, compute_graph, cache)
+            kws[key] = val.resolve_partial(graph, cache)
 
         return self.copy(**kws)
 
