@@ -79,6 +79,10 @@ class File(st.Resource):
             elif field == "data_hash":
                 with open(current.path, "w+") as file:
                     file.write(new_value)
+            # elif field == "data_hash":
+            #     with open(current.path, "w+") as file:
+            #         file.write(current.data)
+            #     new_values['data'] = current.data
             else:
                 raise ValueError(f'Updates not supported for field "{field}".')
 

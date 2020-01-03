@@ -38,6 +38,22 @@ class InvalidField(InitializationError):
 	"""
 
 
+class ReservedFieldName(InvalidField):
+    """
+	Error indicating that the given field name is reserved
+	"""
+
+    def __init__(self, field_name: str, schema: ma.Schema) -> None:
+        self.field_name = field_name
+        super().__init__(
+            f"Field name {field_name} in schema {schema} is reserved. You cannot "
+            f"name a field that. (check statey.schema.RESERVED_NAMES for the list "
+            f"of reserved names). Overridding the Schema.__fields__ property of "
+            f"your schema class to a dictionary of name -> field mappings can be"
+            f"used as a workaround."
+        )
+
+
 class InputValidationError(StateyError, ma.ValidationError):
     """
 	Error class for errors in input values

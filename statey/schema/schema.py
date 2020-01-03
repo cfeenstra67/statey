@@ -14,7 +14,7 @@ from .helpers import convert_ma_validation_error
 from .symbol import Symbol
 
 
-HIDDEN_FIELDS = ("__meta__",)
+RESERVED_FIELDS = ("__meta__",)
 
 
 class SchemaMeta(ma.schema.SchemaMeta):
@@ -182,7 +182,7 @@ class SchemaSnapshot:
         """
         Iterate over the fields for this dataclass
         """
-        return ((k, v) for k, v in self.__dict__.items() if k not in HIDDEN_FIELDS)
+        return ((k, v) for k, v in self.__dict__.items() if k not in RESERVED_FIELDS)
 
     # Simplify common schema snapshot operations
     def update_fields(self, func: Callable[[str, Any], Any]) -> "SchemaSnapshot":
@@ -247,6 +247,8 @@ class SchemaHelper:
         fields = {}
 
         for name, value in self.orig_schema_cls.__fields__.items():
+            if name in RESERVED_FIELDS:
+                raise exc.ReservedFieldName(name, self.orig_schema_cls)
             fields[name] = value.marshmallow_field(is_input)
 
         return type("Schema", (self.orig_schema_cls,), fields)

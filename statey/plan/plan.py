@@ -25,6 +25,16 @@ class ApplyResult:
     state_graph: ResourceGraph
 
 
+# pylint: disable=too-few-public-methods
+class ComputedValue:
+    """
+    Simple object used in printed plans to indicate a value is computed
+    """
+
+    def __str__(self) -> str:
+        return "<computed>"
+
+
 # pylint: disable=too-many-instance-attributes
 class PlanKernel:
     """
@@ -133,7 +143,9 @@ class PlanKernel:
         # Deletions return None
         if result is None:
             return result
-        return result.resolve(self.state_graph, lambda field: field.store)
+        # No filter--after a change has been applied the snapshot _must_ fully resolve
+        print("SNAP", result)
+        return result.resolve(self.state_graph)
 
 
 class Plan:
@@ -387,14 +399,21 @@ class Plan:
 
                 for name, new_value in change.snapshot.items():
                     old_value = change.old_snapshot and change.old_snapshot[name]
+                    changed = new_value != old_value
+                    recreate = False
+                    if changed:
+                        field = change.snapshot.source_schema.__fields__[name]
+                        recreate = field.create_new
+
                     item = fields[name] = {
                         "old": old_value,
                         "new": new_value,
-                        "change": new_value != old_value,
+                        "change": changed,
+                        "recreate": recreate,
                     }
                     for key, val in item.items():
                         if isinstance(val, Symbol):
-                            item[key] = "<computed>"
+                            item[key] = ComputedValue()
                     fields[name] = item
 
                 items.append(

@@ -41,7 +41,7 @@ class PlanJob:
         self.state = ExecState.NOT_STARTED
         self.error_callback = lambda key, change, error: None
         self.complete_callback = lambda key, change, snapshot: None
-        self.change_hook = lambda x: x
+        self.change_hook = lambda path, change: change
         self.result_hook = lambda x: x
 
     def add_change(self, key: str, change: Change) -> None:
@@ -75,7 +75,7 @@ class PlanJob:
         """
         Apply change_hook to the change if relevant
         """
-        return self.change_hook(change)
+        return self.change_hook(key, change)
 
     def change_complete(self, key: str, change: Change, snapshot: SchemaSnapshot) -> None:
         """
