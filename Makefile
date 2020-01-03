@@ -5,3 +5,7 @@ install-deps:
 
 test:
 	@py.test -vv tests
+
+check:
+	@black statey --line-length=100
+	@pylint statey
