@@ -5,7 +5,7 @@ import json
 from typing import Dict, Any, Optional
 
 from statey import exc
-from statey.resource import ResourceGraph, Resource
+from statey.resource import ResourceGraph, Resource, Registry
 from statey.schema import SchemaHelper, Literal, Reference
 from statey.storage import Serializer
 
@@ -113,12 +113,12 @@ class JSONSerializer(Serializer):
             resource_cls=resource_cls,
         )
 
-    def load_from_dict(self, data: Dict[str, Any], session: "Session") -> ResourceGraph:
+    def load_from_dict(self, data: Dict[str, Any], registry: Registry) -> ResourceGraph:
         """
 		Construct a ResourceGraph given a dictionary constructed vai dump_to_dict()
 		"""
         not_processed = set(data["resources"])
-        graph = ResourceGraph(session)
+        graph = ResourceGraph(registry)
 
         while len(not_processed) > 0:
 
@@ -138,9 +138,9 @@ class JSONSerializer(Serializer):
         serializable = self.dump_to_dict(graph)
         return json.dumps(serializable, indent=4, sort_keys=True).encode()
 
-    def load(self, state_data: bytes, session: "Session") -> ResourceGraph:
+    def load(self, state_data: bytes, registry: Registry) -> ResourceGraph:
         if state_data == b"":
-            return ResourceGraph(session)
+            return ResourceGraph(registry)
         serializable = json.loads(state_data.decode())
-        loaded = self.load_from_dict(serializable, session)
+        loaded = self.load_from_dict(serializable, registry)
         return loaded

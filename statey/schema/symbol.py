@@ -4,7 +4,8 @@ depedencies as concrete values are resolved.
 """
 import abc
 import itertools
-from functools import partial
+import operator
+from functools import partial, wraps
 from typing import Callable, Any, Tuple, Dict, Optional, Union, Type
 
 import networkx as nx
@@ -17,12 +18,91 @@ from .helpers import detect_circular_references
 QueryRef = Union["Resource", str]
 
 
+def binary_operator_handler(
+        func: Callable[[Any, Any], Any],
+        name: str,
+        return_annotation: Optional[Any] = None,
+        check_annotation_method: bool = True
+) -> Callable[[Any, Any], Any]:
+    """
+    Wrap a binary operator in a proper method
+    """
+
+    @wraps(func)
+    def wrapper(self, other):
+        # If none specified, assume both args have to be the same type and
+        # the return type is the same
+        annotation = return_annotation
+        if annotation is None:
+            my_type = self.type()
+            if isinstance(other, Symbol):
+                other_type = other.type()
+                if not isinstance(other_type, type(my_type)):
+                    raise exc.SymbolTypeError(
+                        f'Attempting to perform operation on object with a different field '
+                        f'type ({type(other_type).__name__}, expected {type(my_type).__name__}).'
+                    )
+
+            annotation = my_type.annotation
+
+        if check_annotation_method:
+            if not hasattr(annotation, name):
+                raise exc.SymbolTypeError(f'Unsupported type for method {name}: {annotation.__name__}.')
+
+        return Func[annotation](func)(self, other)
+
+    wrapper.__name__ = name
+    return wrapper
+
+
+def unary_operator_handler(
+        func: Callable[[Any], Any],
+        name: str,
+        return_annotation: Optional[Any] = None,
+        check_annotation_method: bool = True
+) -> Callable[[Any], Any]:
+    """
+    Wrap a unary operator in a proper method
+    """
+    @wraps(func)
+    def wrapper(self):
+        annotation = return_annotation
+        if annotation is None:
+            annotation = self.type().annotation
+
+        if check_annotation_method:
+            if not hasattr(annotation, name):
+                raise exc.SymbolTypeError(f'Unsupported type for method {name}: {annotation.__name__}.')
+
+        return sf.F[annotation](func)(self)
+
+    wrapper.__name__ = name
+    return wrapper
+
+
 class Symbol(abc.ABC):
     """
 	A symbol is some logical value within statey, but we may have to
 	perform some computation in the future to actually figure out what
 	the value is. Examples could be references or function outputs
 	"""
+    __add__ = binary_operator_handler(operator.add, '__add__')
+    __sub__ = binary_operator_handler(operator.sub, '__sub__')
+    __mul__ = binary_operator_handler(operator.mul, '__mul__')
+    __truediv__ = binary_operator_handler(operator.truediv, '__truediv__')
+    __floordiv__ = binary_operator_handler(operator.floordiv, '__floordiv__')
+    __mod__ = binary_operator_handler(operator.mod, '__mod__')
+    __pow__ = binary_operator_handler(operator.pow, '__pow__')
+    __lt__ = binary_operator_handler(operator.lt, '__lt__', bool)
+    __gt__ = binary_operator_handler(operator.gt, '__gt__', bool)
+    __le__ = binary_operator_handler(operator.le, '__le__', bool)
+    __eq__ = binary_operator_handler(operator.eq, '__eq__', bool)
+    __ne__ = binary_operator_handler(operator.ne, '__ne__', bool)
+    __lshift__ = binary_operator_handler(operator.lshift, '__lshift__')
+    __rshift__ = binary_operator_handler(operator.rshift, '__rshift__')
+    __neg__ = unary_operator_handler(operator.neg, '__neg__')
+    __pos__ = unary_operator_handler(operator.pos, '__pos__')
+    __invert__ = unary_operator_handler(operator.invert, '__invert__')
 
     @abc.abstractmethod
     def refs(self) -> Tuple[Tuple[QueryRef, str], ...]:

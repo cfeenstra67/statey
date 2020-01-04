@@ -168,7 +168,7 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
 
         # The name cannot be set via an argument, it must be set after the
         # instance is initialized. It should not be set by users, but via
-        # __getitem__ syntax or the `name` argument in session.add
+        # __getitem__ syntax or the `name` argument in graph.add
         self._name = None
 
     def copy(self) -> "Resource":

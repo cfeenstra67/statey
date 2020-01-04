@@ -13,6 +13,5 @@ from statey.resource import Resource, ResourceGraph
 from statey.schema import Field, Schema, Reference, Func, SchemaSnapshot
 from statey.schema.lib import func
 from statey.schema.lib.func import F, f
-from statey.session import Session
 from statey.state import State
 from statey.storage import Storage, Middleware, Serializer

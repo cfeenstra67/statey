@@ -23,7 +23,7 @@ class File(st.Resource):
     class Schema(st.Schema):
         path = st.Field[str](create_new=True)
         data = st.Field[str](store=False)
-        data_hash = st.Field[str](
+        data_sha256 = st.Field[str](
             input=False, factory=lambda resource: st.Func[str](_get_hash, resource.attrs.data),
         )
         permissions = st.Field[int](default=0o644)
@@ -72,14 +72,13 @@ class File(st.Resource):
         Update this resource with the values given by `spec`.
         """
         new_values = {}
-        for field, (_, new_value) in spec.values.items():
-            new_values[field] = new_value
+        for field in spec.fields:
+            new_value = new_values[field] = current[field]
             if field == "permissions":
                 os.chmod(current.path, new_value)
-            elif field == "data_hash":
+            elif field == "data_sha256":
                 with open(current.path, "w+") as file:
                     file.write(current.data)
-                new_values["data"] = current.data
             else:
                 raise ValueError(f'Updates not supported for field "{field}".')
 

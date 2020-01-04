@@ -8,6 +8,7 @@ import networkx as nx
 
 from statey import exc
 from statey.schema import Field, SchemaSnapshot, Symbol, QueryRef, CacheManager
+from .path import Registry
 from .resource import Resource
 
 
@@ -17,11 +18,11 @@ class ResourceGraph:
 	object that is used for operations like plan(), apply(), etc.
 	"""
 
-    def __init__(self, session: "Session") -> None:
+    def __init__(self, registry: Registry) -> None:
         """
-		`session` - a statey session
+		`registry` - a statey registry
 		"""
-        self.session = session
+        self.registry = registry
         self.graph = self.graph_factory()
 
     def graph_factory(self) -> nx.Graph:
@@ -43,12 +44,12 @@ class ResourceGraph:
         """
 		Return a copy of this resource graph
 		"""
-        graph = type(self)(self.session)
+        graph = type(self)(self.registry)
         graph.graph = self.graph.copy()
         return graph
 
     def _path(self, resource: QueryRef) -> str:
-        return self.session.path(resource) if isinstance(resource, Resource) else resource
+        return self.registry.get_path(resource) if isinstance(resource, Resource) else resource
 
     # pylint: disable=too-many-arguments
     def _add_at_path(
@@ -154,7 +155,7 @@ class ResourceGraph:
             resource_cls = type(resource)
 
         if path is None:
-            path = self.session.path(resource)
+            path = self.registry.get_path(resource)
         self._add_at_path(path, snapshot, exists, resource, resource_cls)
 
     def resolve_all(

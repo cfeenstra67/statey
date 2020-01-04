@@ -98,27 +98,27 @@ class SymbolTypeError(SymbolError, TypeError):
 	"""
 
 
-class SessionError(StateyError):
+class StateError(StateyError):
     """
-	Errors related to sessions
+	Errors related to states
 	"""
 
 
-class ForeignGraphError(SessionError):
+class ForeignGraphError(StateError):
     """
-	Error indicating that a session operation was attempted on a graph constructed
-	using a different session
+	Error indicating that a state operation was attempted on a graph constructed
+	using a different state
 	"""
 
 
-class UnnamedResourceError(SessionError):
+class UnnamedResourceError(StateError):
     """
 	Error indicating that a resource that we attempted to get a path
-	for through the session does not have a name
+	for through the state does not have a name
 	"""
 
 
-class GraphError(SessionError):
+class GraphError(StateyError):
     """
 	Errors related to graphs
 	"""

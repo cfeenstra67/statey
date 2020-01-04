@@ -1,11 +1,11 @@
 """
-A statey state specifies a storage configuration for a state and provides an interface for creating sessions
+A statey state specifies a storage configuration for a state and provides an interface for creating graphs
 """
 from contextlib import contextmanager
 from typing import Any, Sequence, Dict, ContextManager, Optional
 
-from statey.resource import ResourceGraph
-from statey.session import Session
+from statey.plan import Plan, PlanExecutor, ApplyResult
+from statey.resource import ResourceGraph, Registry
 from statey.storage import Storage, Serializer, Middleware
 from statey.storage.lib.file import FileStorage
 from statey.storage.lib.serializer.json import JSONSerializer
@@ -22,6 +22,7 @@ class State:
         storage: Storage = FileStorage("."),
         serializer: Serializer = JSONSerializer(),
         middlewares: Sequence[Middleware] = (),
+        registry: Optional[Registry] = None
     ) -> None:
         """
 		Initialize a State instance.
@@ -32,22 +33,19 @@ class State:
 		`middlewares` - Arbitrarily processing middlewares to be used to perform transformations
 		on state data before it is stored. An encryption middleware could be one example.
 		"""
+        if registry is None:
+            registry = Registry()
         self.predicate = predicate
         self.storage = storage
         self.serializer = serializer
         self.middlewares = middlewares
-
-    def session(self, **kwargs: Dict[str, Any]) -> Session:
-        """
-		Retrieve a new session for this state
-		"""
-        return Session(self, **kwargs)
+        self.registry = registry
 
     def graph(self, **kwargs: Dict[str, Any]) -> ResourceGraph:
         """
-		Shortcut to create a new session and graph from a state directly
+		Shortcut to create a new graph from a state directly
 		"""
-        return self.session(**kwargs).graph()
+        return ResourceGraph(self.registry)
 
     def refresh(self, graph: ResourceGraph) -> ResourceGraph:  # pylint: disable=no-self-use
         """
@@ -91,18 +89,20 @@ class State:
         return value
 
     def read(
-        self, session: "Session", context: Any, refresh: bool = True
+        self, context: Any, refresh: bool = True, registry: Optional[Registry] = None
     ) -> Optional[ResourceGraph]:
         """
 		Load the current state snapshot, refreshing if necessary
 
 		context is output from read_context()'s __enter__ method
 		"""
+        if registry is None:
+            registry = self.registry
         state_data = self.storage.read(self.predicate, context)
         if state_data is None:
             return None
         state_data = self.unapply_middlewares(state_data)
-        current_graph = self.serializer.load(state_data, session)
+        current_graph = self.serializer.load(state_data, registry)
         return self.refresh(current_graph) if refresh else current_graph
 
     @contextmanager
@@ -128,3 +128,61 @@ class State:
 		"""
         with self.storage.write_context(self.predicate) as ctx:
             yield ctx
+
+    def plan(
+        self,
+        graph: ResourceGraph,
+        state_graph: Optional[ResourceGraph] = None,
+        refresh: bool = True,
+    ) -> Plan:
+        """
+        Create a plan to apply the given graph. Optionally pass a state graph as well.
+        If no state graph is passed, one will be retrieved from the state using load_state(refresh=refresh).
+        The refresh flag is provided as a convenience, and will be passed as the `refresh` argument
+        of load_state(). If `state_graph` is provided and `refresh=True`, it will be refreshed using
+        state.refresh()
+        """
+        from statey.plan import Plan
+
+        if graph.registry is not self.registry:
+            raise exc.ForeignGraphError(
+                f"Argument `graph` contained a graph constructed using a different registry: "
+                f"{graph.registry}. Expected: {self.registry}."
+            )
+
+        if state_graph is not None and state_graph.registry is not self.registry:
+            raise exc.ForeignGraphError(
+                f"Argument `state_graph` contained a graph constructed using a different registry: "
+                f"{state_graph.registry}. Expected: {self.registry}."
+            )
+
+        with self.read_context() as ctx:
+            if state_graph is None:
+                state_graph = self.read(ctx, refresh=False)
+
+            # Need to run resolve_partial once on recently read states so that factory
+            # values are computed
+            if state_graph is not None:
+                state_graph = state_graph.resolve_all(partial=True)
+
+            refreshed_state = state_graph
+            if refresh and state_graph is not None:
+                refreshed_state = self.refresh(refreshed_state)
+                refreshed_state = refreshed_state.resolve_all(partial=True)
+
+            plan = Plan(
+                config_graph=graph, state_graph=refreshed_state, original_state_graph=state_graph,
+            )
+            plan.build()
+
+            return plan
+
+    def apply(self, plan: Plan, executor: Optional[PlanExecutor] = None) -> ApplyResult:
+        """
+        Apply the given plan with the given executor, updating the state storage accordingly
+        """
+        with self.write_context() as ctx:
+            result = plan.apply(executor)
+            state_graph = result.state_graph.resolve_all(lambda field: field.store)
+            self.write(state_graph, ctx)
+        return result

@@ -204,7 +204,7 @@ class Plan:
         else:
             old_snapshot = self.state_graph.query(resource)
 
-            changes = {}
+            changes = set()
             recreate = False
 
             for key, new_value in snapshot.items():
@@ -224,7 +224,7 @@ class Plan:
                 if isinstance(new_value, Symbol) or old_value != new_value:
                     field = resource.Schema.__fields__[key]
                     if field.store:
-                        changes[key] = old_value, new_value
+                        changes.add(key)
                     if field.create_new:
                         recreate = True
 

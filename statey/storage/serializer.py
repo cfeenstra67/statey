@@ -3,7 +3,7 @@ A Serializer converts a ResourceGraph to a state and vice versa
 """
 import abc
 
-from statey.resource import ResourceGraph
+from statey.resource import Registry, ResourceGraph
 
 
 class Serializer(abc.ABC):
@@ -19,7 +19,7 @@ class Serializer(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def load(self, state_data: bytes, session: "Session") -> ResourceGraph:
+    def load(self, state_data: bytes, registry: Registry) -> ResourceGraph:
         """
 		Construct a StateSnapshot object given bytes
 		"""

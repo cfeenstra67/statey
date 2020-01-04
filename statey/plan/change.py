@@ -2,7 +2,7 @@
 Change classes are used to apply changes to resources
 """
 import abc
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, Set
 
 from statey.schema import SchemaSnapshot, Field
 
@@ -87,10 +87,10 @@ class Update(Change):
         resource: "Resource",
         snapshot: SchemaSnapshot,
         old_snapshot: SchemaSnapshot,
-        values: Dict[Field, Tuple[Any, Any]],
+        fields: Set[str]
     ) -> None:
         super().__init__(resource, snapshot, old_snapshot)
-        self.values = values
+        self.fields = fields
 
     def apply(self) -> SchemaSnapshot:
         return self.resource.update(self.old_snapshot, self.snapshot, self)
