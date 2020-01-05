@@ -9,3 +9,9 @@ test:
 check:
 	@black statey --line-length=100
 	@pylint statey
+
+
+part:=patch
+
+bumpversion:
+	bump2version $(part)

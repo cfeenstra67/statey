@@ -15,3 +15,6 @@ from statey.schema.lib import func
 from statey.schema.lib.func import F, f
 from statey.state import State
 from statey.storage import Storage, Middleware, Serializer
+
+
+__version__ = '0.0.0'
