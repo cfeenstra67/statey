@@ -2,9 +2,9 @@
 Change classes are used to apply changes to resources
 """
 import abc
-from typing import Dict, Any, Tuple, Optional, Set
+from typing import Optional, Set
 
-from statey.schema import SchemaSnapshot, Field
+from statey.schema import SchemaSnapshot
 
 
 # pylint: disable=too-few-public-methods
@@ -30,7 +30,7 @@ class Change(abc.ABC):
         self.old_snapshot = old_snapshot
 
     @abc.abstractmethod
-    def apply(self) -> SchemaSnapshot:
+    async def apply(self) -> Optional[SchemaSnapshot]:
         """
 		Apply this change.
 		"""
@@ -44,7 +44,7 @@ class NoChange(Change):
 
     null = True
 
-    def apply(self) -> SchemaSnapshot:
+    async def apply(self) -> SchemaSnapshot:
         return self.snapshot
 
 
@@ -53,8 +53,8 @@ class Create(Change):
 	Create a resource
 	"""
 
-    def apply(self) -> SchemaSnapshot:
-        return self.resource.create(self.snapshot)
+    async def apply(self) -> SchemaSnapshot:
+        return await self.resource.create(self.snapshot)
 
 
 class Delete(Change):
@@ -62,8 +62,8 @@ class Delete(Change):
 	Delete a resource
 	"""
 
-    def apply(self) -> SchemaSnapshot:
-        return self.resource.destroy(self.old_snapshot)
+    async def apply(self) -> None:
+        return await self.resource.destroy(self.old_snapshot)
 
 
 class DeleteAndRecreate(Change):
@@ -71,9 +71,9 @@ class DeleteAndRecreate(Change):
 	Delete a resource and recreate it from scratch
 	"""
 
-    def apply(self) -> SchemaSnapshot:
+    async def apply(self) -> SchemaSnapshot:
         self.resource.destroy(self.old_snapshot)
-        return self.resource.create(self.snapshot)
+        return await self.resource.create(self.snapshot)
 
 
 class Update(Change):
@@ -87,10 +87,10 @@ class Update(Change):
         resource: "Resource",
         snapshot: SchemaSnapshot,
         old_snapshot: SchemaSnapshot,
-        fields: Set[str]
+        fields: Set[str],
     ) -> None:
         super().__init__(resource, snapshot, old_snapshot)
         self.fields = fields
 
-    def apply(self) -> SchemaSnapshot:
-        return self.resource.update(self.old_snapshot, self.snapshot, self)
+    async def apply(self) -> SchemaSnapshot:
+        return await self.resource.update(self.old_snapshot, self.snapshot, self)

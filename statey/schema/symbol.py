@@ -11,18 +11,19 @@ from typing import Callable, Any, Tuple, Dict, Optional, Union, Type
 import networkx as nx
 
 from statey import exc
+from statey.utils.helpers import truncate_string
 from .field import Field
-from .helpers import detect_circular_references
+from .helpers import detect_circular_symbol_references
 
 
 QueryRef = Union["Resource", str]
 
 
 def binary_operator_handler(
-        func: Callable[[Any, Any], Any],
-        name: str,
-        return_annotation: Optional[Any] = None,
-        check_annotation_method: bool = True
+    func: Callable[[Any, Any], Any],
+    name: str,
+    return_annotation: Optional[Any] = None,
+    check_annotation_method: bool = True,
 ) -> Callable[[Any, Any], Any]:
     """
     Wrap a binary operator in a proper method
@@ -39,15 +40,17 @@ def binary_operator_handler(
                 other_type = other.type()
                 if not isinstance(other_type, type(my_type)):
                     raise exc.SymbolTypeError(
-                        f'Attempting to perform operation on object with a different field '
-                        f'type ({type(other_type).__name__}, expected {type(my_type).__name__}).'
+                        f"Attempting to perform operation on object with a different field "
+                        f"type ({type(other_type).__name__}, expected {type(my_type).__name__})."
                     )
 
             annotation = my_type.annotation
 
         if check_annotation_method:
             if not hasattr(annotation, name):
-                raise exc.SymbolTypeError(f'Unsupported type for method {name}: {annotation.__name__}.')
+                raise exc.SymbolTypeError(
+                    f"Unsupported type for method {name}: {annotation.__name__}."
+                )
 
         return Func[annotation](func)(self, other)
 
@@ -56,14 +59,15 @@ def binary_operator_handler(
 
 
 def unary_operator_handler(
-        func: Callable[[Any], Any],
-        name: str,
-        return_annotation: Optional[Any] = None,
-        check_annotation_method: bool = True
+    func: Callable[[Any], Any],
+    name: str,
+    return_annotation: Optional[Any] = None,
+    check_annotation_method: bool = True,
 ) -> Callable[[Any], Any]:
     """
     Wrap a unary operator in a proper method
     """
+
     @wraps(func)
     def wrapper(self):
         annotation = return_annotation
@@ -72,9 +76,11 @@ def unary_operator_handler(
 
         if check_annotation_method:
             if not hasattr(annotation, name):
-                raise exc.SymbolTypeError(f'Unsupported type for method {name}: {annotation.__name__}.')
+                raise exc.SymbolTypeError(
+                    f"Unsupported type for method {name}: {annotation.__name__}."
+                )
 
-        return sf.F[annotation](func)(self)
+        return Func[annotation](func)(self)
 
     wrapper.__name__ = name
     return wrapper
@@ -86,23 +92,24 @@ class Symbol(abc.ABC):
 	perform some computation in the future to actually figure out what
 	the value is. Examples could be references or function outputs
 	"""
-    __add__ = binary_operator_handler(operator.add, '__add__')
-    __sub__ = binary_operator_handler(operator.sub, '__sub__')
-    __mul__ = binary_operator_handler(operator.mul, '__mul__')
-    __truediv__ = binary_operator_handler(operator.truediv, '__truediv__')
-    __floordiv__ = binary_operator_handler(operator.floordiv, '__floordiv__')
-    __mod__ = binary_operator_handler(operator.mod, '__mod__')
-    __pow__ = binary_operator_handler(operator.pow, '__pow__')
-    __lt__ = binary_operator_handler(operator.lt, '__lt__', bool)
-    __gt__ = binary_operator_handler(operator.gt, '__gt__', bool)
-    __le__ = binary_operator_handler(operator.le, '__le__', bool)
-    __eq__ = binary_operator_handler(operator.eq, '__eq__', bool)
-    __ne__ = binary_operator_handler(operator.ne, '__ne__', bool)
-    __lshift__ = binary_operator_handler(operator.lshift, '__lshift__')
-    __rshift__ = binary_operator_handler(operator.rshift, '__rshift__')
-    __neg__ = unary_operator_handler(operator.neg, '__neg__')
-    __pos__ = unary_operator_handler(operator.pos, '__pos__')
-    __invert__ = unary_operator_handler(operator.invert, '__invert__')
+
+    __add__ = binary_operator_handler(operator.add, "__add__")
+    __sub__ = binary_operator_handler(operator.sub, "__sub__")
+    __mul__ = binary_operator_handler(operator.mul, "__mul__")
+    __truediv__ = binary_operator_handler(operator.truediv, "__truediv__")
+    __floordiv__ = binary_operator_handler(operator.floordiv, "__floordiv__")
+    __mod__ = binary_operator_handler(operator.mod, "__mod__")
+    __pow__ = binary_operator_handler(operator.pow, "__pow__")
+    __lt__ = binary_operator_handler(operator.lt, "__lt__", bool)
+    __gt__ = binary_operator_handler(operator.gt, "__gt__", bool)
+    __le__ = binary_operator_handler(operator.le, "__le__", bool)
+    __eq__ = binary_operator_handler(operator.eq, "__eq__", bool)
+    __ne__ = binary_operator_handler(operator.ne, "__ne__", bool)
+    __lshift__ = binary_operator_handler(operator.lshift, "__lshift__")
+    __rshift__ = binary_operator_handler(operator.rshift, "__rshift__")
+    __neg__ = unary_operator_handler(operator.neg, "__neg__")
+    __pos__ = unary_operator_handler(operator.pos, "__pos__")
+    __invert__ = unary_operator_handler(operator.invert, "__invert__")
 
     @abc.abstractmethod
     def refs(self) -> Tuple[Tuple[QueryRef, str], ...]:
@@ -291,7 +298,7 @@ class Reference(Symbol):
 
         resolved = obj.resolve_partial(values, cache, check_circular=False)
         if check_circular:
-            detect_circular_references(graph)
+            detect_circular_symbol_references(graph)
         return resolved
 
     def resolve(
@@ -481,11 +488,13 @@ class Func(Symbol, metaclass=FuncMeta):
         type_name = type(self).__name__
         args_string = ""
         if len(self.args) > 0:
-            args_string = ", ".join(map(str, self.args))
+            args_string = ", ".join(map(truncate_string, map(str, self.args)))
 
         kwargs_string = ""
         if len(self.kwargs) > 0:
-            kwargs_string = ", ".join("=".join(map(str, tup)) for tup in self.kwargs.items())
+            kwargs_string = ", ".join(
+                "=".join((key, truncate_string(str(val)))) for key, val in self.kwargs.items()
+            )
 
         arguments = ", ".join(filter(None, [args_string, kwargs_string]))
 
@@ -582,7 +591,7 @@ class Func(Symbol, metaclass=FuncMeta):
             resolved = self(*args, **kwargs).resolve_partial(values, cache, check_circular=False)
 
         if check_circular:
-            detect_circular_references(graph)
+            detect_circular_symbol_references(graph)
         return resolved
 
     def resolve(
@@ -678,7 +687,7 @@ class Literal(Symbol):
 
         if len(graph[id(self)]) == 0:
             if check_circular:
-                detect_circular_references(graph)
+                detect_circular_symbol_references(graph)
             return self.value
 
         items = list(graph[id(self)].items())
@@ -691,7 +700,7 @@ class Literal(Symbol):
 
         resolved = obj.resolve_partial(values, cache, check_circular=False)
         if check_circular:
-            detect_circular_references(graph)
+            detect_circular_symbol_references(graph)
         return resolved
 
     def resolve(

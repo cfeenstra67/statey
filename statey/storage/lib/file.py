@@ -1,13 +1,16 @@
 """
 The FileStorage class is the default state storage backend, and saves states locally on the file system.
 """
+import asyncio
 import fcntl
 import os
 import tempfile
-from contextlib import contextmanager
-from typing import Any, ContextManager, Optional
+from typing import Any, AsyncContextManager, Optional
+
+import aiofiles
 
 from statey.storage import Storage
+from statey.utils.helpers import asynccontextmanager
 
 
 class FileStorage(Storage):
@@ -34,8 +37,8 @@ class FileStorage(Storage):
         """
         return os.path.realpath(os.path.join(self.base_path, predicate))
 
-    @contextmanager
-    def write_context(self, predicate: Any) -> ContextManager[Any]:
+    @asynccontextmanager
+    async def write_context(self, predicate: Any) -> AsyncContextManager[Any]:
         """
 		Context manager handling any setup or teardown associated
 		with state manipulation
@@ -44,16 +47,20 @@ class FileStorage(Storage):
         self.ensure_path(path)
         try:
             with tempfile.NamedTemporaryFile(mode="wb+", delete=False) as file:
-                with self.read_context(predicate):  # acquire lock on the state file
-                    yield file
+                # pylint: disable=not-async-context-manager
+                async with self.read_context(  # acquire lock on the state file
+                    predicate
+                ), aiofiles.open(file.name, mode="wb") as async_file:
+                    yield async_file
         # pylint: disable=try-except-raise
         except Exception:
+            os.remove(file.name)
             raise
         else:
             os.rename(file.name, path)
 
-    @contextmanager
-    def read_context(self, predicate: Any) -> ContextManager[Any]:
+    @asynccontextmanager
+    async def read_context(self, predicate: Any) -> AsyncContextManager[Any]:
         """
 		Context manager handling any setup or teardown associated with
 		reading states
@@ -61,7 +68,7 @@ class FileStorage(Storage):
         path = self.get_path(predicate)
         self.ensure_path(path)
         try:
-            with open(path, "rb+") as file:
+            async with aiofiles.open(path, mode="rb+") as file:
                 fcntl.lockf(file, fcntl.LOCK_EX)
                 try:
                     yield file
@@ -70,33 +77,32 @@ class FileStorage(Storage):
         except FileNotFoundError:
             yield None
 
-    @contextmanager
-    def delete_context(self, predicate: Any) -> ContextManager[Any]:
+    @asynccontextmanager
+    async def delete_context(self, predicate: Any) -> AsyncContextManager[Any]:
         yield
 
-    def write(self, predicate: Any, context: Any, state_data: bytes) -> None:
+    async def write(self, predicate: Any, context: Any, state_data: bytes) -> None:
         """
 		Write the given snapshot to state storage, where the state storage
 		location is given by some `predicate`
 		"""
         if context is not None:
-            context.truncate()
-            context.seek(0)
-            context.write(state_data)
-            context.seek(0)
+            await asyncio.gather(context.truncate(), context.seek(0))
+            await context.write(state_data)
+            await context.seek(0)
 
-    def read(self, predicate: Any, context: Any) -> Optional[bytes]:
+    async def read(self, predicate: Any, context: Any) -> Optional[bytes]:
         """
 		Given a predicate, retreive the current snapshot
 		"""
         if context is not None:
-            context.seek(0)
-            content = context.read()
-            context.seek(0)
+            await context.seek(0)
+            content = await context.read()
+            await context.seek(0)
             return content
         return None
 
-    def delete(self, predicate: Any, context: Any) -> None:
+    async def delete(self, predicate: Any, context: Any) -> None:
         """
 		Given a predicate, delete the current snapshot if it exists
 		"""

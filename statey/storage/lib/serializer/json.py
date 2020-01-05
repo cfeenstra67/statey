@@ -1,6 +1,7 @@
 """
 A Serializer implementation that serializes graph to a JSON format.
 """
+import itertools
 import json
 from typing import Dict, Any, Optional
 
@@ -25,21 +26,28 @@ class JSONSerializer(Serializer):
         nodes = {}
 
         dependencies = {}
+        reverse_dependencies = {}
         for src, dest, data in graph.graph.edges(data=True):
             dependencies.setdefault(dest, {}).setdefault(src, []).append(data)
+            reverse_dependencies.setdefault(src, {}).setdefault(dest, []).append(data)
 
         for node in graph.graph:
             depends_on = dependencies.get(node, {})
             data = graph.graph.nodes[node]
+            # Do not write null states at all, but check to make sure that the
+            # graph still makes sense if we do that. Null states can also be the
+            # result of an upstream bug, so better to catch that before writing than after.
             if data["snapshot"] is None:
-                nodes[node] = {
-                    "name": data["resource"].name,
-                    "type_name": data["resource"].type_name,
-                    "snapshot": None,
-                    "exists": False,
-                    "dependencies": {},
-                    "lazy": [],
-                }
+                depending = [
+                    path
+                    for path in sorted(reverse_dependencies.get(node, []))
+                    if graph.graph.nodes[path]["snapshot"] is not None
+                ]
+                if len(depending) > 0:
+                    raise exc.GraphIntegrityError(
+                        f"Resource at path {node} has a null state, but it is dependended on by "
+                        f"resource(s) will non-null states: {depending}. This is unexpected!"
+                    )
                 continue
 
             snapshot, exists = data["snapshot"], data.get("exists", False)
@@ -120,16 +128,22 @@ class JSONSerializer(Serializer):
         not_processed = set(data["resources"])
         graph = ResourceGraph(registry)
 
+        def deps_paths(deps):
+            values = map(set, deps.values())
+            values = itertools.chain.from_iterable(values)
+            return set(values)
+
         while len(not_processed) > 0:
 
             for path in sorted(not_processed):
                 resource = data["resources"][path]
-                if set(resource["dependencies"]) & not_processed:
+                if deps_paths(resource["dependencies"]) & not_processed:
                     continue
                 node = data["resources"][path]
                 # If no state already exists we don't need to add it to the graph
-                if node["snapshot"] is not None:
-                    self._load_resource_from_dict(graph, path, node)
+                if node["snapshot"] is None:
+                    raise exc.NullStateError(path)
+                self._load_resource_from_dict(graph, path, node)
                 not_processed.remove(path)
 
         return graph

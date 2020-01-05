@@ -1,14 +1,16 @@
 """
 A statey state specifies a storage configuration for a state and provides an interface for creating graphs
 """
-from contextlib import contextmanager
-from typing import Any, Sequence, Dict, ContextManager, Optional
+import asyncio
+from typing import Any, Sequence, AsyncContextManager, Optional
 
-from statey.plan import Plan, PlanExecutor, ApplyResult
+from statey import exc
+from statey.plan import Plan, AsyncGraphExecutor, ApplyResult
 from statey.resource import ResourceGraph, Registry
 from statey.storage import Storage, Serializer, Middleware
 from statey.storage.lib.file import FileStorage
 from statey.storage.lib.serializer.json import JSONSerializer
+from statey.utils.helpers import asynccontextmanager
 
 
 class State:
@@ -16,13 +18,14 @@ class State:
 	Handles communication with storage backends
 	"""
 
+    # pylint: disable=too-many-arguments
     def __init__(
         self,
         predicate: Any = "state.json",
         storage: Storage = FileStorage("."),
         serializer: Serializer = JSONSerializer(),
         middlewares: Sequence[Middleware] = (),
-        registry: Optional[Registry] = None
+        registry: Optional[Registry] = None,
     ) -> None:
         """
 		Initialize a State instance.
@@ -41,33 +44,36 @@ class State:
         self.middlewares = middlewares
         self.registry = registry
 
-    def graph(self, **kwargs: Dict[str, Any]) -> ResourceGraph:
+    def graph(self) -> ResourceGraph:
         """
 		Shortcut to create a new graph from a state directly
 		"""
         return ResourceGraph(self.registry)
 
-    def refresh(self, graph: ResourceGraph) -> ResourceGraph:  # pylint: disable=no-self-use
+    async def refresh(self, graph: ResourceGraph) -> ResourceGraph:  # pylint: disable=no-self-use
         """
 		Given the existing state snapshot, retrieve a new, updated snapshot
 		"""
         # Return a copy of the original graph instead of mutating the original
         out_graph = graph.copy()
 
-        for node in out_graph.graph:
-            data = graph.query(node, False)
-            snapshot = data["snapshot"]
-            resource = data["resource"]
-
-            refreshed_snapshot = resource.refresh(snapshot)
+        async def coro(node, resource, snapshot):
+            refreshed_snapshot = await resource.refresh(snapshot)
             if refreshed_snapshot is None:
                 out_graph.graph.nodes[node]["exists"] = False
-                out_graph.graph.nodes[node]["snapshot"] = snapshot
+                out_graph.graph.nodes[node]["snapshot"] = None
             else:
                 refreshed_snapshot = refreshed_snapshot.reset_factories(resource)
                 out_graph.graph.nodes[node]["exists"] = True
                 out_graph.graph.nodes[node]["snapshot"] = refreshed_snapshot
 
+        coros = []
+        for node in out_graph.graph:
+            data = graph.query(node, False)
+            coros.append(coro(node, data["resource"], data["snapshot"]))
+
+        if len(coros) > 0:
+            await asyncio.wait(coros)
         return out_graph
 
     def apply_middlewares(self, state_data: bytes) -> bytes:
@@ -88,7 +94,7 @@ class State:
             value = mid.unapply(value)
         return value
 
-    def read(
+    async def read(
         self, context: Any, refresh: bool = True, registry: Optional[Registry] = None
     ) -> Optional[ResourceGraph]:
         """
@@ -98,38 +104,38 @@ class State:
 		"""
         if registry is None:
             registry = self.registry
-        state_data = self.storage.read(self.predicate, context)
+        state_data = await self.storage.read(self.predicate, context)
         if state_data is None:
             return None
         state_data = self.unapply_middlewares(state_data)
         current_graph = self.serializer.load(state_data, registry)
-        return self.refresh(current_graph) if refresh else current_graph
+        return await self.refresh(current_graph) if refresh else current_graph
 
-    @contextmanager
-    def read_context(self) -> ContextManager[None]:
+    @asynccontextmanager
+    async def read_context(self) -> AsyncContextManager[None]:
         """
 		Context manager for reading states
 		"""
-        with self.storage.read_context(self.predicate) as ctx:
+        async with self.storage.read_context(self.predicate) as ctx:
             yield ctx
 
-    def write(self, graph: ResourceGraph, context: Any) -> None:
+    async def write(self, graph: ResourceGraph, context: Any) -> None:
         """
 		Write the given state snapshot to remote storage
 		"""
         state_data = self.serializer.dump(graph)
         state_data = self.apply_middlewares(state_data)
-        self.storage.write(self.predicate, context, state_data)
+        await self.storage.write(self.predicate, context, state_data)
 
-    @contextmanager
-    def write_context(self) -> ContextManager[None]:
+    @asynccontextmanager
+    async def write_context(self) -> AsyncContextManager[None]:
         """
 		Context manager for writing states
 		"""
-        with self.storage.write_context(self.predicate) as ctx:
+        async with self.storage.write_context(self.predicate) as ctx:
             yield ctx
 
-    def plan(
+    async def plan(
         self,
         graph: ResourceGraph,
         state_graph: Optional[ResourceGraph] = None,
@@ -142,8 +148,6 @@ class State:
         of load_state(). If `state_graph` is provided and `refresh=True`, it will be refreshed using
         state.refresh()
         """
-        from statey.plan import Plan
-
         if graph.registry is not self.registry:
             raise exc.ForeignGraphError(
                 f"Argument `graph` contained a graph constructed using a different registry: "
@@ -156,9 +160,9 @@ class State:
                 f"{state_graph.registry}. Expected: {self.registry}."
             )
 
-        with self.read_context() as ctx:
+        async with self.read_context() as ctx:  # pylint: disable=not-async-context-manager
             if state_graph is None:
-                state_graph = self.read(ctx, refresh=False)
+                state_graph = await self.read(ctx, refresh=False)
 
             # Need to run resolve_partial once on recently read states so that factory
             # values are computed
@@ -167,7 +171,7 @@ class State:
 
             refreshed_state = state_graph
             if refresh and state_graph is not None:
-                refreshed_state = self.refresh(refreshed_state)
+                refreshed_state = await self.refresh(refreshed_state)
                 refreshed_state = refreshed_state.resolve_all(partial=True)
 
             plan = Plan(
@@ -177,12 +181,15 @@ class State:
 
             return plan
 
-    def apply(self, plan: Plan, executor: Optional[PlanExecutor] = None) -> ApplyResult:
+    async def apply(
+        self, plan: Plan, executor: Optional[AsyncGraphExecutor] = None, write_state: bool = True
+    ) -> ApplyResult:
         """
         Apply the given plan with the given executor, updating the state storage accordingly
         """
-        with self.write_context() as ctx:
-            result = plan.apply(executor)
+        async with self.write_context() as ctx:  # pylint: disable=not-async-context-manager
+            result = await plan.apply(executor)
             state_graph = result.state_graph.resolve_all(lambda field: field.store)
-            self.write(state_graph, ctx)
+            if write_state:
+                await self.write(state_graph, ctx)
         return result

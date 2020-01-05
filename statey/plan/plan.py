@@ -1,16 +1,19 @@
 """
 A Plan object contains the core logic for generating and applying operation plans to statey states
 """
+from operator import itemgetter
 from typing import Sequence, Optional, Dict, Any
 
 import dataclasses as dc
 import networkx as nx
 
 from statey import exc
-from statey.schema import Symbol, SchemaSnapshot, Reference
+from statey.schema import Symbol, Reference
 from statey.resource import ResourceGraph
-from .change import Change, NoChange, Create, Delete, DeleteAndRecreate, Update
-from .executor import PlanExecutor, PlanJob, DefaultPlanExecutor
+from statey.utils.helpers import truncate_string, detect_circular_references
+from .change import NoChange, Create, Delete, DeleteAndRecreate, Update
+from .executor import AsyncGraphExecutor
+from .task_graph import PlanGraph
 
 
 # pylint: disable=too-few-public-methods
@@ -20,9 +23,11 @@ class ApplyResult:
     Simple helper object containing information about a completed job run
     """
 
-    unprocessed: Sequence[Change]
-    job: PlanJob
     state_graph: ResourceGraph
+    complete: Sequence[Dict[str, Any]]
+    error: Sequence[Dict[str, Any]]
+    unprocessed: nx.DiGraph
+    nulls: Sequence[Dict[str, Any]]
 
 
 # pylint: disable=too-few-public-methods
@@ -33,118 +38,6 @@ class ComputedValue:
 
     def __str__(self) -> str:
         return "<computed>"
-
-
-# pylint: disable=too-many-instance-attributes
-class PlanKernel:
-    """
-    Several callbacks that work together with PlanJob to execute plans
-    """
-
-    def __init__(
-        self,
-        change_graph: nx.DiGraph,
-        state_graph: ResourceGraph,
-        existing_state_graph: Optional[ResourceGraph] = None,
-    ) -> None:
-        self.change_graph = change_graph
-        self.state_graph = state_graph
-        self.existing_state_graph = existing_state_graph
-        self.job = None
-        self.ancestor_map = {
-            key: list(self.change_graph.predecessors(key)) for key in self.change_graph
-        }
-        self.successor_map = {
-            key: list(self.change_graph.successors(key)) for key in self.change_graph
-        }
-        self.completes = set()
-        self.errors = set()
-
-    def bind(self, job: PlanJob) -> None:
-        """
-        Bind this kernel to the given job, setting all callbacks to the correct values
-        """
-        job.complete_callback = self.complete_callback
-        job.error_callback = self.error_callback
-        job.change_hook = self.change_hook
-        job.result_hook = self.result_hook
-        self.job = job
-
-        # Add top-level items to the queue
-        for path, ancestors in self.ancestor_map.items():
-            if len(ancestors) > 0:
-                continue
-            change = self.change_graph.nodes[path]["change"]
-            job.add_change(path, change)
-
-    # pylint: disable=unused-argument
-    def complete_callback(self, path: str, change: Change, snapshot: SchemaSnapshot) -> None:
-        """
-        Callback to bind to a job as job.complete_callback
-        """
-        self.completes.add(path)
-
-        data = self.state_graph.query(path, False)
-        data["snapshot"] = snapshot
-        data["exists"] = True
-
-        for successor_path in self.successor_map[path]:
-            ancestors = self.ancestor_map[successor_path]
-
-            # This shouldn't happen, because the job should already be aborted.
-            # Just here to be safe
-            if set(ancestors) & set(self.errors):
-                self.job.abort()
-                return
-
-            # There are still unfinished ancestors, so don't queue this
-            # item yet
-            if set(ancestors) - set(self.completes):
-                continue
-
-            # We should get here exactly once for each path (across all calls of complete())
-            self.job.add_change(successor_path, self.change_graph.nodes[successor_path]["change"])
-
-    # pylint: disable=unused-argument
-    def error_callback(self, path: str, change: Change, error: Exception) -> None:
-        """
-        Callback to bind to a job as job.error_callback
-        """
-        self.errors.add(path)
-
-        self.state_graph.query(path, False)["error"] = error
-
-        if self.existing_state_graph is not None and path in self.existing_state_graph.graph.nodes:
-            data = self.state_graph.query(path, False)
-            existing_data = self.existing_state_graph.query(path, False)
-            data["snapshot"] = existing_data["snapshot"]
-            data["exists"] = existing_data["exists"]
-        else:
-            data = self.state_graph.query(path, False)
-            data["snapshot"] = None
-            data["exists"] = False
-
-        self.job.abort()
-
-    # pylint: disable=unused-argument
-    def change_hook(self, path: str, change: Change) -> Change:
-        """
-        Hook to transform a change before it's applied
-        """
-        change.snapshot = change.snapshot.resolve(
-            self.state_graph, lambda field: not field.computed
-        )
-        return change
-
-    def result_hook(self, result: SchemaSnapshot) -> Change:
-        """
-        Hook to transform a snapshot resulting from an applied change
-        """
-        # Deletions return None
-        if result is None:
-            return result
-        # No filter--after a change has been applied the snapshot _must_ fully resolve
-        return result.resolve(self.state_graph)
 
 
 class Plan:
@@ -204,7 +97,7 @@ class Plan:
         else:
             old_snapshot = self.state_graph.query(resource)
 
-            changes = set()
+            changes = {}
             recreate = False
 
             for key, new_value in snapshot.items():
@@ -221,10 +114,14 @@ class Plan:
                 ):
                     continue
 
-                if isinstance(new_value, Symbol) or old_value != new_value:
+                if (
+                    isinstance(new_value, Symbol)
+                    or isinstance(old_value, Symbol)
+                    or old_value != new_value
+                ):
                     field = resource.Schema.__fields__[key]
                     if field.store:
-                        changes.add(key)
+                        changes[key] = old_value, new_value
                     if field.create_new:
                         recreate = True
 
@@ -240,18 +137,22 @@ class Plan:
             self.graph.add_edge(ancestor, path)
         self.resolve_graph.graph.nodes[path]["snapshot"] = change.snapshot
 
-    def process_delete_node(self, path: str, successors: Sequence[str]) -> None:
+    def process_delete_node(self, path: str, children: Sequence[str]) -> None:
         """
-        Process a given path for deletion. Note that all successors of the given
+        Process a given path for deletion. Note that all children of the given
         node must already exist in the graph
         """
         node = self.state_graph.query(path, False)
         snapshot = node["snapshot"]
         resource = node["resource"]
 
-        self.graph.add_node(path, change=Delete(resource, None, snapshot))
-        for successor in successors:
-            self.graph.add_edge(successor, path)
+        if snapshot is None:
+            self.graph.add_node(path, change=NoChange(resource, None, None))
+        else:
+            self.graph.add_node(path, change=Delete(resource, None, snapshot))
+
+        for child in children:
+            self.graph.add_edge(child, path)
 
     def add_deletions(self) -> None:
         """
@@ -263,54 +164,34 @@ class Plan:
             return
 
         not_processed = set(self.state_graph.graph) - set(self.config_graph.graph)
-        successor_map = {
-            key: list(self.state_graph.graph.successors(key)) for key in self.state_graph.graph
-        }
         max_depth = -1
 
         while len(not_processed) > 0:
             max_depth += 1
 
             for path in sorted(not_processed):
-                successors = successor_map[path]
+                children = set(self.state_graph.graph[path])
 
-                if set(successors) & not_processed:
+                if set(children) & not_processed:
                     continue
 
-                self.process_delete_node(path, successors)
+                self.process_delete_node(path, children)
                 not_processed.remove(path)
 
         self.max_depth = max(self.max_depth, max_depth)
-
-    def validate(self) -> None:
-        """
-        Validate that the current plan makes sense i.e. no circular references
-        """
-        ancestor_map = {key: list(self.graph.predecessors(key)) for key in self.graph}
-        for path, ancestors in ancestor_map.items():
-            for ancestor in ancestors:
-                ancestor_ancestors = ancestor_map[ancestor]
-                if path in ancestor_ancestors:
-                    raise exc.GraphIntegrityError(
-                        f"Circular reference detected in plan between resources"
-                        f' "{path}" and "{ancestor}".'
-                    )
 
     def build(self) -> None:
         """
         Build a directed graph of changes based on resource dependencies
         """
         not_processed = set(self.config_graph.graph)
-        ancestor_map = {
-            key: list(self.config_graph.graph.predecessors(key)) for key in self.config_graph.graph
-        }
         max_depth = -1
 
         while len(not_processed) > 0:
             max_depth += 1
 
             for path in sorted(not_processed):
-                ancestors = ancestor_map[path]
+                ancestors = self.config_graph.graph.pred[path]
 
                 if set(ancestors) & not_processed:
                     continue
@@ -320,57 +201,74 @@ class Plan:
 
         self.max_depth = max(self.max_depth, max_depth)
         self.add_deletions()
-        self.validate()
+        detect_circular_references(self.graph)
 
-    def apply(self, executor: Optional[PlanExecutor] = None) -> ApplyResult:
+    async def apply(self, executor: Optional[AsyncGraphExecutor] = None) -> ApplyResult:
         """
         Execute the current plan as a job using the given executor
         """
         if executor is None:
-            executor = DefaultPlanExecutor()
-
-        job = PlanJob()
-
-        if all(node["change"].null for node in self.graph.nodes.values()):
-            return ApplyResult(
-                state_graph=self.state_graph, job=job, unprocessed=sorted(self.config_graph.graph),
-            )
+            executor = AsyncGraphExecutor()
 
         state_graph = self.config_graph.copy()
-        kernel = PlanKernel(
-            state_graph=state_graph,
+        graph = PlanGraph(
             change_graph=self.graph,
+            state_graph=state_graph,
             existing_state_graph=self.original_state_graph,
         )
-        kernel.bind(job)
+        null = sorted(set(self.graph) - set(graph.graph))
+        await executor.execute(graph)
+        # Clean up state after execution
+        graph.finalize_state()
 
-        job = executor.execute(job)
+        complete = []
+        error = []
+        unprocessed = nx.DiGraph()
+        for path in graph.graph:
+            node = graph.graph.nodes[path]
 
-        processed = set(path for path, _, _ in job.complete + job.errors)
-        not_processed = set(self.graph) - processed
-
-        # Fill prior states for any unprocessed resources
-        for path in not_processed:
-            if self.state_graph is None or path not in self.state_graph.graph:
+            if node.get("skipped", False):
+                skipped_from = sorted(node.get("skipped_from", []))
+                unprocessed.add_node(
+                    path,
+                    change=self.graph.nodes[path]["change"],
+                    state=state_graph.graph.nodes.get(path),
+                    skipped_from=skipped_from,
+                )
+                for src in skipped_from:
+                    unprocessed.add_edge(src, path)
                 continue
 
-            if (
-                self.original_state_graph is not None
-                and path in self.original_state_graph.graph
-                and self.original_state_graph.graph.nodes[path]["snapshot"] is not None
-                and self.original_state_graph.graph.nodes[path].get("exists", False)
-            ):
-                state_graph.graph.nodes[path]["snapshot"] = self.original_state_graph.graph.nodes[
-                    path
-                ]["snapshot"]
-                state_graph.graph.nodes[path]["exists"] = self.original_state_graph.graph.nodes[
-                    path
-                ].get("exists", False)
+            task = node["task"]
+            exception = task.exception()
+            if exception is not None:
+                error.append(
+                    {
+                        "path": path,
+                        "change": self.graph.nodes[path]["change"],
+                        "error": exception,
+                        "state": state_graph.graph.nodes.get(path),
+                    }
+                )
+                continue
+
+            complete.append(
+                {
+                    "path": path,
+                    "change": self.graph.nodes[path]["change"],
+                    "state": state_graph.graph.nodes.get(path),
+                }
+            )
+
+        complete.sort(key=itemgetter("path"))
+        error.sort(key=itemgetter("path"))
 
         return ApplyResult(
             state_graph=state_graph,
-            job=job,
-            unprocessed=[(path, self.graph.nodes[path]["change"]) for path in not_processed],
+            complete=complete,
+            error=error,
+            unprocessed=unprocessed,
+            nulls=null,
         )
 
     def pretty_print(self) -> Dict[str, Any]:
@@ -384,7 +282,8 @@ class Plan:
 
         while len(not_processed) > 0:
             for path in sorted(not_processed):
-                ancestors = sorted(self.graph.predecessors(path))
+                ancestors = sorted(self.graph.reverse(copy=False)[path])
+
                 if set(ancestors) & not_processed:
                     continue
 
@@ -396,17 +295,31 @@ class Plan:
 
                 fields = {}
 
-                for name, new_value in change.snapshot.items():
+                snapshot = change.snapshot
+                # Set all nulls for deletions
+                if snapshot is None:
+                    kws = {k: None for k in change.resource.Schema.__fields__}
+                    snapshot = change.resource.schema_helper.snapshot_cls(**kws)
+
+                for name, new_value in snapshot.items():
                     old_value = change.old_snapshot and change.old_snapshot[name]
-                    changed = new_value != old_value
+                    changed = (
+                        isinstance(new_value, Symbol)
+                        or isinstance(old_value, Symbol)
+                        or old_value != new_value
+                    )
                     recreate = False
                     if changed:
-                        field = change.snapshot.source_schema.__fields__[name]
+                        field = snapshot.source_schema.__fields__[name]
                         recreate = field.create_new
 
                     item = fields[name] = {
-                        "old": old_value,
-                        "new": new_value,
+                        "old": truncate_string(old_value)
+                        if isinstance(old_value, str)
+                        else old_value,
+                        "new": truncate_string(new_value)
+                        if isinstance(new_value, str)
+                        else new_value,
                         "change": changed,
                         "recreate": recreate,
                     }

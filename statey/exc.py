@@ -1,7 +1,8 @@
 """
 Exception classes for use in the Statey framework
 """
-from typing import Sequence
+import asyncio
+from typing import Sequence, Hashable, Any, Coroutine
 
 import marshmallow as ma
 
@@ -74,17 +75,6 @@ class ResolutionError(StateyError):
 	"""
 
 
-class CircularReferenceDetected(ResolutionError):
-    """
-	Error indicating that a circular reference was detected in a compute graph
-	"""
-
-    def __init__(self, nodes: Sequence["Symbol"]) -> None:
-        self.nodes = nodes
-        path = " -> ".join(map(str, nodes)) + " \u21ba"
-        super().__init__(f"Circular reference detected when resolving symbols. Path: {path}")
-
-
 class MissingReturnType(SymbolError):
     """
 	Error indicating that no return value was provided for a Func object and none
@@ -118,6 +108,16 @@ class UnnamedResourceError(StateError):
 	"""
 
 
+class NullStateError(StateError):
+    """
+	Error indicating that we encountered a null snapshot while deserializing a state
+	"""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        super().__init__(f"Null state encountered at path: {path}.")
+
+
 class GraphError(StateyError):
     """
 	Errors related to graphs
@@ -128,6 +128,24 @@ class GraphIntegrityError(GraphError):
     """
 	Error indicating that an operation was attempted that somehow violates
 	the integrity of a graph
+	"""
+
+
+class CircularGraphError(GraphIntegrityError):
+    """
+	Error indicating that a circular reference was detected in a some graph
+	"""
+
+    def __init__(self, nodes: Sequence[Any]) -> None:
+        self.nodes = nodes
+        path = " -> ".join(map(str, nodes)) + " \u21ba"
+        super().__init__(f"Circular path detected: Path: {path}")
+
+
+# pylint: disable=too-many-ancestors
+class CircularReferenceDetected(CircularGraphError, ResolutionError):
+    """
+	Error indicating that a circular reference was detected in a compute graph
 	"""
 
 
@@ -147,6 +165,54 @@ class MissingResourceError(PlanError):
     """
 	Error indicating a resource configuration could not be found for a path
 	"""
+
+
+class TaskGraphError(StateyError):
+    """
+	Errors relating to building or executing task graphs
+	"""
+
+
+class TaskAlreadyScheduled(TaskGraphError):
+    """
+	Error indicating that we attempted to schedule a task that had already
+	been scheduled
+	"""
+
+    def __init__(self, key: Hashable, task: asyncio.Task) -> None:
+        self.key = key
+        self.task = task
+        super().__init__(f"Task already scheduled for key {key}: {task}")
+
+
+class TaskLost(TaskGraphError):
+    """
+	Error indicating that a task in a task graph was neither skipped nor processed.
+	"""
+
+    def __init__(self, path: str, coro: Coroutine, parents: Sequence[str] = ()) -> None:
+        self.path = path
+        self.coro = coro
+        self.parents = parents
+        super().__init__(
+            f"Lost task at path {path} in the task graph (i.e. it was neither "
+            f"processed nor skipped after all tasks have been awaited). Coroutine: "
+            f" {coro}. Parents: {parents}."
+        )
+
+
+class TaskStillRunning(TaskGraphError):
+    """
+	Error indicating that a task is still marked as running when all tasks should be
+	complete.
+	"""
+
+    def __init__(self, path: str, task: asyncio.Task) -> None:
+        self.path = path
+        self.task = task
+        super().__init__(
+            f"Task at path {path} is still running after all tasks have been awaited: {task}."
+        )
 
 
 class UndefinedResourceType(StateyError):

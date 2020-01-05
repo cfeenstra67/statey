@@ -126,7 +126,7 @@ class ResourceMeta(abc.ABCMeta):
         if existing is not None:
             raise exc.InitializationError(
                 f'An existing Resource subclass exists with type_name "{type_name}": '
-                f"{repr(existing)}. Unable to initialize {repr(new_cls)}."
+                f"{existing}. Unable to initialize {new_cls}."
             )
 
         return new_cls
@@ -189,21 +189,21 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
         return f"{type(self).__name__}(type_name={self.type_name}, name={self.name})"
 
     @abc.abstractmethod
-    def create(self, current: SchemaSnapshot) -> SchemaSnapshot:
+    async def create(self, current: SchemaSnapshot) -> SchemaSnapshot:
         """
         Create this resource. Return the latest snapshot
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def destroy(self, current: SchemaSnapshot) -> None:
+    async def destroy(self, current: SchemaSnapshot) -> None:
         """
         Destroy this resource
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def refresh(self, current: SchemaSnapshot) -> Optional[SchemaSnapshot]:
+    async def refresh(self, current: SchemaSnapshot) -> Optional[SchemaSnapshot]:
         """
         Refresh the state of this resource
 
@@ -212,7 +212,7 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def update(
+    async def update(
         self, old: SchemaSnapshot, current: SchemaSnapshot, spec: "Update"
     ) -> SchemaSnapshot:
         """

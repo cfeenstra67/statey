@@ -7,13 +7,13 @@ from typing import Dict, Type, Any, Tuple, Optional, Callable
 import dataclasses as dc
 import marshmallow as ma
 
-from statey.utils.helpers import get_all_subclasses
+from statey.utils.helpers import get_all_subclasses, NamedObject
 from .helpers import extract_modifiers, validate_no_input
 
 
 # Object indicating that values are missing
-MISSING = object()
-FUTURE = object()
+MISSING = NamedObject("MISSING")
+FUTURE = NamedObject("FUTURE")
 
 
 class FieldMeta(abc.ABCMeta):

@@ -5,6 +5,9 @@ import hashlib
 import os
 from typing import Optional
 
+import aiofiles
+import aiofiles.os as aios
+
 import statey as st
 
 
@@ -29,7 +32,7 @@ class File(st.Resource):
         permissions = st.Field[int](default=0o644)
         size_bytes = st.Field[int](computed=True)
 
-    def create(self, current: st.SchemaSnapshot) -> st.SchemaSnapshot:
+    async def create(self, current: st.SchemaSnapshot) -> st.SchemaSnapshot:
         """
         Create this resource. Return the latest snapshot
         """
@@ -37,19 +40,19 @@ class File(st.Resource):
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
 
-        with open(current.path, "w+") as file:
-            file.write(current.data)
+        async with aiofiles.open(current.path, mode="w+") as file:
+            await file.write(current.data)
         size_bytes = os.path.getsize(current.path)
         os.chmod(current.path, current.permissions)
         return current.copy(size_bytes=size_bytes)
 
-    def destroy(self, current: st.SchemaSnapshot) -> None:
+    async def destroy(self, current: st.SchemaSnapshot) -> None:
         """
         Destroy this resource
         """
         os.remove(current.path)
 
-    def refresh(self, current: st.SchemaSnapshot) -> Optional[st.SchemaSnapshot]:
+    async def refresh(self, current: st.SchemaSnapshot) -> Optional[st.SchemaSnapshot]:
         """
         Refresh the state of this resource
 
@@ -59,13 +62,14 @@ class File(st.Resource):
             return None
 
         size_bytes = os.path.getsize(current.path)
-        permissions = os.stat(current.path).st_mode & 0o777
-        with open(current.path) as file:
-            content = file.read()
+        stat = await aios.stat(current.path)
+        permissions = stat.st_mode & 0o777
+        async with aiofiles.open(current.path) as file:
+            content = await file.read()
 
         return current.copy(permissions=permissions, data=content, size_bytes=size_bytes)
 
-    def update(
+    async def update(
         self, old: st.SchemaSnapshot, current: st.SchemaSnapshot, spec: "Update"
     ) -> st.SchemaSnapshot:
         """
@@ -77,10 +81,10 @@ class File(st.Resource):
             if field == "permissions":
                 os.chmod(current.path, new_value)
             elif field == "data_sha256":
-                with open(current.path, "w+") as file:
-                    file.write(current.data)
+                async with aiofiles.open(current.path, mode="w+") as file:
+                    await file.write(current.data)
             else:
                 raise ValueError(f'Updates not supported for field "{field}".')
 
         # Recalc size_bytes
-        return self.refresh(current.copy(**new_values))
+        return await self.refresh(current.copy(**new_values))

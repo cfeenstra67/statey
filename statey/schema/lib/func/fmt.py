@@ -48,12 +48,13 @@ def fmt(template: str, scope: Optional[Dict[str, Any]] = None) -> st.Func:
             # pylint: disable=protected-access,no-member
             obj = _eval_name(node._name, node._expr, variables)
         elif isinstance(node, Constant):
-            obj = _eval_name(node._name, node._name, variables)  # pylint: disable=protected-access
+            # pylint: disable=protected-access,no-member
+            obj = _eval_name(node._name, node._name, variables)
         else:
             out_nodes.append(node)
             continue
 
-        node._name = param_name = next_param()  # pylint: disable=protected-access
+        param_name = next_param()  # pylint: disable=protected-access
         out_scope[param_name] = obj
         out_nodes.append(Constant(param_name, "{" + param_name + "}"))
 
