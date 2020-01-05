@@ -14,7 +14,7 @@ with open('requirements.txt') as f:
 
 setup(
 	name='statey',
-	version='0.0.0',
+	version='0.0.1',
 	description='Graph-based provisioning framework.',
 	author='Cam Feenstra',
 	author_email='cameron.l.feenstra@gmail.com',

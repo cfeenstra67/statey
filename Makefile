@@ -14,4 +14,4 @@ check:
 part:=patch
 
 bumpversion:
-	bump2version $(part)
+	bump2version --verbose $(part)
