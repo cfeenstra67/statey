@@ -17,4 +17,4 @@ from statey.state import State
 from statey.storage import Storage, Middleware, Serializer
 
 
-__version__ = '0.0.1'
+__version__ = '0.0.2'
