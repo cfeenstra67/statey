@@ -205,6 +205,9 @@ class PlanGraph(TaskGraph):
         each resource's dependencies before the resource itself).
         """
         # First process unexecuted changes
+        new_edges = []
+        new_nodes = []
+
         for path in self.change_graph:
             # Skip if it's already in the task graph and has a completed task
             if (
@@ -220,13 +223,23 @@ class PlanGraph(TaskGraph):
             # goes successfully only NoChange snapshots should get here as well, and those should
             # always be functionally equal to the refreshed version.
             if self.existing_state_graph is not None and path in self.existing_state_graph.graph:
-                node = self.state_graph.graph.nodes[path]
-                existing_node = self.existing_state_graph.graph.nodes[path]
-                node["snapshot"] = existing_node["snapshot"]
-                node["exists"] = existing_node["exists"]
+                existing_node = self.existing_state_graph.query(path, False)
+                if path in self.state_graph.graph:
+                    node = self.state_graph.query(path, False)
+                    node["snapshot"] = existing_node["snapshot"]
+                    node["exists"] = existing_node["exists"]
+                else:
+                    new_nodes.append((path, existing_node))
+                    for node, edges in self.existing_state_graph.graph.pred[path].items():
+                        for edge in edges.values():
+                            new_edges.append((node, path, edge))
+
             # if no existing state exists or the path is not in the existing state, remove it from the graph
             elif path in self.state_graph.graph:
                 self.state_graph.graph.remove_node(path)
+
+        self.state_graph.graph.add_nodes_from(new_nodes)
+        self.state_graph.graph.add_edges_from(new_edges)
 
     async def coro_wrapper(
         self, task_factory: Callable[[ChangeCoro], asyncio.Task], path: Hashable, coro: ChangeCoro

@@ -23,10 +23,12 @@ class SchemaMeta(ma.schema.SchemaMeta):
     """
 
     @staticmethod
-    def _construct_fields(attrs: Dict[str, Any]) -> Dict[str, Field]:
+    def _construct_fields(schema_name: str, attrs: Dict[str, Any]) -> Dict[str, Field]:
         fields = {}
 
         for name, value in attrs.items():
+            if name in RESERVED_FIELDS:
+                raise exc.ReservedFieldName(name, schema_name)
             if isinstance(value, Field):
                 fields[name] = value
             elif (
@@ -39,7 +41,7 @@ class SchemaMeta(ma.schema.SchemaMeta):
         return fields
 
     def __new__(cls, name: str, bases: Tuple[Type, ...], attrs: Dict[str, Any]) -> None:
-        new_fields = cls._construct_fields(attrs)
+        new_fields = cls._construct_fields(name, attrs)
         attrs.update(new_fields)
 
         new_cls = super().__new__(cls, name, bases, attrs)
@@ -110,7 +112,9 @@ class SchemaSnapshot:
 
         subcls = type(name, (cls,), {"_source_schema": schema})
 
-        fields = [("__meta__", Dict[str, Any], dc.field(default_factory=dict, repr=False))]
+        fields = [
+            ("__meta__", Dict[str, Any], dc.field(default_factory=dict, repr=False, compare=False))
+        ]
         for field_name, field in schema.__fields__.items():
             fields.append((field_name, *field.dataclass_field()))
 
@@ -263,8 +267,6 @@ class SchemaHelper:
         fields = {}
 
         for name, value in self.orig_schema_cls.__fields__.items():
-            if name in RESERVED_FIELDS:
-                raise exc.ReservedFieldName(name, self.orig_schema_cls)
             fields[name] = value.marshmallow_field(is_input)
 
         return type("Schema", (self.orig_schema_cls,), fields)

@@ -35,6 +35,10 @@ class ResourceGraph:
         """
 		Query a specific field value from the graph
 		"""
+        path = self._path(resource)
+        if path not in self.graph:
+            raise exc.InvalidReference(path)
+
         node = self.graph.nodes[self._path(resource)]
         if snapshot_only:
             return node["snapshot"]
@@ -104,17 +108,11 @@ class ResourceGraph:
                 data = self.query(resource_path, False)
                 other_resource_cls = data["resource_cls"]
 
-                if field not in other_resource_cls.Schema.__fields__:
-                    raise exc.InvalidReference(
-                        f"Field {repr(field)} does not belong to schema {repr(other_resource_cls.Schema)}"
-                        f" of resource class {repr(other_resource_cls)}."
-                    )
-
-                if resource_path not in new_graph:
-                    raise exc.InvalidReference(
-                        f"Failed to add snapshot {repr(snapshot)} at path {path}. The field {repr(field)}"
-                        f" references a path not yet added to this graph: {resource_path}."
-                    )
+                if (
+                    field not in other_resource_cls.Schema.__fields__
+                    or resource_path not in new_graph
+                ):
+                    raise exc.InvalidReference(resource_path, field)
 
                 new_graph.add_edge(
                     resource_path, path, symbol=value, destination_field_name=name, field=field,

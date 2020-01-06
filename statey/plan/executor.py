@@ -76,6 +76,8 @@ class AsyncGraphExecutor:
         Execute the given job
         """
         tasks = graph.schedule(asyncio.ensure_future)
+        if len(tasks) == 0:
+            return graph
         parent_task = asyncio.ensure_future(asyncio.wait(tasks))
         await self.task_loop(parent_task, graph, max_signals)
         self.validate_graph(graph)

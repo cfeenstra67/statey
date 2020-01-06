@@ -268,7 +268,8 @@ class Reference(Symbol):
 
         resolved = self._query_value(values)
         if isinstance(resolved, Symbol) and resolved is not self:
-            graph = resolved.compute_graph(values, cache)
+            if id(resolved) not in graph:
+                graph = resolved.compute_graph(values, cache)
 
             if id(resolved) not in graph[id(self)]:
                 graph.add_edge(id(self), id(resolved))
@@ -296,9 +297,9 @@ class Reference(Symbol):
         obj_node = graph.nodes[obj_id]
         obj = obj_node["obj"]
 
-        resolved = obj.resolve_partial(values, cache, check_circular=False)
         if check_circular:
             detect_circular_symbol_references(graph)
+        resolved = obj.resolve_partial(values, cache, check_circular=False)
         return resolved
 
     def resolve(
@@ -318,7 +319,7 @@ class Reference(Symbol):
     def type(self) -> Field:
         return self.field
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         name_or_str = lambda x: getattr(x, "__name__", str(x))
         return (
             f"{type(self).__name__}[{name_or_str(self.field.annotation)}]"
@@ -346,7 +347,7 @@ class FuncMeta(abc.ABCMeta):
 		to make a Func instance with the same type annotation and function
 		"""
         if isinstance(annotation, list) and len(annotation) == 1:
-            ((func,),) = annotation
+            (func,) = annotation
             return Func(func, func)
 
         def factory(func, *args, **kwargs):
@@ -484,7 +485,7 @@ class Func(Symbol, metaclass=FuncMeta):
 
         return args, kwargs
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         type_name = type(self).__name__
         args_string = ""
         if len(self.args) > 0:
@@ -546,7 +547,9 @@ class Func(Symbol, metaclass=FuncMeta):
         for idx, arg in enumerate(self.args):
             if not isinstance(arg, Symbol):
                 continue
-            graph = arg.compute_graph(values, cache)
+            if id(arg) not in graph:
+                graph = arg.compute_graph(values, cache)
+
             if id(arg) not in graph[id(self)] or not any(
                 edge.get("arg") == idx for edge in graph[id(self)][id(arg)].values()
             ):
@@ -555,7 +558,9 @@ class Func(Symbol, metaclass=FuncMeta):
         for key, val in self.kwargs.items():
             if not isinstance(val, Symbol):
                 continue
-            graph = val.compute_graph(values, cache)
+            if id(val) not in graph:
+                graph = val.compute_graph(values, cache)
+
             if id(val) not in graph[id(self)] or not any(
                 edge.get("kwarg") == key for edge in graph[id(self)][id(val)].values()
             ):
@@ -585,13 +590,14 @@ class Func(Symbol, metaclass=FuncMeta):
             kwargs = {k: new_kwargs.get(k, v) for k, v in self.kwargs.items()}
             my_cache.args, my_cache.kwargs = args, kwargs
 
+        if check_circular:
+            detect_circular_symbol_references(graph)
+
         if tuple(args) == tuple(self.args) and kwargs == self.kwargs:
             resolved = self
         else:
             resolved = self(*args, **kwargs).resolve_partial(values, cache, check_circular=False)
 
-        if check_circular:
-            detect_circular_symbol_references(graph)
         return resolved
 
     def resolve(
@@ -666,7 +672,9 @@ class Literal(Symbol):
             graph.add_node(id(self), obj=self)
 
         if isinstance(self.value, Symbol):
-            graph = self.value.compute_graph(values, cache)
+            if id(self.value) not in graph:
+                graph = self.value.compute_graph(values, cache)
+
             if id(self.value) not in graph[id(self)]:
                 graph.add_edge(id(self), id(self.value))
 
@@ -698,9 +706,9 @@ class Literal(Symbol):
         obj_node = graph.nodes[obj_id]
         obj = obj_node["obj"]
 
-        resolved = obj.resolve_partial(values, cache, check_circular=False)
         if check_circular:
             detect_circular_symbol_references(graph)
+        resolved = obj.resolve_partial(values, cache, check_circular=False)
         return resolved
 
     def resolve(

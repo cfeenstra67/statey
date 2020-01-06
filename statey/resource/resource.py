@@ -14,7 +14,6 @@ from statey.schema import (
     SchemaHelper,
     MISSING,
 )
-from statey.utils.helpers import get_all_subclasses
 
 
 class _AttrAccessor:
@@ -50,6 +49,8 @@ class ResourceMeta(abc.ABCMeta):
 
     type_name = None
 
+    _type_cache = {}
+
     def __getitem__(cls, annotation: Any) -> Type["Resource"]:
         """
         Using __getitem__ syntax, we can set names for resources using a syntax
@@ -68,15 +69,6 @@ class ResourceMeta(abc.ABCMeta):
             return resource
 
         return factory
-
-    def find(cls, type_name: str) -> Optional[Type["Resource"]]:
-        """
-        Get a resource class by type name
-        """
-        for subcls in get_all_subclasses(cls):
-            if subcls.type_name == type_name:
-                return subcls
-        return None
 
     def from_snapshot(cls, snapshot: SchemaSnapshot) -> "Resource":
         """
@@ -106,28 +98,30 @@ class ResourceMeta(abc.ABCMeta):
 
         return instance
 
+    def find(cls, type_name: str) -> Optional[Type["Resource"]]:
+        """
+        Get a resource class by type name
+        """
+        return cls._type_cache.get(type_name)
+
     # pylint: disable=arguments-differ
     def __new__(cls, name: str, bases: Tuple[Type, ...], attrs: Dict[str, Any]) -> "ResourceMeta":
-        # Handle case where Resource is not yet defined. In that case, just init normally
-        try:
-            Resource
-        except NameError:
-            return super().__new__(cls, name, bases, attrs)
-
         if "type_name" not in attrs:
             raise exc.InitializationError(
                 f"type_name must be defined for every new Resource subclass."
             )
 
-        type_name = attrs["type_name"]
-        existing = Resource.find(type_name)
         new_cls = super().__new__(cls, name, bases, attrs)
 
-        if existing is not None:
+        type_name = attrs["type_name"]
+        if type_name in cls._type_cache:
+            existing = cls._type_cache[type_name]
             raise exc.InitializationError(
                 f'An existing Resource subclass exists with type_name "{type_name}": '
                 f"{existing}. Unable to initialize {new_cls}."
             )
+
+        cls._type_cache[type_name] = new_cls
 
         return new_cls
 

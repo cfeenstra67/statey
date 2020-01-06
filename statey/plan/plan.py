@@ -28,6 +28,7 @@ class ApplyResult:
     error: Sequence[Dict[str, Any]]
     unprocessed: nx.DiGraph
     nulls: Sequence[Dict[str, Any]]
+    success: bool
 
 
 # pylint: disable=too-few-public-methods
@@ -49,7 +50,7 @@ class Plan:
     def __init__(
         self,
         config_graph: ResourceGraph,
-        state_graph: Optional[ResourceGraph] = None,  # Possibly refereshed
+        state_graph: Optional[ResourceGraph] = None,  # Possibly refreshed
         original_state_graph: Optional[ResourceGraph] = None,
     ) -> None:
         """
@@ -263,12 +264,15 @@ class Plan:
         complete.sort(key=itemgetter("path"))
         error.sort(key=itemgetter("path"))
 
+        success = len(error) + len(unprocessed) == 0
+
         return ApplyResult(
             state_graph=state_graph,
             complete=complete,
             error=error,
             unprocessed=unprocessed,
             nulls=null,
+            success=success,
         )
 
     def pretty_print(self) -> Dict[str, Any]:
