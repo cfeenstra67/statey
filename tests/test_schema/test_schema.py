@@ -1,7 +1,6 @@
 from typing import Optional
 
 import marshmallow as ma
-
 import statey as st
 
 
@@ -130,3 +129,37 @@ def test_schema_dump():
 		'bar': 'blahabc',
 		'blah': 123
 	}
+
+
+def test_resource_schema():
+
+	async def nothing(*args, **kwargs):
+		pass
+
+	class Dummy(st.Resource):
+
+		type_name = 'dummy'
+
+		class Schema(st.Resource.Schema):
+			a = st.Field[int]
+			b = st.Field[bool]
+
+		create = destroy = refresh = update = nothing
+
+	try:
+		resource = Dummy(
+			a='abc',
+			b=False
+		)
+	except st.exc.InputValidationError as err:
+		assert err.messages == {
+			'a': ['Not a valid integer.']
+		}
+	else:
+		assert False, 'This should have raised an error.'
+
+	resource = Dummy(a=691932, b=True)
+
+	assert resource.snapshot == resource.schema_helper.snapshot_cls(
+		a=691932, b=True
+	)
