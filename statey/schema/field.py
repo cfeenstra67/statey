@@ -330,7 +330,11 @@ class ListField(Field):
 
     @classmethod
     def __predicate__(cls, annotation: Any) -> bool:
-        return isinstance(annotation, type) and issubclass(annotation, Sequence)
+        return (
+            isinstance(annotation, type)
+            and issubclass(annotation, Sequence)
+            and not issubclass(annotation, Tuple)
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
