@@ -33,10 +33,10 @@ def test_graph_func_resolve(graph):
     graph.add(collection2)
 
     sym = st.Func[int](lambda x, y, u, v: (x + u) * (y + v))(
-        collection1.attrs.a,
-        collection1.attrs.b,
-        collection2.attrs.a,
-        collection2.attrs.b,
+        collection1.f.a,
+        collection1.f.b,
+        collection2.f.a,
+        collection2.f.b,
     )
     assert sym.resolve(graph) == 1692690
 
@@ -49,11 +49,11 @@ def test_graph_func_resolve_multiple(graph):
 
     for i in range(2, 10):
         collection = Collection[f"fib_{i}"](
-            a=collection.attrs.b, b=collection.attrs.a + collection.attrs.b
+            a=collection.f.b, b=collection.f.a + collection.f.b
         )
         graph.add(collection)
 
-    assert collection.attrs.b.resolve(graph) == 34
+    assert collection.f.b.resolve(graph) == 34
 
     fib = st.F[int](lambda x: (x[1], x[0] + x[1]))((0, 1))
     for _ in range(3, 10):
@@ -66,9 +66,9 @@ def test_graph_resolve_func_snapshot(graph):
     Collection = data_container_resource("Collection", {"a": int, "b": int})
 
     collection1 = Collection["a"](a=123, b=456)
-    collection2 = Collection["b"](a=collection1.attrs.a - collection1.attrs.b, b=0)
+    collection2 = Collection["b"](a=collection1.f.a - collection1.f.b, b=0)
     collection3 = Collection["c"](
-        a=collection1.attrs.a, b=collection2.attrs.a + collection2.attrs.b
+        a=collection1.f.a, b=collection2.f.a + collection2.f.b
     )
     graph.add(collection1)
     graph.add(collection2)
@@ -87,8 +87,8 @@ def test_graph_circular_reference(graph):
         type_name = "dummy"
 
         class Schema(st.Resource.Schema):
-            a = st.Field[int](optional=True, factory=lambda resource: resource.attrs.b)
-            b = st.Field[int](optional=True, factory=lambda resource: resource.attrs.a)
+            a = st.Field[int](optional=True, factory=lambda resource: resource.f.b)
+            b = st.Field[int](optional=True, factory=lambda resource: resource.f.a)
 
         create = destroy = update = refresh = nothing
 
@@ -116,13 +116,13 @@ def test_graph_circular_func_reference(graph):
         type_name = "dummy"
 
         class Schema(st.Resource.Schema):
-            a = st.Field[str](optional=True, factory=lambda resource: resource.attrs.c)
+            a = st.Field[str](optional=True, factory=lambda resource: resource.f.c)
             b = st.Field[str](
-                optional=True, factory=lambda resource: st.F[[str]](resource.attrs.a)
+                optional=True, factory=lambda resource: st.F[[str]](resource.f.a)
             )
             c = st.Field[str](
                 optional=True,
-                factory=lambda resource: st.F[str](",".join)(resource.attrs.b),
+                factory=lambda resource: st.F[str](",".join)(resource.f.b),
             )
 
         create = destroy = update = refresh = nothing
@@ -152,10 +152,10 @@ def test_graph_resolve_f_string(graph):
     graph.add(container)
     value = st.f(
         """
-	a: {container.attrs.a}
-	b: {container.attrs.b}
-	c: {[container.attrs.a for _ in range(3)]}
-	d: {st.F[[str]](container.attrs.a) + container.attrs.b}
+	a: {container.f.a}
+	b: {container.f.b}
+	c: {[container.f.a for _ in range(3)]}
+	d: {st.F[[str]](container.f.a) + container.f.b}
 	"""
     )
     assert (
@@ -177,7 +177,7 @@ def test_graph_resolve_operator(graph):
     container2 = Container["b"](a=2, b=23)
     graph.add(container2)
 
-    value = container1.attrs.a * container2.attrs.b - container1.attrs.b
+    value = container1.f.a * container2.f.b - container1.f.b
     assert value.resolve(graph) == 62
 
 
@@ -193,7 +193,7 @@ def test_graph_resolve_inference(graph):
 
     try:
         container2 = Container["b"](
-            a=123, b=untyped_func(container1.attrs.a, container1.attrs.b)
+            a=123, b=untyped_func(container1.f.a, container1.f.b)
         )
     except st.exc.InputValidationError as exc:
         assert exc.messages == {
@@ -210,13 +210,13 @@ def test_graph_resolve_inference(graph):
         assert False, "This should have raised an error."
 
     container2 = Container["b"](
-        a=13492, b=typed_func(container1.attrs.a, container1.attrs.b)
+        a=13492, b=typed_func(container1.f.a, container1.f.b)
     )
     graph.add(container2)
-    assert container2.attrs.b.resolve(graph) == "x=1, y=blah"
+    assert container2.f.b.resolve(graph) == "x=1, y=blah"
 
     container3 = Container["c"](
-        a=123314092, b=st.F[[str]](untyped_func(container2.attrs.a, container2.attrs.b))
+        a=123314092, b=st.F[[str]](untyped_func(container2.f.a, container2.f.b))
     )
     graph.add(container3)
-    assert container3.attrs.b.resolve(graph) == "x=13492, y=x=1, y=blah"
+    assert container3.f.b.resolve(graph) == "x=13492, y=x=1, y=blah"

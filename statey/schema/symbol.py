@@ -397,7 +397,7 @@ class SchemaReference(Reference):
         nested_path: Tuple[str, ...] = (),
     ) -> None:
         super().__init__(resource, None, field, nested_path)
-        self.attrs = RefAccessor(resource, field.annotation, nested_path)
+        self.f = RefAccessor(resource, field.annotation, nested_path)
 
     def _query_value(self, values: "ResourceGraph") -> Any:
         resource = values.query(self.resource)

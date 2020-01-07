@@ -28,7 +28,7 @@ class File(st.Resource):
         data = st.Field[str](store=False)
         data_sha256 = st.Field[str](
             input=False,
-            factory=lambda resource: st.Func[str](_get_hash, resource.attrs.data),
+            factory=lambda resource: st.Func[str](_get_hash, resource.f.data),
         )
         permissions = st.Field[int](default=0o644)
         size_bytes = st.Field[int](computed=True)

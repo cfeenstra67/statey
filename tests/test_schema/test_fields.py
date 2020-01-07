@@ -24,9 +24,9 @@ def test_resolve_value(state, graph):
     resource = Container["some_name"](a=12, b=10123)
     graph.add(resource)
 
-    assert resource.attrs.a.resolve(graph) == 12
-    assert resource.attrs.b.resolve(graph) == 10123
-    assert (resource.attrs.a + resource.attrs.b).resolve(graph) == 10135
+    assert resource.f.a.resolve(graph) == 12
+    assert resource.f.b.resolve(graph) == 10123
+    assert (resource.f.a + resource.f.b).resolve(graph) == 10135
 
     assert resource.snapshot.resolve(graph) == resource.schema_helper.snapshot_cls(
         a=12, b=10123
@@ -42,10 +42,10 @@ def test_resolve_foreign_value_error(state, graph):
 
     graph.add(container1)
 
-    assert container1.attrs.a.resolve(graph) == "blah"
+    assert container1.f.a.resolve(graph) == "blah"
 
     try:
-        container2.attrs.some_name.resolve(graph)
+        container2.f.some_name.resolve(graph)
     except st.exc.InvalidReference as err:
         assert err.path == "Container2:/container2"
     else:
@@ -210,9 +210,9 @@ def test_nested_field_reference(graph):
     dummy1 = Dummy(a=1, nested_attr={"attr_1": "blah", "attr_2": True})
     graph.add(dummy1)
 
-    assert dummy1.attrs.a.resolve(graph) == 1
-    assert dummy1.attrs.nested_attr.attrs.attr_1.resolve(graph) == "blah"
-    assert dummy1.attrs.nested_attr.attrs.attr_2.resolve(graph) is True
+    assert dummy1.f.a.resolve(graph) == 1
+    assert dummy1.f.nested_attr.f.attr_1.resolve(graph) == "blah"
+    assert dummy1.f.nested_attr.f.attr_2.resolve(graph) is True
 
 
 def test_nested_field_decorator():

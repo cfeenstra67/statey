@@ -202,7 +202,7 @@ class SchemaSnapshot:
 
         for key, val in values.items():
             if val is MISSING:
-                values[key] = resource.attrs[key]
+                values[key] = resource.f[key]
                 field = schema.__fields__[key]
                 if field.store and not field.computed:
                     lazy_fields.add(key)

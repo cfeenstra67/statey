@@ -15,7 +15,7 @@ async def test_build_graph(state, graph, tmpdir):
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
-        data=st.f("This was file 1's hash: {file1.attrs.data_sha256}"),
+        data=st.f("This was file 1's hash: {file1.f.data_sha256}"),
     )
     graph.add(file2)
 
@@ -64,7 +64,7 @@ async def test_build_graph_apply(state, graph, tmpdir):
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
-        data=st.f("This was file 1's hash: {file1.attrs.data_sha256}"),
+        data=st.f("This was file 1's hash: {file1.f.data_sha256}"),
     )
     graph.add(file2)
 
@@ -93,7 +93,7 @@ async def test_build_graph_no_change(state, graph, tmpdir):
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
-        data=st.f("This was file 1's hash: {file1.attrs.data_sha256}"),
+        data=st.f("This was file 1's hash: {file1.f.data_sha256}"),
     )
     graph.add(file2)
 
@@ -115,7 +115,7 @@ async def test_build_graph_change_apply(state, graph, tmpdir):
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
-        data=st.f("This was file 1's hash: {file1.attrs.data_sha256}"),
+        data=st.f("This was file 1's hash: {file1.f.data_sha256}"),
     )
     graph.add(file2)
 
@@ -132,7 +132,7 @@ async def test_build_graph_change_apply(state, graph, tmpdir):
     new_graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
-        data=st.f("This was file 1's hash: {file1.attrs.data_sha256}"),
+        data=st.f("This was file 1's hash: {file1.f.data_sha256}"),
     )
     new_graph.add(file2)
 
@@ -169,7 +169,7 @@ async def test_build_graph_teardown_apply(state, graph, tmpdir):
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
-        data=st.f("This was file 1's hash: {file1.attrs.data_sha256}"),
+        data=st.f("This was file 1's hash: {file1.f.data_sha256}"),
     )
     graph.add(file2)
 
@@ -206,7 +206,7 @@ async def test_build_graph_remove_apply(state, graph, tmpdir):
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
-        data=st.f("This was file 1's hash: {file1.attrs.data_sha256}"),
+        data=st.f("This was file 1's hash: {file1.f.data_sha256}"),
     )
     graph.add(file2)
 

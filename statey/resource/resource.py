@@ -130,7 +130,7 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
             )
 
         self.ref = SchemaReference(self, Field[self.Schema]())
-        self.attrs = self.ref.attrs
+        self.f = self.ref.f
 
         self.schema_helper = SchemaHelper(self.Schema, f"{type(self).__name__}Snapshot")
 

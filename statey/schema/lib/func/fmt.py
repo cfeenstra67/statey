@@ -28,7 +28,7 @@ def fmt(template: str, scope: Optional[Dict[str, Any]] = None) -> st.Func:
 
 	E.g.
 	resource_1 = SomeResource(a=1, ...)
-	resource_2 = OtherResource(some_field=st.func.fmt('{resource_1.attrs.a} is
+	resource_2 = OtherResource(some_field=st.func.fmt('{resource_1.f.a} is
     the value.'), ...)
 	"""
     variables = {} if scope is None else scope.copy()
