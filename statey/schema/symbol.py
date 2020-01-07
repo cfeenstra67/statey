@@ -426,12 +426,18 @@ class FuncMeta(abc.ABCMeta):
 		Also for easy type conversion, enable expressions like Func[[int]]
 		to make a Func instance with the same type annotation and function
 		"""
+        func = None
         if isinstance(annotation, list) and len(annotation) == 1:
             (func,) = annotation
-            return Func(func, func)
+            annotation = func
 
         def factory(func, *args, **kwargs):
-            return Func(func, annotation, *args, **kwargs)
+            func_obj = Func(func, *args, **kwargs)
+            func_obj.annotation = annotation
+            return func_obj
+
+        if func is not None:
+            return factory(func)
 
         return factory
 
@@ -467,7 +473,6 @@ class Func(Symbol, metaclass=FuncMeta):
     def __init__(
         self,
         func: Callable[[Any], Any],
-        annotation: Optional[Any],
         *args: Tuple[Any, ...],
         **kwargs: Dict[str, Any],
     ) -> None:
@@ -477,14 +482,13 @@ class Func(Symbol, metaclass=FuncMeta):
 		`kwargs` - optional, specify keyword arguments as in partial()
 		"""
         self.func = func
-        self.annotation = annotation
         self.args = args
         self.kwargs = kwargs
+        # This can be set manually or specified with Func[annotation](func)
+        self._annotation = None
         self._return_type = None
 
-        if self.annotation is None:
-            self._infer_annotation()
-        self._infer_return_type()
+        self._infer_annotation()
         self._detect_nested_symbols()
 
     ### PRIVATE METHODS
@@ -501,20 +505,14 @@ class Func(Symbol, metaclass=FuncMeta):
     def _infer_annotation(self) -> None:
         annotations = getattr(self.func, "__annotations__", None)
         if annotations is None:
-            raise exc.MissingReturnType(
-                f"No return annotation provided, and none was found in"
-                f" the provided function {repr(self.func)}."
-            )
-
-        try:
-            self.annotation = annotations["return"]
-        except KeyError as error:
-            raise exc.MissingReturnType(
-                f"No return annotation provided, and none was found in"
-                f" the provided function {repr(self.func)}."
-            ) from error
+            return
+        self.annotation = annotations.get("return")
 
     def _infer_return_type(self) -> None:
+        self._return_type = None
+        if self.annotation is None:
+            return
+
         try:
             field = Field[self.annotation]()
         except KeyError as error:
@@ -534,12 +532,12 @@ class Func(Symbol, metaclass=FuncMeta):
             if symbols > 0:
                 # We can use any type of field here--arguments to Func objects are not
                 # type-checked. We just want the argument to be a Symbol
-                return Func[str](lambda *args: type(value)(args))(*value)
+                return Func(lambda *args: type(value)(args))(*value)
         if isinstance(value, dict):
             symbols = sum(1 for arg in value.values() if isinstance(arg, Symbol))
             if symbols > 0:
                 # Same as above, type does not matter here
-                return Func[str](lambda **kwargs: kwargs)(**value)
+                return Func(lambda **kwargs: kwargs)(**value)
         return value
 
     def _detect_nested_symbols(self):
@@ -581,12 +579,27 @@ class Func(Symbol, metaclass=FuncMeta):
         arguments = ", ".join(filter(None, [args_string, kwargs_string]))
 
         name_or_str = lambda x: getattr(x, "__name__", str(x))
-        return (
-            f"{type_name}[{name_or_str(self._return_type.annotation)}]"
-            f"({name_or_str(self.func)})({arguments})"
-        )
+        annotation_str = ""
+        if self.annotation is not None:
+            annotation_str = f"[{name_or_str(self.annotation)}]"
+        return f"{type_name}{annotation_str}({name_or_str(self.func)})({arguments})"
 
     ### PUBLIC METHODS
+
+    @property
+    def annotation(self) -> Any:
+        """
+        annotation property
+        """
+        return self._annotation
+
+    @annotation.setter
+    def annotation(self, value: Any) -> None:
+        """
+        annotation property setter
+        """
+        self._annotation = value
+        self._infer_return_type()
 
     def contains_symbols(self) -> bool:
         """
@@ -707,19 +720,20 @@ class Func(Symbol, metaclass=FuncMeta):
         """
 		Similar to functools.partial. Set some default arguments. Chainable.
 		"""
-        return type(self)(
-            partial(self.func, *args, **kwargs),
-            self.annotation,
-            *self.args,
-            **self.kwargs,
+        instance = type(self)(
+            partial(self.func, *args, **kwargs), *self.args, **self.kwargs,
         )
+        instance.annotation = self.annotation
+        return instance
 
     def __call__(self, *args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> "Func":
         """
 		The __call__() method of func just returns a new `Func` object
 		with the passed arguments appended to the existing ones
 		"""
-        return type(self)(self.func, self.annotation, *args, **kwargs)
+        instance = type(self)(self.func, *args, **kwargs)
+        instance.annotation = self.annotation
+        return instance
 
 
 @CacheManager.handles(Func)

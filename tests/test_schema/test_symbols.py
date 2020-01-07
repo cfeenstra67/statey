@@ -179,3 +179,44 @@ def test_graph_resolve_operator(graph):
 
     value = container1.attrs.a * container2.attrs.b - container1.attrs.b
     assert value.resolve(graph) == 62
+
+
+def test_graph_resolve_inference(graph):
+    Container = data_container_resource("Container", {"a": int, "b": str})
+
+    container1 = Container["a"](a=1, b="blah")
+    graph.add(container1)
+
+    lambda_func = lambda x, y: f"x={x}, y={y}"
+    untyped_func = st.F(lambda_func)
+    typed_func = st.F[str](lambda_func)
+
+    try:
+        container2 = Container["b"](
+            a=123, b=untyped_func(container1.attrs.a, container1.attrs.b)
+        )
+    except st.exc.InputValidationError as exc:
+        assert exc.messages == {
+            "b": [
+                "Attempting to assign to field <class 'statey.schema.field"
+                ".StrField'> from <class 'NoneType'> (symbol Func(<lambd"
+                "a>)(Reference[int](resource=Container(type_name=Cont"
+                "ainer, name=a), field_name=a, nested_path=()), Reference[s"
+                "tr](resource=Container(type_name=Container, name=a), field"
+                "_name=b, nested_path=())))."
+            ]
+        }
+    else:
+        assert False, "This should have raised an error."
+
+    container2 = Container["b"](
+        a=13492, b=typed_func(container1.attrs.a, container1.attrs.b)
+    )
+    graph.add(container2)
+    assert container2.attrs.b.resolve(graph) == "x=1, y=blah"
+
+    container3 = Container["c"](
+        a=123314092, b=st.F[[str]](untyped_func(container2.attrs.a, container2.attrs.b))
+    )
+    graph.add(container3)
+    assert container3.attrs.b.resolve(graph) == "x=13492, y=x=1, y=blah"

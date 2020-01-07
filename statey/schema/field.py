@@ -78,7 +78,7 @@ class FieldMeta(abc.ABCMeta):
         clean_annotation, modifiers = extract_modifiers(annotation)
         modifiers["annotation"] = annotation
 
-        for subcls in get_all_subclasses(cls):
+        for subcls in get_all_subclasses(cls, depth_first=True):
             if subcls.__predicate__(clean_annotation):
                 return _FieldWithModifiers(subcls, modifiers)
         raise KeyError(annotation)
@@ -92,12 +92,15 @@ class Field(abc.ABC, metaclass=FieldMeta):
 
     @classmethod
     def __predicate__(cls, annotation: Any) -> bool:  # pylint: disable=unused-argument
-        return False
+        """
+        Determine if this class is compatible with the given annotation
+        """
+        return True
 
     # pylint: disable=too-many-arguments
     def __init__(
         self,
-        annotation: Any,
+        annotation: Any = Any,
         optional: bool = False,
         computed: bool = False,
         create_new: bool = False,
@@ -176,6 +179,13 @@ class Field(abc.ABC, metaclass=FieldMeta):
 
         return args
 
+    def is_serializable(self) -> bool:  # pylint: disable=no-self-use
+        """
+        Return whether this field type is serializable or not. Non-serialiable
+        fields can only be added to a scheme if store=False
+        """
+        return False
+
     def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
         """
 		Return a field factory for the marshmallow field corresponding to this
@@ -206,6 +216,20 @@ class Field(abc.ABC, metaclass=FieldMeta):
 
         return Reference(resource, name, self, nested_path)
 
+    def __repr__(self) -> str:
+        args = []
+        if self.name is not None:
+            args.append(f"name={self.name}")
+
+        for attr in ["optional", "computed", "create_new", "store", "input"]:
+            if getattr(self, attr):
+                args.append(f"{attr}=True")
+
+        args_str = ""
+        if len(args) > 0:
+            args_str = ", ".join(args)
+        return f"{type(self).__name__}[{self.annotation.__name__}]({args_str})"
+
 
 # pylint: disable=too-few-public-methods
 class _FieldWithModifiers:
@@ -223,7 +247,20 @@ class _FieldWithModifiers:
         return self.field_cls(*args, **self.defaults, **kwargs)
 
 
-class StrField(Field):
+class SerializableField(Field):
+    """
+    Field type that is always serializable
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return False
+
+    def is_serializable(self) -> bool:
+        return True
+
+
+class StrField(SerializableField):
     """
 	Field class for strings
 	"""
@@ -236,7 +273,7 @@ class StrField(Field):
         return ma.fields.Str(**self._marshmallow_default_args(is_input))
 
 
-class BoolField(Field):
+class BoolField(SerializableField):
     """
 	Field class for bools
 	"""
@@ -249,7 +286,7 @@ class BoolField(Field):
         return ma.fields.Bool(**self._marshmallow_default_args(is_input))
 
 
-class IntField(Field):
+class IntField(SerializableField):
     """
 	Field class for ints
 	"""
@@ -262,7 +299,7 @@ class IntField(Field):
         return ma.fields.Int(**self._marshmallow_default_args(is_input))
 
 
-class FloatField(Field):
+class FloatField(SerializableField):
     """
 	Field class for floats
 	"""
@@ -275,7 +312,7 @@ class FloatField(Field):
         return ma.fields.Float(**self._marshmallow_default_args(is_input))
 
 
-class DateTimeField(Field):
+class DateTimeField(SerializableField):
     """
     Field class for datetimes
     """
@@ -288,7 +325,7 @@ class DateTimeField(Field):
         return ma.fields.DateTime(**self._marshmallow_default_args(is_input))
 
 
-class DateField(Field):
+class DateField(SerializableField):
     """
     Field class for dates
     """
@@ -301,7 +338,7 @@ class DateField(Field):
         return ma.fields.Date(**self._marshmallow_default_args(is_input))
 
 
-class TimeField(Field):
+class TimeField(SerializableField):
     """
     Field class for dates
     """
@@ -314,7 +351,7 @@ class TimeField(Field):
         return ma.fields.Time(**self._marshmallow_default_args(is_input))
 
 
-class TimeDeltaField(Field):
+class TimeDeltaField(SerializableField):
     """
     Field class for dates
     """
@@ -327,7 +364,7 @@ class TimeDeltaField(Field):
         return ma.fields.TimeDelta(**self._marshmallow_default_args(is_input))
 
 
-class ListField(Field):
+class ListField(SerializableField):
     """
     Field class for lists
     """
@@ -361,7 +398,7 @@ class ListField(Field):
         )
 
 
-class DictField(Field):
+class DictField(SerializableField):
     """
     Field class for dicts
     """
@@ -396,7 +433,7 @@ class DictField(Field):
         )
 
 
-class TupleField(Field):
+class TupleField(SerializableField):
     """
     Field class for tuples
     """
@@ -455,6 +492,11 @@ class NestedField(Field):
         if isinstance(self.annotation, Schema):
             self.annotation = type(self.annotation)
         self.schema_helper = SchemaHelper(self.annotation)
+
+    def is_serializable(self) -> bool:
+        return all(
+            field.is_serializable() for field in self.annotation.__fields__.values()
+        )
 
     def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
         nested_schema_cls = (

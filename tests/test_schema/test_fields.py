@@ -102,14 +102,6 @@ def test_list_field():
     else:
         assert False, "This should have raised an error."
 
-    # Checking to make sure only a valid item annotation is accepted
-    try:
-        st.Field[Sequence[type(None)]]()
-    except KeyError:
-        pass
-    else:
-        assert False, "This should have raised an error."
-
     assert isinstance(st.Field[List[int]](), ListField)
     assert isinstance(st.Field[Sequence[int]](), ListField)
 
@@ -134,20 +126,6 @@ def test_dict_field():
     else:
         assert False, "This should have raised an error."
 
-    try:
-        st.Field[Dict[type(None), str]]()
-    except KeyError:
-        pass
-    else:
-        assert False, "This should have raised an error."
-
-    try:
-        st.Field[Dict[str, type(None)]]()
-    except KeyError:
-        pass
-    else:
-        assert False, "This should have raised an error."
-
     assert isinstance(st.Field[Dict[str, int]](), DictField)
     assert isinstance(st.Field[Dict[int, List[str]]](), DictField)
 
@@ -168,20 +146,6 @@ def test_tuple_field():
     try:
         st.Field[Tuple]()
     except st.exc.InitializationError:
-        pass
-    else:
-        assert False, "This should have raised an error."
-
-    try:
-        st.Field[Tuple[int, type(None)]]()
-    except KeyError:
-        pass
-    else:
-        assert False, "This should have raised an error."
-
-    try:
-        st.Field[Tuple[int, str, int, bool, type(None)]]()
-    except KeyError:
         pass
     else:
         assert False, "This should have raised an error."
@@ -226,12 +190,37 @@ def test_nested_field():
         assert False, "This should have raised an error."
 
 
+def test_nested_field_reference(graph):
+    async def nothing():
+        pass
+
+    class Dummy(st.Resource):
+        type_name = "dummy"
+
+        class Schema(st.Schema):
+            a = st.Field[int]
+
+            @st.schema.nested
+            class nested_attr(st.Schema):
+                attr_1 = st.Field[str]
+                attr_2 = st.Field[bool]
+
+        create = destroy = update = refresh = nothing
+
+    dummy1 = Dummy(a=1, nested_attr={"attr_1": "blah", "attr_2": True})
+    graph.add(dummy1)
+
+    assert dummy1.attrs.a.resolve(graph) == 1
+    assert dummy1.attrs.nested_attr.attrs.attr_1.resolve(graph) == "blah"
+    assert dummy1.attrs.nested_attr.attrs.attr_2.resolve(graph) is True
+
+
 def test_nested_field_decorator():
     class TestSchema(st.Schema):
         a = st.Field[int]
 
         @st.schema.nested
-        class b:
+        class b(st.Schema):
             a = st.Field[str]
             b = st.Field[bool]
 
@@ -243,6 +232,9 @@ def test_nested_field_decorator():
     try:
         helper.load_input({"a": "blah", "b": {"a": "abc", "b": "def"}})
     except st.exc.InputValidationError as exc:
-        assert exc.messages == {}
+        assert exc.messages == {
+            "a": ["Not a valid integer."],
+            "b": {"b": ["Not a valid boolean."]},
+        }
     else:
         assert False, "This should have raised an error."

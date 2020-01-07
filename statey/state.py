@@ -3,7 +3,7 @@ A statey state specifies a storage configuration for a state and provides an int
 for creating graphs
 """
 import asyncio
-from typing import Any, Sequence, AsyncContextManager, Optional
+from typing import Any, Sequence, AsyncContextManager, Optional, Type
 
 from statey import exc
 from statey.plan import Plan, AsyncGraphExecutor, ApplyResult
@@ -27,6 +27,7 @@ class State:
         serializer: Serializer = JSONSerializer(),
         middlewares: Sequence[Middleware] = (),
         registry: Optional[Registry] = None,
+        graph_class: Type[ResourceGraph] = ResourceGraph,
     ) -> None:
         """
 		Initialize a State instance.
@@ -45,12 +46,13 @@ class State:
         self.serializer = serializer
         self.middlewares = middlewares
         self.registry = registry
+        self.graph_class = graph_class
 
     def graph(self) -> ResourceGraph:
         """
 		Shortcut to create a new graph from a state directly
 		"""
-        return ResourceGraph(self.registry)
+        return self.graph_class(self.registry)
 
     async def refresh(
         self, graph: ResourceGraph
@@ -112,7 +114,9 @@ class State:
         if state_data is None:
             return None
         state_data = self.unapply_middlewares(state_data)
-        current_graph = self.serializer.load(state_data, registry)
+        current_graph = self.serializer.load(
+            state_data, registry, graph_class=self.graph_class
+        )
         return await self.refresh(current_graph) if refresh else current_graph
 
     @asynccontextmanager

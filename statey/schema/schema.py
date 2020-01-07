@@ -30,13 +30,23 @@ class SchemaMeta(ma.schema.SchemaMeta):
             if name in RESERVED_FIELDS:
                 raise exc.ReservedFieldName(name, schema_name)
             if isinstance(value, Field):
-                fields[name] = value
+                field = value
             elif (
                 isinstance(value, _FieldWithModifiers)
                 or isinstance(value, type)
                 and issubclass(value, Field)
             ):
-                fields[name] = value()
+                field = value()
+            else:
+                continue
+
+            if not field.is_serializable() and field.store:
+                raise exc.InvalidField(
+                    f"Field {field} is not serializable, but `store=True`. This is"
+                    f"not allowed. Set `store=False` e.g. st.Field(store=False)."
+                )
+
+            fields[name] = field
 
         return fields
 
@@ -337,7 +347,7 @@ class SchemaHelper:
         """
         Validate a specific symbol given a name
         """
-        field = self.orig_schema_cls.__fields__[name]
+        field = self.orig_schema_cls[name]
         if field.computed:
             raise exc.SymbolTypeError(
                 f"Attempting to assign to field {field}, but it is a computed field."
@@ -359,7 +369,7 @@ class SchemaHelper:
             try:
                 self.validate_symbol(name, symbol)
             except exc.SymbolError as error:
-                errors[name] = str(error)
+                errors[name] = [str(error)]
 
         if len(errors) > 0:
             raise exc.InputValidationError(errors)
