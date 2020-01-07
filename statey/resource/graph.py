@@ -2,12 +2,22 @@
 A ResouceGraph is one of the core data structures in statey. It provides an interface for
 building and operating on resource graphs
 """
-from typing import Optional, Union, Type, Callable
+import itertools
+from typing import Optional, Union, Type, Callable, Dict, Any
 
 import networkx as nx
 
 from statey import exc
-from statey.schema import Field, SchemaSnapshot, Symbol, QueryRef, CacheManager
+from statey.schema import (
+    Field,
+    SchemaSnapshot,
+    Symbol,
+    QueryRef,
+    CacheManager,
+    SchemaHelper,
+    Reference,
+    Literal,
+)
 from .path import Registry
 from .resource import Resource
 
@@ -23,13 +33,7 @@ class ResourceGraph:
 		`registry` - a statey registry
 		"""
         self.registry = registry
-        self.graph = self.graph_factory()
-
-    def graph_factory(self) -> nx.Graph:
-        """
-		Create a nx.Graph instance for this ResourceGraph
-		"""
-        return nx.MultiDiGraph(resource_graph=self)
+        self.graph = nx.MultiDiGraph(resource_graph=self)
 
     def query(self, resource: QueryRef, snapshot_only: bool = True) -> SchemaSnapshot:
         """
@@ -74,11 +78,11 @@ class ResourceGraph:
                 f" but a snapshot already exists at this path."
             )
 
-        if snapshot.source_schema is not resource_cls.Schema:
+        if snapshot.__schema__ is not resource_cls.Schema:
             raise exc.GraphIntegrityError(
                 f'Attempting to insert snapshot into the graph for path "{path}",'
                 f" but the snapshot's schema does not match resource_cls.Schema "
-                f"(got {repr(snapshot.source_schema)}, expected {resource_cls.Schema})."
+                f"(got {repr(snapshot.__schema__)}, expected {resource_cls.Schema})."
             )
 
         if resource is not None and not isinstance(resource, resource_cls):
@@ -100,7 +104,7 @@ class ResourceGraph:
             if not isinstance(value, Symbol):
                 continue
 
-            for other_resource, field in value.refs():
+            for other_resource, field_path in value.refs():
                 resource_path = self._path(other_resource)
                 # Ignore self references
                 if resource_path == path:
@@ -108,14 +112,15 @@ class ResourceGraph:
                 data = self.query(resource_path, False)
                 other_resource_cls = data["resource_cls"]
 
-                if (
-                    field not in other_resource_cls.Schema.__fields__
-                    or resource_path not in new_graph
-                ):
-                    raise exc.InvalidReference(resource_path, field)
+                if field_path not in other_resource_cls.Schema or resource_path not in new_graph:
+                    raise exc.InvalidReference(resource_path, field_path[-1], field_path[:-1])
 
                 new_graph.add_edge(
-                    resource_path, path, symbol=value, destination_field_name=name, field=field,
+                    resource_path,
+                    path,
+                    symbol=value,
+                    destination_field_name=name,
+                    field=field_path[-1],
                 )
 
         # Only update self.graph if we get through the add operation successfully
@@ -189,3 +194,131 @@ class ResourceGraph:
                 out_data["snapshot"] = None
 
         return instance
+
+    # pylint: disable=too-many-locals
+    def to_dict(self, meta: Optional[Any] = None) -> Dict[str, Any]:
+        """
+        Dump the graph to a serializable dictionary.
+        This is a custom format intended to be human-readable
+        """
+        nodes = {}
+
+        dependencies = {}
+        reverse_dependencies = {}
+        for src, dest, data in self.graph.edges(data=True):
+            dependencies.setdefault(dest, {}).setdefault(src, []).append(data)
+            reverse_dependencies.setdefault(src, {}).setdefault(dest, []).append(data)
+
+        for node in self.graph:
+            depends_on = dependencies.get(node, {})
+            data = self.query(node, False)
+            # Do not write null states at all, but check to make sure that the
+            # graph still makes sense if we do that. Null states can also be the
+            # result of an upstream bug, so better to catch that before writing than after.
+            if data["snapshot"] is None:
+                depending = [
+                    path
+                    for path in sorted(reverse_dependencies.get(node, []))
+                    if self.query(path) is not None
+                ]
+                if len(depending) > 0:
+                    raise exc.GraphIntegrityError(
+                        f"Resource at path {node} has a null state, but it is dependended on by "
+                        f"resource(s) will non-null states: {depending}. This is unexpected!"
+                    )
+                continue
+
+            snapshot, exists = data["snapshot"], data.get("exists", False)
+            snapshot_data = snapshot and SchemaHelper(snapshot.__schema__).dump(snapshot)
+
+            deps = {}
+            for src, edges in depends_on.items():
+                if src == node:
+                    continue
+
+                for edge in edges:
+                    field_deps = deps.setdefault(edge["destination_field_name"], {}).setdefault(
+                        src, set()
+                    )
+                    field_deps.add(edge["field"])
+
+            deps = {k: {k2: sorted(v2) for k2, v2 in v.items()} for k, v in deps.items()}
+
+            nodes[node] = {
+                "name": data["resource"].name,
+                "type_name": data["resource"].type_name,
+                "snapshot": snapshot_data,
+                "exists": exists,
+                "dependencies": deps,
+                "lazy": sorted(snapshot.__meta__.get("lazy", [])),
+            }
+
+        if meta is None:
+            meta = {}
+
+        return {"meta": meta, "resources": nodes}
+
+    # pylint: disable=too-many-locals
+    def _load_resource_from_dict(self, path: str, data: Dict[str, Any]) -> None:
+        resource_cls = Resource.find(data["type_name"])
+        if resource_cls is None:
+            raise exc.UndefinedResourceType(data["type_name"])
+
+        schema_helper = SchemaHelper(resource_cls.Schema)
+
+        snapshot_data = schema_helper.load(data["snapshot"])
+        graph_data = {}
+
+        for field, value in snapshot_data.items():
+            if field not in data["dependencies"]:
+                graph_data[field] = value
+                continue
+
+            refs = []
+            for src_path, src_fields in data["dependencies"][field].items():
+                for src_field in src_fields:
+                    other = self.query(src_path, False)
+                    field_obj = other["resource_cls"].Schema.__fields__[src_field]
+
+                    refs.append(Reference(resource=src_path, field_name=src_field, field=field_obj))
+
+            field_obj = resource_cls.Schema.__fields__[field]
+            graph_data[field] = Literal(value=value, type=field_obj, refs=tuple(refs))
+
+        snapshot = schema_helper.load(graph_data, validate=False)
+        snapshot.__meta__["lazy"] = data.get("lazy", [])
+        resource = resource_cls.from_snapshot(snapshot)
+        snapshot = snapshot.fill_missing_values(resource)
+
+        self.add(
+            snapshot=snapshot,
+            name=data["name"],
+            exists=data["exists"],
+            path=path,
+            resource=resource,
+            resource_cls=resource_cls,
+        )
+
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """
+        Construct a ResourceGraph given a dictionary constructed vai dump_to_dict()
+        """
+        not_processed = set(data["resources"])
+
+        def deps_paths(deps):
+            values = map(set, deps.values())
+            values = itertools.chain.from_iterable(values)
+            return set(values)
+
+        while len(not_processed) > 0:
+
+            for path in sorted(not_processed):
+                resource = data["resources"][path]
+                if deps_paths(resource["dependencies"]) & not_processed:
+                    continue
+                node = data["resources"][path]
+                # If no state already exists we don't need to add it to the graph
+                if node["snapshot"] is None:
+                    raise exc.NullStateError(path)
+                self._load_resource_from_dict(path, node)
+                not_processed.remove(path)

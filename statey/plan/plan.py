@@ -303,7 +303,7 @@ class Plan:
                 # Set all nulls for deletions
                 if snapshot is None:
                     kws = {k: None for k in change.resource.Schema.__fields__}
-                    snapshot = change.resource.schema_helper.snapshot_cls(**kws)
+                    snapshot = change.resource.schema_helper.load(kws, validate=False)
 
                 for name, new_value in snapshot.items():
                     old_value = change.old_snapshot and change.old_snapshot[name]
@@ -314,7 +314,7 @@ class Plan:
                     )
                     recreate = False
                     if changed:
-                        field = snapshot.source_schema.__fields__[name]
+                        field = snapshot.__schema__[name]
                         recreate = field.create_new
 
                     item = fields[name] = {

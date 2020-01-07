@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Sequence, Dict, Set, Tuple, List
 
 import pytest
 import statey as st
@@ -110,3 +110,99 @@ def test_reserved_name():
 		assert 'Field name __meta__ in schema Schema is reserved.' in str(err)
 	else:
 		assert False, 'This should have raised an error.'
+
+
+def test_list_field():
+	from statey.schema.field import ListField
+	try:
+		st.Field[Sequence]()
+	except st.exc.InitializationError:
+		pass
+	else:
+		assert False, 'This should have raised an error.'
+
+	# Checking to make sure only a valid item annotation is accepted
+	try:
+		st.Field[Sequence[type(None)]]()
+	except KeyError:
+		pass
+	else:
+		assert False, 'This should have raised an error.'
+
+	assert isinstance(st.Field[List[int]](), ListField)
+	assert isinstance(st.Field[Sequence[int]](), ListField)
+
+	Container = data_container_resource('Container', {'a': str, 'b': Sequence[int]})
+	container = Container(
+		a='Some data.',
+		b=[1, 2, 3, 4]
+	)
+
+	try:
+		container = Container(
+			a='Some data.',
+			b=['abc']
+		)
+	except st.exc.InputValidationError as exc:
+		assert exc.messages == {'b': {0: ['Not a valid integer.']}}
+	else:
+		assert False, 'This should have raised an error.'
+
+
+def test_dict_field():
+	from statey.schema.field import DictField
+	try:
+		st.Field[Dict]()
+	except st.exc.InitializationError:
+		pass
+	else:
+		assert False, 'This should have raised an error.'
+
+	try:
+		st.Field[Dict[type(None), str]]()
+	except KeyError:
+		pass
+	else:
+		assert False, 'This should have raised an error.'
+
+	try:
+		st.Field[Dict[str, type(None)]]()
+	except KeyError:
+		pass
+	else:
+		assert False, 'This should have raised an error.'
+
+	assert isinstance(st.Field[Dict[str, int]](), DictField)
+	assert isinstance(st.Field[Dict[int, List[str]]](), DictField)
+
+	Container = data_container_resource('Container', {'a': Dict[int, int]})
+	container = Container(a={1: 2, 3: 4})
+
+	try:
+		container = Container(a={'abc': 2})
+	except st.exc.InputValidationError as exc:
+		assert exc.messages == {'a': {'abc': {'key': ['Not a valid integer.']}}}
+	else:
+		assert False, 'This should have raised an error.'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

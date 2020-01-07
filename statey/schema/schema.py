@@ -3,18 +3,18 @@ The Schema class allows resources to define data attributes
 """
 import copy
 from functools import lru_cache
-from typing import Tuple, Any, Type, Dict, Iterator, Callable, Optional
+from typing import Tuple, Any, Type, Dict, Iterator, Callable, Optional, Union
 
 import dataclasses as dc
 import marshmallow as ma
 
 from statey import exc
-from .field import Field, _FieldWithModifiers, MISSING, FUTURE
+from .field import Field, _FieldWithModifiers, MISSING, FUTURE, NestedField
 from .helpers import convert_ma_validation_error
 from .symbol import Symbol, CacheManager
 
 
-RESERVED_FIELDS = ("__meta__",)
+RESERVED_FIELDS = ("__meta__", "__schema__")
 
 
 class SchemaMeta(ma.schema.SchemaMeta):
@@ -39,6 +39,37 @@ class SchemaMeta(ma.schema.SchemaMeta):
                 fields[name] = value()
 
         return fields
+
+    def __getitem__(cls, path: Union[str, Tuple[str, ...]]) -> Field:
+        if isinstance(path, str):
+            path = (path,)
+
+        schema = cls
+        for idx, comp in enumerate(path[:-1]):
+            if isinstance(schema, NestedField):
+                schema = schema.annotation
+            if isinstance(schema, Field) or (idx > 0 and comp not in schema):
+                raise KeyError(path)
+            schema = schema[comp]
+
+        try:
+            return schema.__fields__[path[-1]]
+        except KeyError as exc:
+            raise KeyError(path) from exc
+
+    def __contains__(cls, path: Union[str, Tuple[str, ...]]) -> bool:
+        if isinstance(path, str):
+            path = (path,)
+
+        schema = cls
+        for idx, comp in enumerate(path):
+            if isinstance(schema, NestedField):
+                schema = schema.annotation
+            if isinstance(schema, Field) or (idx > 0 and comp not in schema):
+                return False
+            schema = schema[comp]
+
+        return True
 
     def __new__(cls, name: str, bases: Tuple[Type, ...], attrs: Dict[str, Any]) -> None:
         new_fields = cls._construct_fields(name, attrs)
@@ -83,20 +114,8 @@ class SchemaSnapshot:
     instantiate a SchemaSnapshot class
     """
 
-    _source_schema = None
-
-    @staticmethod
-    def _equals(snapshot1: "SchemaSnapshot", snapshot2: "SchemaSnapshot") -> bool:
-        if type(snapshot1) is not type(snapshot2):
-            return False
-        return snapshot1.__dict__ == snapshot2.__dict__
-
-    @property
-    def source_schema(self) -> Type["Resource"]:
-        """
-        Obtain the schema that was used to create this snapshot class
-        """
-        return self._source_schema
+    __meta__ = {}
+    __schema__ = Schema
 
     @classmethod
     @lru_cache(maxsize=10000)
@@ -110,17 +129,14 @@ class SchemaSnapshot:
         if name is None:
             name = f"{schema.__name__}Snapshot"
 
-        subcls = type(name, (cls,), {"_source_schema": schema})
-
         fields = [
-            ("__meta__", Dict[str, Any], dc.field(default_factory=dict, repr=False, compare=False))
+            ("__meta__", Dict[str, Any], dc.field(default_factory=dict, repr=False, compare=False)),
+            ("__schema__", schema, dc.field(init=False, repr=False, default=schema)),
         ]
         for field_name, field in schema.__fields__.items():
             fields.append((field_name, *field.dataclass_field()))
 
-        return dc.make_dataclass(
-            subcls.__name__, fields, bases=(subcls,), frozen=True, eq=cls._equals
-        )
+        return dc.make_dataclass(name, fields, bases=(cls,), frozen=True, eq=True)
 
     def copy(self, **kwargs: Dict[str, Any]) -> "SchemaSnapshot":
         """
@@ -128,6 +144,7 @@ class SchemaSnapshot:
         """
         kws = self.__dict__.copy()
         kws.update(kwargs)
+        kws.pop("__schema__", None)
         inst = type(self)(**kws)
         return inst
 
@@ -135,7 +152,7 @@ class SchemaSnapshot:
         """
         Reset all lazy fields in the given snapshot
         """
-        schema = self.source_schema
+        schema = self.__schema__
         # pylint: disable=no-member
         lazy_fields = self.__meta__["lazy"] = set(self.__meta__.get("lazy", []))
         values = {}
@@ -154,7 +171,7 @@ class SchemaSnapshot:
         Fill any MISSING, FUTURE, or lazy values with references
         """
         values = dict(self.items())
-        schema = self.source_schema
+        schema = self.__schema__
 
         # pylint: disable=no-member
         lazy_fields = self.__meta__["lazy"] = set(self.__meta__.get("lazy", []))
@@ -212,7 +229,7 @@ class SchemaSnapshot:
             if not isinstance(val, Symbol):
                 kws[key] = val
                 continue
-            field = self.source_schema.__fields__[key]
+            field = self.__schema__[key]
             if field_filter(field):
                 kws[key] = val.resolve(graph, cache)
             else:
@@ -254,10 +271,31 @@ class SchemaHelper:
             name = f"{schema_class.__name__}Snapshot"
 
         self.orig_schema_cls = schema_class
-        self.snapshot_cls = SchemaSnapshot.from_schema(schema_class, name)
+        self.snapshot_classes = self._get_snapshot_classes(name)
+        self.snapshot_cls = self.snapshot_classes.pop(None)
 
         self.input_schema_cls = self.construct_marshmallow_schema(is_input=True)
         self.schema_cls = self.construct_marshmallow_schema(is_input=False)
+
+    def _get_snapshot_classes(self, name: str) -> Dict[Optional[str], Type[SchemaSnapshot]]:
+        classes = {None: SchemaSnapshot.from_schema(self.orig_schema_cls, name)}
+
+        for field_name, value in self.orig_schema_cls.__fields__.items():
+            if isinstance(value, NestedField):
+                classes[field_name] = SchemaSnapshot.from_schema(value.annotation, name)
+
+        return classes
+
+    def _snapshot_from_dict(self, data: Dict[str, Any]) -> SchemaSnapshot:
+        out_data = {}
+
+        for key, val in data.items():
+            if key in self.snapshot_classes:
+                out_data[key] = self.snapshot_classes[key](**val)
+            else:
+                out_data[key] = val
+
+        return self.snapshot_cls(**out_data)
 
     def construct_marshmallow_schema(self, is_input: bool = True) -> ma.Schema:
         """
@@ -319,7 +357,7 @@ class SchemaHelper:
         if len(errors) > 0:
             raise exc.InputValidationError(errors)
 
-    def load_input(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def load_input(self, data: Dict[str, Any]) -> SchemaSnapshot:
         """
         Load user input for this resource type.
         """
@@ -353,17 +391,19 @@ class SchemaHelper:
             raise exc.InputValidationError(msg)
 
         input_data.update(symbols)
-        return input_data
+        return self._snapshot_from_dict(input_data)
 
     @convert_ma_validation_error
-    def load(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def load(self, data: Dict[str, Any], validate: bool = True) -> SchemaSnapshot:
         """
         Load previously serialized data about this resource's state
         """
-        return self.schema_cls(unknown=ma.RAISE).load(data)
+        if validate:
+            data = self.schema_cls(unknown=ma.RAISE).load(data)
+        return self._snapshot_from_dict(data)
 
     @convert_ma_validation_error
-    def dump(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def dump(self, data: SchemaSnapshot) -> Dict[str, Any]:
         """
         Dump state data to a serialized version.
         """

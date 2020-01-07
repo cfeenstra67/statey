@@ -2,7 +2,7 @@
 Exception classes for use in the Statey framework
 """
 import asyncio
-from typing import Sequence, Hashable, Any, Coroutine, Optional
+from typing import Sequence, Hashable, Any, Coroutine, Optional, Tuple
 
 import marshmallow as ma
 
@@ -155,12 +155,19 @@ class InvalidReference(GraphIntegrityError, ResolutionError):
     Error indicating that a reference found when building a graph is invalid
     """
 
-    def __init__(self, path: str, field_name: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        path: str,
+        field_name: Optional[str] = None,
+        nested_path: Optional[Tuple[str, ...]] = None,
+    ) -> None:
         self.path = path
         self.field_name = field_name
         msg = f"Invalid reference found in graph: Path: {path}."
         if field_name is not None:
-            msg += f"Field: {field_name}."
+            joined_nested = nested_path or ".".join(nested_path)
+            full_name = ".".join(filter(None, [joined_nested, field_name]))
+            msg += f"Field: {full_name}."
         super().__init__(msg)
 
 

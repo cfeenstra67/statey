@@ -8,37 +8,14 @@ from typing import Dict, Any, Optional, Type, Tuple
 
 from statey import exc
 from statey.schema import (
+    Field,
     SchemaSnapshot,
     Reference,
     Schema,
     SchemaHelper,
+    SchemaReference,
     MISSING,
 )
-
-
-class _AttrAccessor:
-    """
-    Helper to allow smart attribute access on resource.attrs objects
-    """
-
-    def __init__(self, resource: "Resource") -> None:
-        self.resource = resource
-
-    def __getattr__(self, name: str) -> Any:
-        """
-        Get a reference to a field in the resource's schema
-        """
-        field = getattr(self.resource.Schema, name)
-        return Reference(self.resource, name, field)
-
-    def __getitem__(self, key: str) -> Any:
-        """
-        Enable using the attribute accessor with __getitem__ syntax
-        """
-        try:
-            return getattr(self, key)
-        except AttributeError as exc:
-            raise KeyError(key) from exc
 
 
 class ResourceMeta(abc.ABCMeta):
@@ -149,15 +126,14 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
                 " but not both."
             )
 
-        self.attrs = _AttrAccessor(self)
-
-        field_data = kwargs or (args and args[0]) or {}
+        self.ref = SchemaReference(self, Field[self.Schema]())
+        self.attrs = self.ref.attrs
 
         self.schema_helper = SchemaHelper(self.Schema, f"{type(self).__name__}Snapshot")
-        self.field_data = self.schema_helper.load_input(field_data)
 
         # Configure snapshot instance
-        self.snapshot = self.schema_helper.snapshot_cls(**self.field_data)
+        field_data = kwargs or (args and args[0]) or {}
+        self.snapshot = self.schema_helper.load_input(field_data)
         self.snapshot = self.snapshot.fill_missing_values(self)
 
         # The name cannot be set via an argument, it must be set after the

@@ -2,7 +2,7 @@
 Helper methods used in the statey.schema package
 """
 from functools import wraps
-from typing import Any, Dict, Tuple, Callable, Optional
+from typing import Any, Dict, Tuple, Callable, Optional, Union
 
 import marshmallow as ma
 import networkx as nx
@@ -16,7 +16,9 @@ def is_optional(annotation: Any) -> bool:
 	Determine if the given annotation is an Optional field
 	"""
     return (
-        hasattr(annotation, "__args__")
+        hasattr(annotation, "__origin__")
+        and annotation.__origin__ is Union
+        and getattr(annotation, "__args__", None) is not None
         and len(annotation.__args__) == 2
         and annotation.__args__[-1] is type(None)
     )

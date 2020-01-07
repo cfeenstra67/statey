@@ -12,7 +12,7 @@ import networkx as nx
 
 from statey import exc
 from statey.utils.helpers import truncate_string
-from .field import Field
+from .field import Field, NestedField  # pylint: disable=cyclic-import
 from .helpers import detect_circular_symbol_references
 
 
@@ -112,7 +112,7 @@ class Symbol(abc.ABC):
     __invert__ = unary_operator_handler(operator.invert, "__invert__")
 
     @abc.abstractmethod
-    def refs(self) -> Tuple[Tuple[QueryRef, str], ...]:
+    def refs(self) -> Tuple[Tuple[QueryRef, Tuple[str, ...]], ...]:
         """
 		Obtain a list of fields related to this symbol
 		returns a tuple of (path, field) tuples
@@ -230,12 +230,15 @@ class Reference(Symbol):
 	a state.
 	"""
 
-    def __init__(self, resource: QueryRef, field_name: str, field: Field) -> None:
+    def __init__(
+        self, resource: QueryRef, field_name: str, field: Field, nested_path: Tuple[str, ...] = ()
+    ) -> None:
         """
 		`source_field` - a Field instance indicating the referenced field
 		"""
         self.resource = resource
         self.field_name = field_name
+        self.nested_path = nested_path
         self.field = field
 
     def __eq__(self, other: Any) -> bool:
@@ -243,15 +246,20 @@ class Reference(Symbol):
             return False
         return other.resource == self.resource and other.field_name == self.field_name
 
-    def _query_value(self, values: "ResourceGraph") -> Optional["SchemaSnapshot"]:
+    def _query_value(self, values: "ResourceGraph") -> Any:
         resource = values.query(self.resource)
         if resource is None:
             return self
-        value = resource[self.field_name]
-        return value
 
-    def refs(self) -> Tuple[Tuple[str, str], ...]:
-        return ((self.resource, self.field_name),)
+        obj = resource
+        for component in self.nested_path:
+            obj = obj[component]
+
+        return obj[self.field_name]
+
+    def refs(self) -> Tuple[Tuple[QueryRef, Tuple[str, ...]], ...]:
+        path = self.nested_path + (self.field_name,)
+        return ((self.resource, path),)
 
     def compute_graph(
         self, values: "ResourceGraph", cache: Optional["CacheManager"] = None,
@@ -323,7 +331,8 @@ class Reference(Symbol):
         name_or_str = lambda x: getattr(x, "__name__", str(x))
         return (
             f"{type(self).__name__}[{name_or_str(self.field.annotation)}]"
-            f"(resource={self.resource}, field_name={self.field_name})"
+            f"(resource={self.resource}, field_name={self.field_name}, "
+            f"nested_path={self.nested_path})"
         )
 
 
@@ -332,6 +341,66 @@ class ReferenceCache(Cache):
     """
     Cache class for references
     """
+
+
+class RefAccessor:
+    """
+    Helper to allow smart attribute access for references
+    """
+
+    def __init__(
+        self,
+        resource: "Resource",
+        schema: Optional[Type["Schema"]] = None,
+        nested_path: Tuple[str, ...] = (),
+    ) -> None:
+        if schema is None:
+            schema = resource.Schema
+        self.resource = resource
+        self.schema = schema
+        self.nested_path = nested_path
+
+    def __getattr__(self, name: str) -> Any:
+        """
+        Get a reference to a field in the resource's schema
+        """
+        field = getattr(self.schema, name)
+        return field.reference_factory(self.resource, name, self.nested_path)
+
+    def __getitem__(self, key: str) -> Any:
+        """
+        Enable using the attribute accessor with __getitem__ syntax
+        """
+        try:
+            return getattr(self, key)
+        except AttributeError as exc:
+            raise KeyError(key) from exc
+
+
+class SchemaReference(Reference):
+    """
+    A reference to an entire schema
+    """
+
+    def __init__(
+        self, resource: "Resource", field: NestedField, nested_path: Tuple[str, ...] = ()
+    ) -> None:
+        super().__init__(resource, None, field, nested_path)
+        self.attrs = RefAccessor(resource, field.annotation, nested_path)
+
+    def _query_value(self, values: "ResourceGraph") -> Any:
+        resource = values.query(self.resource)
+        if resource is None:
+            return self
+
+        obj = resource
+        for component in self.nested_path:
+            obj = obj[component]
+
+        return obj
+
+
+CacheManager.handles(SchemaReference)(ReferenceCache)
 
 
 class FuncMeta(abc.ABCMeta):
@@ -519,7 +588,7 @@ class Func(Symbol, metaclass=FuncMeta):
                 return True
         return False
 
-    def refs(self) -> Tuple[Tuple[QueryRef, str], ...]:
+    def refs(self) -> Tuple[Tuple[QueryRef, Tuple[str, ...]], ...]:
         out = []
 
         for ref in itertools.chain.from_iterable(
@@ -656,7 +725,9 @@ class Literal(Symbol):
         self._type = type
 
     def refs(self) -> Tuple[Tuple[QueryRef, str], ...]:
-        return tuple((ref.resource, ref.field_name) for ref in self._refs)
+        refs = map(lambda x: x.refs(), self._refs)
+        refs = itertools.chain.from_iterable(refs)
+        return tuple(set(refs))
 
     def compute_graph(
         self, values: "ResourceGraph", cache: Optional["CacheManager"] = None,

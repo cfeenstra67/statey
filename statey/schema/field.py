@@ -2,11 +2,14 @@
 A field is some attribute of a resource
 """
 import abc
-from typing import Dict, Type, Any, Tuple, Optional, Callable
+import datetime as dt
+from functools import partial
+from typing import Dict, Type, Any, Tuple, Optional, Callable, Sequence
 
 import dataclasses as dc
 import marshmallow as ma
 
+from statey import exc
 from statey.utils.helpers import get_all_subclasses, NamedObject
 from .helpers import extract_modifiers, validate_no_input
 
@@ -14,6 +17,43 @@ from .helpers import extract_modifiers, validate_no_input
 # Object indicating that values are missing
 MISSING = NamedObject("MISSING")
 FUTURE = NamedObject("FUTURE")
+
+
+def schema_field(schema_cls: Optional[Type["Schema"]] = None, **kwargs: Dict[str, Any]) -> "Field":
+    """
+    Decorator to declare schema fields inline
+    """
+    if schema_cls is not None:
+        return Field[schema_cls](**kwargs)
+    return partial(schema_field, **kwargs)
+
+
+def wrap_field(parent_annotation: Any) -> "Field":
+    """
+    Decorator to wrap fields in other annotations. Can be used
+    on top of @schema_field
+
+    e.g. (results in the same as st.Field[List[config]])
+
+    @wrap_field(List)
+    @schema_field
+    class config(st.Schema):
+        a = st.Field[int]
+        b = st.Field[bool]
+    """
+
+    def dec(child_field):
+        return Field[parent_annotation[child_field.annotation]](
+            optional=child_field.optional,
+            computed=child_field.computed,
+            create_new=child_field.create_new,
+            store=child_field.store,
+            input=child_field.input,
+            factory=child_field.factory,
+            default=child_field.default,
+        )
+
+    return dec
 
 
 class FieldMeta(abc.ABCMeta):
@@ -152,6 +192,16 @@ class Field(abc.ABC, metaclass=FieldMeta):
             annotation = Optional[annotation]
         return annotation, dc.field(default=None)
 
+    def reference_factory(
+        self, resource: "Resource", name: str, nested_path: Tuple[str, ...] = ()
+    ) -> "Reference":
+        """
+        Given a resource and field name, return a reference object for this field.
+        """
+        from .symbol import Reference
+
+        return Reference(resource, name, self, nested_path)
+
 
 # pylint: disable=too-few-public-methods
 class _FieldWithModifiers:
@@ -219,3 +269,185 @@ class FloatField(Field):
 
     def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
         return ma.fields.Float(**self._marshmallow_default_args(is_input))
+
+
+class DateTimeField(Field):
+    """
+    Field class for datetimes
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return annotation is dt.datetime
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        return ma.fields.DateTime(**self._marshmallow_default_args(is_input))
+
+
+class DateField(Field):
+    """
+    Field class for dates
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return annotation is dt.date
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        return ma.fields.Date(**self._marshmallow_default_args(is_input))
+
+
+class TimeField(Field):
+    """
+    Field class for dates
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return annotation is dt.time
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        return ma.fields.Time(**self._marshmallow_default_args(is_input))
+
+
+class TimeDeltaField(Field):
+    """
+    Field class for dates
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return annotation is dt.timedelta
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        return ma.fields.TimeDelta(**self._marshmallow_default_args(is_input))
+
+
+class ListField(Field):
+    """
+    Field class for lists
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return isinstance(annotation, type) and issubclass(annotation, Sequence)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if getattr(self.annotation, "__args__", None) is None or len(self.annotation.__args__) != 1:
+            raise exc.InitializationError(
+                f"List fields must have an item type annotation e.g. List[str]. "
+                f"Got {self.annotation}."
+            )
+
+        self.item_annotation = self.annotation.__args__[0]
+        self.item_field = Field[self.item_annotation]()
+        self.item_ma_field = self.item_field.marshmallow_field(is_input=False)
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        return ma.fields.List(self.item_ma_field, **self._marshmallow_default_args(is_input))
+
+
+class DictField(Field):
+    """
+    Field class for dicts
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return isinstance(annotation, type) and issubclass(annotation, Dict)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if getattr(self.annotation, "__args__", None) is None or len(self.annotation.__args__) != 2:
+            raise exc.InitializationError(
+                f"Dict fields must have key and value annotations e.g. Dict[str, int]."
+                f" Got {self.annotation}."
+            )
+
+        self.key_annotation = self.annotation.__args__[0]
+        self.key_field = Field[self.key_annotation]()
+        self.key_ma_field = self.key_field.marshmallow_field(is_input=False)
+        self.value_annotation = self.annotation.__args__[1]
+        self.value_field = Field[self.value_annotation]()
+        self.value_ma_field = self.value_field.marshmallow_field(is_input=False)
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        return ma.fields.Dict(
+            keys=self.key_ma_field,
+            values=self.value_ma_field,
+            **self._marshmallow_default_args(is_input),
+        )
+
+
+class TupleField(Field):
+    """
+    Field class for tuples
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        return isinstance(annotation, type) and issubclass(annotation, Tuple)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if getattr(self.annotation, "__args__", None) is None:
+            raise exc.InitializationError(
+                f"Tuple fields must have annotations for each item e.g. Tuple[int, bool]."
+                f" Got {self.annotation}."
+            )
+
+        item_annotations = []
+        item_fields = []
+        item_ma_fields = []
+        for arg in self.annotation.__args__:
+            item_annotations.append(arg)
+            field = Field[arg]()
+            item_fields.append(field)
+            item_ma_fields.append(field.marshmallow_field(is_input=False))
+
+        self.item_annotations = tuple(item_annotations)
+        self.item_fields = tuple(item_fields)
+        self.item_ma_fields = tuple(item_ma_fields)
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        return ma.fields.Tuple(self.item_ma_fields, **self._marshmallow_default_args(is_input))
+
+
+class NestedField(Field):
+    """
+    Allow nesting another Schema as a field type
+    """
+
+    @classmethod
+    def __predicate__(cls, annotation: Any) -> bool:
+        # pylint: disable=cyclic-import
+        from .schema import Schema
+
+        return (
+            isinstance(annotation, Schema)
+            or isinstance(annotation, type)
+            and issubclass(annotation, Schema)
+        )
+
+    def __init__(self, *args, **kwargs):
+        from .schema import Schema, SchemaHelper
+
+        super().__init__(*args, **kwargs)
+        if isinstance(self.annotation, Schema):
+            self.annotation = type(self.annotation)
+        self.schema_helper = SchemaHelper(self.annotation)
+
+    def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
+        nested_schema_cls = (
+            self.schema_helper.input_schema_cls if is_input else self.schema_helper.schema_cls
+        )
+        schema = nested_schema_cls(unknown=ma.RAISE)
+        return ma.fields.Nested(schema, required=True)
+
+    def reference_factory(
+        self, resource: "Resource", name: str, nested_path: Tuple[str, ...] = ()
+    ) -> "Reference":
+        from .symbol import SchemaReference
+
+        return SchemaReference(resource, self, nested_path + (name,))
