@@ -505,14 +505,12 @@ class Func(Symbol, metaclass=FuncMeta):
     def _infer_annotation(self) -> None:
         annotations = getattr(self.func, "__annotations__", None)
         if annotations is None:
-            return
-        self.annotation = annotations.get("return")
+            self.annotation = Any
+        else:
+            self.annotation = annotations.get("return", Any)
 
     def _infer_return_type(self) -> None:
         self._return_type = None
-        if self.annotation is None:
-            return
-
         try:
             field = Field[self.annotation]()
         except KeyError as error:
@@ -520,7 +518,6 @@ class Func(Symbol, metaclass=FuncMeta):
                 f"Unable to infer a field type from the given return annotation"
                 f' "{self.annotation}" in the provided function {repr(self.func)}.'
             ) from error
-
         self._return_type = field
 
     @staticmethod

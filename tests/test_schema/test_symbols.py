@@ -199,11 +199,11 @@ def test_graph_resolve_inference(graph):
         assert exc.messages == {
             "b": [
                 "Attempting to assign to field <class 'statey.schema.field"
-                ".StrField'> from <class 'NoneType'> (symbol Func(<lambd"
-                "a>)(Reference[int](resource=Container(type_name=Cont"
-                "ainer, name=a), field_name=a, nested_path=()), Reference[s"
-                "tr](resource=Container(type_name=Container, name=a), field"
-                "_name=b, nested_path=())))."
+                ".StrField'> from <class 'statey.schema.field.Field'> (sy"
+                "mbol Func[typing.Any](<lambda>)(Reference[int](resource=C"
+                "ontainer(type_name=Container, name=a), field_name=a, nest"
+                "ed_path=()), Reference[str](resource=Container(type_name="
+                "Container, name=a), field_name=b, nested_path=())))."
             ]
         }
     else:
