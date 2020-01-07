@@ -42,8 +42,8 @@ class SchemaMeta(ma.schema.SchemaMeta):
 
             if not field.is_serializable() and field.store:
                 raise exc.InvalidField(
-                    f"Field {field} is not serializable, but `store=True`. This is"
-                    f"not allowed. Set `store=False` e.g. st.Field(store=False)."
+                    f"Field \"{name}\": {field} is not serializable, but `store=True`. "
+                    f"This is not allowed. Set `store=False` e.g. st.Field(store=False)."
                 )
 
             fields[name] = field

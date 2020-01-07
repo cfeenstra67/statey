@@ -221,14 +221,20 @@ class Field(abc.ABC, metaclass=FieldMeta):
         if self.name is not None:
             args.append(f"name={self.name}")
 
-        for attr in ["optional", "computed", "create_new", "store", "input"]:
+        for attr in ["optional", "computed", "create_new"]:
             if getattr(self, attr):
                 args.append(f"{attr}=True")
+
+        for attr in ["store", "input"]:
+            if not getattr(self, attr):
+                args.append(f"{attr}=False")
 
         args_str = ""
         if len(args) > 0:
             args_str = ", ".join(args)
-        return f"{type(self).__name__}[{self.annotation.__name__}]({args_str})"
+
+        name_or_str = lambda x: getattr(x, "__name__", str(x))
+        return f"{type(self).__name__}[{name_or_str(self.annotation)}]({args_str})"
 
 
 # pylint: disable=too-few-public-methods

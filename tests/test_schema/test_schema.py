@@ -135,3 +135,19 @@ def test_resource_schema():
     resource = Dummy(a=691932, b=True)
 
     assert resource.snapshot == resource.schema_helper.snapshot_cls(a=691932, b=True)
+
+
+def test_schema_not_serializable():
+
+    try:
+        class Test(st.Schema):
+            a = st.Field
+    except st.exc.InvalidField as exc:
+        assert 'Field "a"' in str(exc)
+        assert 'is not serializable' in str(exc)
+    else:
+        assert False, 'This should have raised an error'
+
+
+    class Test(st.Schema):
+        a = st.Field(store=False)
