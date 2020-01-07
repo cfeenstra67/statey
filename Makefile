@@ -7,7 +7,7 @@ test:
 	@py.test -vv tests
 
 check:
-	@black statey tests --line-length=100
+	@black statey tests --line-length=88
 	@pylint statey
 
 

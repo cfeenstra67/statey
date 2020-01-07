@@ -9,7 +9,9 @@ from statey.resource.lib.os import File
 @pytest.mark.asyncio
 async def test_build_graph(state, graph, tmpdir):
 
-    file1 = File["file1"](path=os.path.join(tmpdir, "file1.txt"), data="This is file 1.")
+    file1 = File["file1"](
+        path=os.path.join(tmpdir, "file1.txt"), data="This is file 1."
+    )
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
@@ -33,7 +35,9 @@ async def test_build_graph(state, graph, tmpdir):
     )
     assert plan.graph.nodes["file:/file2"]["change"].resource is file2
     assert type(plan.graph.nodes["file:/file2"]["change"]).__name__ == "Create"
-    file2_content = f'This was file 1\'s hash: {hashlib.sha256(b"This is file 1.").hexdigest()}'
+    file2_content = (
+        f'This was file 1\'s hash: {hashlib.sha256(b"This is file 1.").hexdigest()}'
+    )
     assert plan.graph.nodes["file:/file2"]["change"].snapshot.copy(
         size_bytes=None
     ) == file2.schema_helper.snapshot_cls(
@@ -54,7 +58,9 @@ async def test_build_graph(state, graph, tmpdir):
 @pytest.mark.asyncio
 async def test_build_graph_apply(state, graph, tmpdir):
 
-    file1 = File["file1"](path=os.path.join(tmpdir, "file1.txt"), data="This is file 1.")
+    file1 = File["file1"](
+        path=os.path.join(tmpdir, "file1.txt"), data="This is file 1."
+    )
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
@@ -73,14 +79,17 @@ async def test_build_graph_apply(state, graph, tmpdir):
 
     with open(os.path.join(tmpdir, "file2.txt")) as f:
         assert (
-            f.read() == f'This was file 1\'s hash: {hashlib.sha256(b"This is file 1.").hexdigest()}'
+            f.read()
+            == f'This was file 1\'s hash: {hashlib.sha256(b"This is file 1.").hexdigest()}'
         )
 
 
 @pytest.mark.asyncio
 async def test_build_graph_no_change(state, graph, tmpdir):
 
-    file1 = File["file1"](path=os.path.join(tmpdir, "file1.txt"), data="This is file 1.")
+    file1 = File["file1"](
+        path=os.path.join(tmpdir, "file1.txt"), data="This is file 1."
+    )
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
@@ -100,7 +109,9 @@ async def test_build_graph_no_change(state, graph, tmpdir):
 @pytest.mark.asyncio
 async def test_build_graph_change_apply(state, graph, tmpdir):
 
-    file1 = File["file1"](path=os.path.join(tmpdir, "file1.txt"), data="This is file 1.")
+    file1 = File["file1"](
+        path=os.path.join(tmpdir, "file1.txt"), data="This is file 1."
+    )
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
@@ -115,7 +126,9 @@ async def test_build_graph_change_apply(state, graph, tmpdir):
 
     new_graph = state.graph()
 
-    file1 = File["file1"](path=os.path.join(tmpdir, "file1.txt"), data="This is file 1. This too!")
+    file1 = File["file1"](
+        path=os.path.join(tmpdir, "file1.txt"), data="This is file 1. This too!"
+    )
     new_graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
@@ -150,7 +163,9 @@ async def test_build_graph_change_apply(state, graph, tmpdir):
 @pytest.mark.asyncio
 async def test_build_graph_teardown_apply(state, graph, tmpdir):
 
-    file1 = File["file1"](path=os.path.join(tmpdir, "file1.txt"), data="This is file 1.")
+    file1 = File["file1"](
+        path=os.path.join(tmpdir, "file1.txt"), data="This is file 1."
+    )
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),
@@ -185,7 +200,9 @@ async def test_build_graph_teardown_apply(state, graph, tmpdir):
 @pytest.mark.asyncio
 async def test_build_graph_remove_apply(state, graph, tmpdir):
 
-    file1 = File["file1"](path=os.path.join(tmpdir, "file1.txt"), data="This is file 1.")
+    file1 = File["file1"](
+        path=os.path.join(tmpdir, "file1.txt"), data="This is file 1."
+    )
     graph.add(file1)
     file2 = File["file2"](
         path=os.path.join(tmpdir, "file2.txt"),

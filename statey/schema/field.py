@@ -19,24 +19,26 @@ MISSING = NamedObject("MISSING")
 FUTURE = NamedObject("FUTURE")
 
 
-def schema_field(schema_cls: Optional[Type["Schema"]] = None, **kwargs: Dict[str, Any]) -> "Field":
+def nested(
+    schema_cls: Optional[Type["Schema"]] = None, **kwargs: Dict[str, Any]
+) -> "Field":
     """
     Decorator to declare schema fields inline
     """
     if schema_cls is not None:
         return Field[schema_cls](**kwargs)
-    return partial(schema_field, **kwargs)
+    return partial(nested, **kwargs)
 
 
 def wrap_field(parent_annotation: Any) -> "Field":
     """
     Decorator to wrap fields in other annotations. Can be used
-    on top of @schema_field
+    on top of @nested
 
     e.g. (results in the same as st.Field[List[config]])
 
     @wrap_field(List)
-    @schema_field
+    @nested
     class config(st.Schema):
         a = st.Field[int]
         b = st.Field[bool]
@@ -116,7 +118,9 @@ class Field(abc.ABC, metaclass=FieldMeta):
             raise ValueError("`factory` and `default` cannot both be passed to Field.")
 
         if not store and optional:
-            raise ValueError("`store=False` and `optional=True` are mutually exclusive.")
+            raise ValueError(
+                "`store=False` and `optional=True` are mutually exclusive."
+            )
 
         if factory is None:
             factory = lambda resource: default
@@ -338,7 +342,10 @@ class ListField(Field):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if getattr(self.annotation, "__args__", None) is None or len(self.annotation.__args__) != 1:
+        if (
+            getattr(self.annotation, "__args__", None) is None
+            or len(self.annotation.__args__) != 1
+        ):
             raise exc.InitializationError(
                 f"List fields must have an item type annotation e.g. List[str]. "
                 f"Got {self.annotation}."
@@ -349,7 +356,9 @@ class ListField(Field):
         self.item_ma_field = self.item_field.marshmallow_field(is_input=False)
 
     def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
-        return ma.fields.List(self.item_ma_field, **self._marshmallow_default_args(is_input))
+        return ma.fields.List(
+            self.item_ma_field, **self._marshmallow_default_args(is_input)
+        )
 
 
 class DictField(Field):
@@ -363,7 +372,10 @@ class DictField(Field):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if getattr(self.annotation, "__args__", None) is None or len(self.annotation.__args__) != 2:
+        if (
+            getattr(self.annotation, "__args__", None) is None
+            or len(self.annotation.__args__) != 2
+        ):
             raise exc.InitializationError(
                 f"Dict fields must have key and value annotations e.g. Dict[str, int]."
                 f" Got {self.annotation}."
@@ -397,8 +409,8 @@ class TupleField(Field):
         super().__init__(*args, **kwargs)
         if getattr(self.annotation, "__args__", None) is None:
             raise exc.InitializationError(
-                f"Tuple fields must have annotations for each item e.g. Tuple[int, bool]."
-                f" Got {self.annotation}."
+                f"Tuple fields must have annotations for each item e.g. "
+                f"Tuple[int, bool]. Got {self.annotation}."
             )
 
         item_annotations = []
@@ -415,7 +427,9 @@ class TupleField(Field):
         self.item_ma_fields = tuple(item_ma_fields)
 
     def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
-        return ma.fields.Tuple(self.item_ma_fields, **self._marshmallow_default_args(is_input))
+        return ma.fields.Tuple(
+            self.item_ma_fields, **self._marshmallow_default_args(is_input)
+        )
 
 
 class NestedField(Field):
@@ -444,7 +458,9 @@ class NestedField(Field):
 
     def marshmallow_field(self, is_input: bool = False) -> ma.fields.Field:
         nested_schema_cls = (
-            self.schema_helper.input_schema_cls if is_input else self.schema_helper.schema_cls
+            self.schema_helper.input_schema_cls
+            if is_input
+            else self.schema_helper.schema_cls
         )
         schema = nested_schema_cls(unknown=ma.RAISE)
         return ma.fields.Nested(schema, required=True)

@@ -1,5 +1,6 @@
 """
-A statey state specifies a storage configuration for a state and provides an interface for creating graphs
+A statey state specifies a storage configuration for a state and provides an interface
+for creating graphs
 """
 import asyncio
 from typing import Any, Sequence, AsyncContextManager, Optional
@@ -33,7 +34,8 @@ class State:
 		This could be a string or SQLAlchemy clause, for example
 		`storage` - StorageBackend instance
 		`serializer` - Serializer instance to encode state data
-		`middlewares` - Arbitrarily processing middlewares to be used to perform transformations
+		`middlewares` - Arbitrarily processing middlewares to be used to perform
+        transformations
 		on state data before it is stored. An encryption middleware could be one example.
 		"""
         if registry is None:
@@ -50,7 +52,9 @@ class State:
 		"""
         return ResourceGraph(self.registry)
 
-    async def refresh(self, graph: ResourceGraph) -> ResourceGraph:  # pylint: disable=no-self-use
+    async def refresh(
+        self, graph: ResourceGraph
+    ) -> ResourceGraph:  # pylint: disable=no-self-use
         """
 		Given the existing state snapshot, retrieve a new, updated snapshot
 		"""
@@ -143,21 +147,22 @@ class State:
     ) -> Plan:
         """
         Create a plan to apply the given graph. Optionally pass a state graph as well.
-        If no state graph is passed, one will be retrieved from the state using load_state(refresh=refresh).
-        The refresh flag is provided as a convenience, and will be passed as the `refresh` argument
-        of load_state(). If `state_graph` is provided and `refresh=True`, it will be refreshed using
-        state.refresh()
+        If no state graph is passed, one will be retrieved from the state using
+        load_state(refresh=refresh). The refresh flag is provided as a convenience, and
+        will be passed as the `refresh` argument of load_state(). If `state_graph` is
+        provided and `refresh=True`, it will be refreshed using state.refresh()
         """
         if graph.registry is not self.registry:
             raise exc.ForeignGraphError(
-                f"Argument `graph` contained a graph constructed using a different registry: "
-                f"{graph.registry}. Expected: {self.registry}."
+                f"Argument `graph` contained a graph constructed using a different "
+                f"registry: {graph.registry}. Expected: {self.registry}."
             )
 
         if state_graph is not None and state_graph.registry is not self.registry:
             raise exc.ForeignGraphError(
-                f"Argument `state_graph` contained a graph constructed using a different registry: "
-                f"{state_graph.registry}. Expected: {self.registry}."
+                f"Argument `state_graph` contained a graph constructed using a "
+                f"different registry: {state_graph.registry}. Expected: "
+                f"{self.registry}."
             )
 
         async with self.read_context() as ctx:  # pylint: disable=not-async-context-manager
@@ -175,19 +180,26 @@ class State:
                 refreshed_state = refreshed_state.resolve_all(partial=True)
 
             plan = Plan(
-                config_graph=graph, state_graph=refreshed_state, original_state_graph=state_graph,
+                config_graph=graph,
+                state_graph=refreshed_state,
+                original_state_graph=state_graph,
             )
             plan.build()
 
             return plan
 
     async def apply(
-        self, plan: Plan, executor: Optional[AsyncGraphExecutor] = None, write_state: bool = True
+        self,
+        plan: Plan,
+        executor: Optional[AsyncGraphExecutor] = None,
+        write_state: bool = True,
     ) -> ApplyResult:
         """
-        Apply the given plan with the given executor, updating the state storage accordingly
+        Apply the given plan with the given executor, updating the state storage
+        accordingly
         """
-        async with self.write_context() as ctx:  # pylint: disable=not-async-context-manager
+        # pylint: disable=not-async-context-manager
+        async with self.write_context() as ctx:
             result = await plan.apply(executor)
             state_graph = result.state_graph.resolve_all(lambda field: field.store)
             if write_state:

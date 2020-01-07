@@ -88,7 +88,9 @@ class TaskGraph:
         ]
         await asyncio.gather(*tasks)
 
-    def mark_coros_skipped(self, parent: Hashable, ignore: Set[Hashable] = frozenset()) -> None:
+    def mark_coros_skipped(
+        self, parent: Hashable, ignore: Set[Hashable] = frozenset()
+    ) -> None:
         """
         Mark any coroutines dependent on `parent` as skipped.
         """
@@ -102,7 +104,10 @@ class TaskGraph:
             self.mark_coros_skipped(other_path, ignore)
 
     async def coro_wrapper(
-        self, task_factory: Callable[[ChangeCoro], asyncio.Task], path: Hashable, coro: ChangeCoro
+        self,
+        task_factory: Callable[[ChangeCoro], asyncio.Task],
+        path: Hashable,
+        coro: ChangeCoro,
     ) -> Callable[[], Coroutine[None, None, None]]:
         """
         Wrap a couroutine including graph traversal logic
@@ -126,19 +131,33 @@ class TaskGraph:
             return result
 
         paths = self.ready_to_schedule(path)
-        LOGGER.debug("Scheduling %d task(s) after completing %s. (%r)", len(paths), path, paths)
+        LOGGER.debug(
+            "Scheduling %d task(s) after completing %s. (%r)", len(paths), path, paths
+        )
         if len(paths) > 0:
             tasks = map(partial(self.schedule, task_factory), paths)
             coros = itertools.chain.from_iterable(tasks)
             coros = list(coros)
-            LOGGER.debug("Scheduled %d task(s) after completing %s. (%s)", len(paths), path, paths)
+            LOGGER.debug(
+                "Scheduled %d task(s) after completing %s. (%s)",
+                len(paths),
+                path,
+                paths,
+            )
             await asyncio.wait(coros)
-            LOGGER.debug("Completed %d task(s) after completing %s. (%s)", len(paths), path, paths)
+            LOGGER.debug(
+                "Completed %d task(s) after completing %s. (%s)",
+                len(paths),
+                path,
+                paths,
+            )
 
         return result
 
     def schedule(
-        self, task_factory: Callable[[ChangeCoro], asyncio.Task], key: Optional[Hashable] = None
+        self,
+        task_factory: Callable[[ChangeCoro], asyncio.Task],
+        key: Optional[Hashable] = None,
     ) -> Tuple[asyncio.Task, ...]:
         """
         Schedule a coroutine for execution
@@ -174,7 +193,9 @@ class PlanGraph(TaskGraph):
             node = change_graph.nodes[path]
             if node["change"].null:
                 continue
-            coro_graph.add_node(path, coro=node["change"].apply(), change=node["change"])
+            coro_graph.add_node(
+                path, coro=node["change"].apply(), change=node["change"]
+            )
 
         for src, dest in change_graph.edges:
             if src not in coro_graph or dest not in coro_graph:
@@ -191,7 +212,9 @@ class PlanGraph(TaskGraph):
     ) -> None:
         coro_graph = self.build_coro_graph(change_graph)
         super().__init__(
-            graph=coro_graph, error_callback=self.error_cb, success_callback=self.success_cb
+            graph=coro_graph,
+            error_callback=self.error_cb,
+            success_callback=self.success_cb,
         )
         self.change_graph = change_graph
         self.state_graph = state_graph
@@ -199,10 +222,11 @@ class PlanGraph(TaskGraph):
 
     def finalize_state(self) -> None:
         """
-        Intended to be called after all scheduled tasks have completed. Fill any unprocessed
-        tasks or nulls in the state graph with existing states, if they exist. Otherwise,
-        remove those nodes from the graph (this sould always be possible because we process
-        each resource's dependencies before the resource itself).
+        Intended to be called after all scheduled tasks have completed. Fill any
+        unprocessed tasks or nulls in the state graph with existing states, if
+        they exist. Otherwise, remove those nodes from the graph (this sould always
+        be possible because we process each resource's dependencies before the
+        resource itself).
         """
         # First process unexecuted changes
         new_edges = []
@@ -217,12 +241,16 @@ class PlanGraph(TaskGraph):
             ):
                 continue
 
-            # Currently this is always using the prior state instead of the refreshed one, but in theory
-            # we should always be able to refresh from the old state so this is be OK: A refreshed state
-            # exists only if an initial one does, so we'll never lose any data. If the execution
-            # goes successfully only NoChange snapshots should get here as well, and those should
-            # always be functionally equal to the refreshed version.
-            if self.existing_state_graph is not None and path in self.existing_state_graph.graph:
+            # Currently this is always using the prior state instead of the
+            # refreshed one, but in theory we should always be able to refresh from
+            # the old state so this is be OK: A refreshed state exists only if an
+            # initial one does, so we'll never lose any data. If the execution goes
+            # successfully only NoChange snapshots should get here as well, and
+            # those should always be functionally equal to the refreshed version.
+            if (
+                self.existing_state_graph is not None
+                and path in self.existing_state_graph.graph
+            ):
                 existing_node = self.existing_state_graph.query(path, False)
                 if path in self.state_graph.graph:
                     node = self.state_graph.query(path, False)
@@ -230,11 +258,14 @@ class PlanGraph(TaskGraph):
                     node["exists"] = existing_node["exists"]
                 else:
                     new_nodes.append((path, existing_node))
-                    for node, edges in self.existing_state_graph.graph.pred[path].items():
+                    for node, edges in self.existing_state_graph.graph.pred[
+                        path
+                    ].items():
                         for edge in edges.values():
                             new_edges.append((node, path, edge))
 
-            # if no existing state exists or the path is not in the existing state, remove it from the graph
+            # if no existing state exists or the path is not in the existing state,
+            # remove it from the graph
             elif path in self.state_graph.graph:
                 self.state_graph.graph.remove_node(path)
 
@@ -242,7 +273,10 @@ class PlanGraph(TaskGraph):
         self.state_graph.graph.add_edges_from(new_edges)
 
     async def coro_wrapper(
-        self, task_factory: Callable[[ChangeCoro], asyncio.Task], path: Hashable, coro: ChangeCoro
+        self,
+        task_factory: Callable[[ChangeCoro], asyncio.Task],
+        path: Hashable,
+        coro: ChangeCoro,
     ) -> Callable[[], Coroutine[None, None, None]]:
         async def wrapper():
             change = self.graph.nodes[path]["change"]
@@ -263,7 +297,10 @@ class PlanGraph(TaskGraph):
         node = self.state_graph.query(path, False)
         node["error"] = error
 
-        if self.existing_state_graph is not None and path in self.existing_state_graph.graph:
+        if (
+            self.existing_state_graph is not None
+            and path in self.existing_state_graph.graph
+        ):
             existing = self.existing_state_graph.query(path, False)
             node["snapshot"] = existing["snapshot"]
             node["exists"] = existing["exists"]

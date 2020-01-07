@@ -35,7 +35,9 @@ class AsyncGraphExecutor:
             if not data["task"].done():
                 raise exc.TaskStillRunning(node, data["task"])
 
-    async def task_loop(self, task: asyncio.Task, graph: TaskGraph, max_signals: int) -> None:
+    async def task_loop(
+        self, task: asyncio.Task, graph: TaskGraph, max_signals: int
+    ) -> None:
         """
         While loop to await the given task and catch system exceptions gracefully
         """
@@ -46,13 +48,15 @@ class AsyncGraphExecutor:
             # Raise normal exceptions
             except Exception:
                 raise
-            # Catch anything else (e.g. SystemExit, KeyboardInterrupt) and handle it gracefully,
-            # avoiding cancelling running tasks as long as the user will let us.
+            # Catch anything else (e.g. SystemExit, KeyboardInterrupt) and handle it
+            # gracefully, avoiding cancelling running tasks as long as the user will
+            # let us.
             except BaseException as err:  # pylint: disable=broad-except
                 signals += 1
                 if signals >= max_signals:
                     LOGGER.info(
-                        "Caught %s. Cancelling tasks and reraising as signals >= max_signals (%s >= %s)",
+                        "Caught %s. Cancelling tasks and reraising as signals >= "
+                        "max_signals (%s >= %s)",
                         err,
                         signals,
                         max_signals,

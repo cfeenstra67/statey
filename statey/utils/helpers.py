@@ -63,7 +63,9 @@ def truncate_string(value: str, size: int = 1000, suffix: str = "...") -> str:
     return value[: size - len(suffix)] + suffix if len(value) > size else value
 
 
-def detect_circular_references(graph: nx.MultiDiGraph, key: Callable[[Any], str] = str) -> None:
+def detect_circular_references(
+    graph: nx.MultiDiGraph, key: Callable[[Any], str] = str
+) -> None:
     """
     Check the given compute graph for any circular references, which will cause
     a infinite recursion error otherwise

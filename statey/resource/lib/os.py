@@ -27,7 +27,8 @@ class File(st.Resource):
         path = st.Field[str](create_new=True)
         data = st.Field[str](store=False)
         data_sha256 = st.Field[str](
-            input=False, factory=lambda resource: st.Func[str](_get_hash, resource.attrs.data),
+            input=False,
+            factory=lambda resource: st.Func[str](_get_hash, resource.attrs.data),
         )
         permissions = st.Field[int](default=0o644)
         size_bytes = st.Field[int](computed=True)
@@ -67,7 +68,9 @@ class File(st.Resource):
         async with aiofiles.open(current.path) as file:
             content = await file.read()
 
-        return current.copy(permissions=permissions, data=content, size_bytes=size_bytes)
+        return current.copy(
+            permissions=permissions, data=content, size_bytes=size_bytes
+        )
 
     async def update(
         self, old: st.SchemaSnapshot, current: st.SchemaSnapshot, spec: "Update"

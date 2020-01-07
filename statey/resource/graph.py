@@ -1,6 +1,6 @@
 """
-A ResouceGraph is one of the core data structures in statey. It provides an interface for
-building and operating on resource graphs
+A ResouceGraph is one of the core data structures in statey. It provides an interface
+for building and operating on resource graphs
 """
 import itertools
 from typing import Optional, Union, Type, Callable, Dict, Any
@@ -57,7 +57,11 @@ class ResourceGraph:
         return graph
 
     def _path(self, resource: QueryRef) -> str:
-        return self.registry.get_path(resource) if isinstance(resource, Resource) else resource
+        return (
+            self.registry.get_path(resource)
+            if isinstance(resource, Resource)
+            else resource
+        )
 
     # pylint: disable=too-many-arguments
     def _add_at_path(
@@ -89,7 +93,8 @@ class ResourceGraph:
             raise exc.GraphIntegrityError(
                 f'Attempt to insert snapshot into the graph for path "{path}",'
                 f" but the snapshot's resource is not of type resource_cls "
-                f"(got {repr(type(resource))}, expected subclass of {repr(resource_cls)}."
+                f"(got {repr(type(resource))}, expected subclass of "
+                f"{repr(resource_cls)}."
             )
 
         new_graph = self.graph.copy()
@@ -112,8 +117,13 @@ class ResourceGraph:
                 data = self.query(resource_path, False)
                 other_resource_cls = data["resource_cls"]
 
-                if field_path not in other_resource_cls.Schema or resource_path not in new_graph:
-                    raise exc.InvalidReference(resource_path, field_path[-1], field_path[:-1])
+                if (
+                    field_path not in other_resource_cls.Schema
+                    or resource_path not in new_graph
+                ):
+                    raise exc.InvalidReference(
+                        resource_path, field_path[-1], field_path[:-1]
+                    )
 
                 new_graph.add_edge(
                     resource_path,
@@ -141,7 +151,8 @@ class ResourceGraph:
 		"""
         if resource_cls is None and isinstance(snapshot, SchemaSnapshot):
             raise exc.GraphError(
-                "`resource_cls` must be provided if `snapshot` is a snapshot instead of a resource."
+                "`resource_cls` must be provided if `snapshot` is a snapshot instead"
+                " of a resource."
             )
 
         # Simplify the syntax--allow adding resources, even though
@@ -214,7 +225,8 @@ class ResourceGraph:
             data = self.query(node, False)
             # Do not write null states at all, but check to make sure that the
             # graph still makes sense if we do that. Null states can also be the
-            # result of an upstream bug, so better to catch that before writing than after.
+            # result of an upstream bug, so better to catch that before writing than
+            # after.
             if data["snapshot"] is None:
                 depending = [
                     path
@@ -223,13 +235,16 @@ class ResourceGraph:
                 ]
                 if len(depending) > 0:
                     raise exc.GraphIntegrityError(
-                        f"Resource at path {node} has a null state, but it is dependended on by "
-                        f"resource(s) will non-null states: {depending}. This is unexpected!"
+                        f"Resource at path {node} has a null state, but it is "
+                        f"dependended on by resource(s) will non-null states: "
+                        f"{depending}. This is unexpected!"
                     )
                 continue
 
             snapshot, exists = data["snapshot"], data.get("exists", False)
-            snapshot_data = snapshot and SchemaHelper(snapshot.__schema__).dump(snapshot)
+            snapshot_data = snapshot and SchemaHelper(snapshot.__schema__).dump(
+                snapshot
+            )
 
             deps = {}
             for src, edges in depends_on.items():
@@ -237,12 +252,14 @@ class ResourceGraph:
                     continue
 
                 for edge in edges:
-                    field_deps = deps.setdefault(edge["destination_field_name"], {}).setdefault(
-                        src, set()
-                    )
+                    field_deps = deps.setdefault(
+                        edge["destination_field_name"], {}
+                    ).setdefault(src, set())
                     field_deps.add(edge["field"])
 
-            deps = {k: {k2: sorted(v2) for k2, v2 in v.items()} for k, v in deps.items()}
+            deps = {
+                k: {k2: sorted(v2) for k2, v2 in v.items()} for k, v in deps.items()
+            }
 
             nodes[node] = {
                 "name": data["resource"].name,
@@ -280,7 +297,11 @@ class ResourceGraph:
                     other = self.query(src_path, False)
                     field_obj = other["resource_cls"].Schema.__fields__[src_field]
 
-                    refs.append(Reference(resource=src_path, field_name=src_field, field=field_obj))
+                    refs.append(
+                        Reference(
+                            resource=src_path, field_name=src_field, field=field_obj
+                        )
+                    )
 
             field_obj = resource_cls.Schema.__fields__[field]
             graph_data[field] = Literal(value=value, type=field_obj, refs=tuple(refs))

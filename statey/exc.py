@@ -15,7 +15,8 @@ class StateyError(Exception):
 
 class JobAborted(StateyError):
     """
-    Error raised to indicate that tasks will not be performed because a job has been aborted
+    Error raised to indicate that tasks will not be performed because a job has
+    been aborted
     """
 
 
@@ -227,7 +228,8 @@ class TaskStillRunning(TaskGraphError):
         self.path = path
         self.task = task
         super().__init__(
-            f"Task at path {path} is still running after all tasks have been awaited: {task}."
+            f"Task at path {path} is still running after all tasks have been awaited:"
+            f" {task}."
         )
 
 

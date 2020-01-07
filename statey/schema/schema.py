@@ -76,7 +76,9 @@ class SchemaMeta(ma.schema.SchemaMeta):
         attrs.update(new_fields)
 
         new_cls = super().__new__(cls, name, bases, attrs)
-        fields = {k: copy.copy(v) for k, v in getattr(new_cls, "__fields__", {}).items()}
+        fields = {
+            k: copy.copy(v) for k, v in getattr(new_cls, "__fields__", {}).items()
+        }
         fields.update(new_fields)
 
         # Providing a mechanism to ignore superclass fields by
@@ -100,11 +102,10 @@ class Schema(ma.Schema, metaclass=SchemaMeta):
     Main statey schema class. This mainly just acts as a container for fields--most
     of the actual logic lives in the SchemaHelper and SchemaMeta classes
 
-    Although this class inherits from ma.Schema, it does NOT work by defining marshmallow
-    fields alone. It does, however, mean that decorators such as ma.validates_schema can be
-    used to customize behavior just like a regular marshmallow schema.
-
-    TODO: introduce decorators to schemas like ma.validates_schema
+    Although this class inherits from ma.Schema, it does NOT work by defining
+    marshmallow fields alone. It does, however, mean that decorators such as
+    ma.validates_schema can be used to customize behavior just like a regular
+    marshmallow schema.
     """
 
 
@@ -130,7 +131,11 @@ class SchemaSnapshot:
             name = f"{schema.__name__}Snapshot"
 
         fields = [
-            ("__meta__", Dict[str, Any], dc.field(default_factory=dict, repr=False, compare=False)),
+            (
+                "__meta__",
+                Dict[str, Any],
+                dc.field(default_factory=dict, repr=False, compare=False),
+            ),
             ("__schema__", schema, dc.field(init=False, repr=False, default=schema)),
         ]
         for field_name, field in schema.__fields__.items():
@@ -277,7 +282,9 @@ class SchemaHelper:
         self.input_schema_cls = self.construct_marshmallow_schema(is_input=True)
         self.schema_cls = self.construct_marshmallow_schema(is_input=False)
 
-    def _get_snapshot_classes(self, name: str) -> Dict[Optional[str], Type[SchemaSnapshot]]:
+    def _get_snapshot_classes(
+        self, name: str
+    ) -> Dict[Optional[str], Type[SchemaSnapshot]]:
         classes = {None: SchemaSnapshot.from_schema(self.orig_schema_cls, name)}
 
         for field_name, value in self.orig_schema_cls.__fields__.items():
@@ -378,9 +385,9 @@ class SchemaHelper:
             errors.append(error)
 
         try:
-            input_data = self.input_schema_cls(unknown=ma.RAISE, exclude=tuple(symbols)).load(
-                values
-            )
+            input_data = self.input_schema_cls(
+                unknown=ma.RAISE, exclude=tuple(symbols)
+            ).load(values)
         except ma.ValidationError as error:
             errors.append(error)
 

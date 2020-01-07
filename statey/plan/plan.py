@@ -1,5 +1,6 @@
 """
-A Plan object contains the core logic for generating and applying operation plans to statey states
+A Plan object contains the core logic for generating and applying operation
+plans to statey states
 """
 from operator import itemgetter
 from typing import Sequence, Optional, Dict, Any

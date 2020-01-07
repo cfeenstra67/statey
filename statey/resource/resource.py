@@ -36,7 +36,8 @@ class ResourceMeta(abc.ABCMeta):
         if not isinstance(annotation, str):
             raise ValueError(
                 f"The __getitem__ syntax for resources is used to set a default name"
-                f" for the resource. The value must be a string, got {repr(annotation)}."
+                f" for the resource. The value must be a string, got "
+                f"{repr(annotation)}."
             )
 
         def factory(*args, **kwargs):
@@ -82,7 +83,9 @@ class ResourceMeta(abc.ABCMeta):
         return cls._type_cache.get(type_name)
 
     # pylint: disable=arguments-differ
-    def __new__(cls, name: str, bases: Tuple[Type, ...], attrs: Dict[str, Any]) -> "ResourceMeta":
+    def __new__(
+        cls, name: str, bases: Tuple[Type, ...], attrs: Dict[str, Any]
+    ) -> "ResourceMeta":
         if "type_name" not in attrs:
             raise exc.InitializationError(
                 f"type_name must be defined for every new Resource subclass."

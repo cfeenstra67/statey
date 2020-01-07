@@ -28,7 +28,9 @@ def test_resolve_value(state, graph):
     assert resource.attrs.b.resolve(graph) == 10123
     assert (resource.attrs.a + resource.attrs.b).resolve(graph) == 10135
 
-    assert resource.snapshot.resolve(graph) == resource.schema_helper.snapshot_cls(a=12, b=10123)
+    assert resource.snapshot.resolve(graph) == resource.schema_helper.snapshot_cls(
+        a=12, b=10123
+    )
 
 
 def test_resolve_foreign_value_error(state, graph):
@@ -51,7 +53,9 @@ def test_resolve_foreign_value_error(state, graph):
 
 
 def test_value_validation():
-    Container = data_container_resource("Container", {"a": str, "b": int, "c": Optional[bool]})
+    Container = data_container_resource(
+        "Container", {"a": str, "b": int, "c": Optional[bool]}
+    )
 
     try:
         container = Container(a=None, b="abc", c="abc")
@@ -213,7 +217,32 @@ def test_nested_field():
         container = Container(a={"a": "blah"})
     except st.exc.InputValidationError as exc:
         assert exc.messages == {
-            "a": {"a": ["Not a valid integer."], "b": ["Missing data for required field."]}
+            "a": {
+                "a": ["Not a valid integer."],
+                "b": ["Missing data for required field."],
+            }
         }
+    else:
+        assert False, "This should have raised an error."
+
+
+def test_nested_field_decorator():
+    class TestSchema(st.Schema):
+        a = st.Field[int]
+
+        @st.schema.nested
+        class b:
+            a = st.Field[str]
+            b = st.Field[bool]
+
+    helper = st.schema.SchemaHelper(TestSchema)
+    assert isinstance(
+        helper.load_input({"a": 1, "b": {"a": "blah", "b": False}}), helper.snapshot_cls
+    )
+
+    try:
+        helper.load_input({"a": "blah", "b": {"a": "abc", "b": "def"}})
+    except st.exc.InputValidationError as exc:
+        assert exc.messages == {}
     else:
         assert False, "This should have raised an error."

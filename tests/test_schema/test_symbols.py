@@ -5,7 +5,8 @@ from ..conftest import data_container_resource
 
 
 @pytest.mark.parametrize(
-    "annotation, value, result", [(str, 1, "1"), (int, "12342", 12342), (bool, "some", True)]
+    "annotation, value, result",
+    [(str, 1, "1"), (int, "12342", 12342), (bool, "some", True)],
 )
 def test_graph_convert(annotation, value, result):
     assert st.F[[annotation]](value).resolve(None) == result
@@ -32,7 +33,10 @@ def test_graph_func_resolve(graph):
     graph.add(collection2)
 
     sym = st.Func[int](lambda x, y, u, v: (x + u) * (y + v))(
-        collection1.attrs.a, collection1.attrs.b, collection2.attrs.a, collection2.attrs.b
+        collection1.attrs.a,
+        collection1.attrs.b,
+        collection2.attrs.a,
+        collection2.attrs.b,
     )
     assert sym.resolve(graph) == 1692690
 
@@ -70,9 +74,9 @@ def test_graph_resolve_func_snapshot(graph):
     graph.add(collection2)
     graph.add(collection3)
 
-    assert collection3.snapshot.resolve(graph) == collection3.schema_helper.snapshot_cls(
-        a=123, b=-333
-    )
+    assert collection3.snapshot.resolve(
+        graph
+    ) == collection3.schema_helper.snapshot_cls(a=123, b=-333)
 
 
 def test_graph_circular_reference(graph):
@@ -99,7 +103,9 @@ def test_graph_circular_reference(graph):
 
     resource2 = Dummy["b"](a=1)
     graph.add(resource2)
-    assert resource2.snapshot.resolve(graph) == resource2.schema_helper.snapshot_cls(a=1, b=1)
+    assert resource2.snapshot.resolve(graph) == resource2.schema_helper.snapshot_cls(
+        a=1, b=1
+    )
 
 
 def test_graph_circular_func_reference(graph):
@@ -111,9 +117,12 @@ def test_graph_circular_func_reference(graph):
 
         class Schema(st.Resource.Schema):
             a = st.Field[str](optional=True, factory=lambda resource: resource.attrs.c)
-            b = st.Field[str](optional=True, factory=lambda resource: st.F[[str]](resource.attrs.a))
+            b = st.Field[str](
+                optional=True, factory=lambda resource: st.F[[str]](resource.attrs.a)
+            )
             c = st.Field[str](
-                optional=True, factory=lambda resource: st.F[str](",".join)(resource.attrs.b)
+                optional=True,
+                factory=lambda resource: st.F[str](",".join)(resource.attrs.b),
             )
 
         create = destroy = update = refresh = nothing

@@ -40,8 +40,9 @@ def binary_operator_handler(
                 other_type = other.type()
                 if not isinstance(other_type, type(my_type)):
                     raise exc.SymbolTypeError(
-                        f"Attempting to perform operation on object with a different field "
-                        f"type ({type(other_type).__name__}, expected {type(my_type).__name__})."
+                        f"Attempting to perform operation on object with a "
+                        f"different field type ({type(other_type).__name__},"
+                        f" expected {type(my_type).__name__})."
                     )
 
             annotation = my_type.annotation
@@ -205,7 +206,8 @@ class CacheManager:
 
     def _handler_cls(self, symbol: Symbol) -> Type[Cache]:
         registered = filter(
-            partial(isinstance, symbol), sorted(type(self).handlers, key=lambda x: x.__name__)
+            partial(isinstance, symbol),
+            sorted(type(self).handlers, key=lambda x: x.__name__),
         )
         result = next(registered, None)
         return result if result is None else type(self).handlers[result]
@@ -231,7 +233,11 @@ class Reference(Symbol):
 	"""
 
     def __init__(
-        self, resource: QueryRef, field_name: str, field: Field, nested_path: Tuple[str, ...] = ()
+        self,
+        resource: QueryRef,
+        field_name: str,
+        field: Field,
+        nested_path: Tuple[str, ...] = (),
     ) -> None:
         """
 		`source_field` - a Field instance indicating the referenced field
@@ -299,7 +305,9 @@ class Reference(Symbol):
 
         items = list(graph[id(self)].items())
         if len(items) > 1 or len(items[0][1]) > 1:
-            raise exc.GraphIntegrityError("References should have at most one downstream edge.")
+            raise exc.GraphIntegrityError(
+                "References should have at most one downstream edge."
+            )
 
         obj_id = items[0][0]
         obj_node = graph.nodes[obj_id]
@@ -383,7 +391,10 @@ class SchemaReference(Reference):
     """
 
     def __init__(
-        self, resource: "Resource", field: NestedField, nested_path: Tuple[str, ...] = ()
+        self,
+        resource: "Resource",
+        field: NestedField,
+        nested_path: Tuple[str, ...] = (),
     ) -> None:
         super().__init__(resource, None, field, nested_path)
         self.attrs = RefAccessor(resource, field.annotation, nested_path)
@@ -521,8 +532,8 @@ class Func(Symbol, metaclass=FuncMeta):
         if isinstance(value, (list, tuple, set)):
             symbols = sum(1 for arg in value if isinstance(arg, Symbol))
             if symbols > 0:
-                # We can use any type of field here--arguments to Func objects are not type-checked.
-                # We just want the argument to be a Symbol
+                # We can use any type of field here--arguments to Func objects are not
+                # type-checked. We just want the argument to be a Symbol
                 return Func[str](lambda *args: type(value)(args))(*value)
         if isinstance(value, dict):
             symbols = sum(1 for arg in value.values() if isinstance(arg, Symbol))
@@ -563,7 +574,8 @@ class Func(Symbol, metaclass=FuncMeta):
         kwargs_string = ""
         if len(self.kwargs) > 0:
             kwargs_string = ", ".join(
-                "=".join((key, truncate_string(str(val)))) for key, val in self.kwargs.items()
+                "=".join((key, truncate_string(str(val))))
+                for key, val in self.kwargs.items()
             )
 
         arguments = ", ".join(filter(None, [args_string, kwargs_string]))
@@ -578,7 +590,8 @@ class Func(Symbol, metaclass=FuncMeta):
 
     def contains_symbols(self) -> bool:
         """
-        Indicate whether the arguments to this Func contain any symbolsl (including nested)
+        Indicate whether the arguments to this Func contain any symbolsl (including
+        nested)
         """
         for arg in self.args:
             if isinstance(arg, Symbol):
@@ -592,7 +605,10 @@ class Func(Symbol, metaclass=FuncMeta):
         out = []
 
         for ref in itertools.chain.from_iterable(
-            map(type(self).refs_for_value, itertools.chain(self.args, self.kwargs.values()),)
+            map(
+                type(self).refs_for_value,
+                itertools.chain(self.args, self.kwargs.values()),
+            )
         ):
             if ref not in out:
                 out.append(ref)
@@ -665,7 +681,9 @@ class Func(Symbol, metaclass=FuncMeta):
         if tuple(args) == tuple(self.args) and kwargs == self.kwargs:
             resolved = self
         else:
-            resolved = self(*args, **kwargs).resolve_partial(values, cache, check_circular=False)
+            resolved = self(*args, **kwargs).resolve_partial(
+                values, cache, check_circular=False
+            )
 
         return resolved
 
@@ -690,7 +708,10 @@ class Func(Symbol, metaclass=FuncMeta):
 		Similar to functools.partial. Set some default arguments. Chainable.
 		"""
         return type(self)(
-            partial(self.func, *args, **kwargs), self.annotation, *self.args, **self.kwargs,
+            partial(self.func, *args, **kwargs),
+            self.annotation,
+            *self.args,
+            **self.kwargs,
         )
 
     def __call__(self, *args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> "Func":
@@ -771,7 +792,9 @@ class Literal(Symbol):
 
         items = list(graph[id(self)].items())
         if len(items) > 1 or len(items[0][1]) > 1:
-            raise exc.GraphIntegrityError("Literals should have at most one downstream edge.")
+            raise exc.GraphIntegrityError(
+                "Literals should have at most one downstream edge."
+            )
 
         obj_id = items[0][0]
         obj_node = graph.nodes[obj_id]

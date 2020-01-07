@@ -38,7 +38,9 @@ def extract_modifiers(annotation: Any) -> Tuple[Any, Dict[str, Any]]:
     return annotation, modifiers
 
 
-def validate_no_input(reason: Optional[str] = None,) -> Callable[[], Callable[[Any], None]]:
+def validate_no_input(
+    reason: Optional[str] = None,
+) -> Callable[[], Callable[[Any], None]]:
     """
 	Validate that a marshmallow field does not contain any input
 	"""

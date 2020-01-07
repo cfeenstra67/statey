@@ -1,5 +1,6 @@
 """
-The FileStorage class is the default state storage backend, and saves states locally on the file system.
+The FileStorage class is the default state storage backend, and saves states
+locally on the file system.
 """
 import asyncio
 import fcntl
@@ -25,7 +26,8 @@ class FileStorage(Storage):
     @staticmethod
     def ensure_path(path: str) -> None:
         """
-        Ensure that the given path can be written to i.e. that its parent directory exists.
+        Ensure that the given path can be written to i.e. that its parent
+        directory exists.
         """
         dirname, _ = os.path.split(path)
         if not os.path.isdir(dirname):

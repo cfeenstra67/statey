@@ -17,11 +17,13 @@ async def test_json_serializer_dump(state, graph, tmpdir):
 
     len_sym = st.F[int](len)
     container2 = Container["2"](
-        attr1=len_sym(container1.attrs.attr2), attr2=container1.attrs.attr2 + container1.attrs.attr2
+        attr1=len_sym(container1.attrs.attr2),
+        attr2=container1.attrs.attr2 + container1.attrs.attr2,
     )
     graph.add(container2)
     container3 = Container["3"](
-        attr1=len_sym(container2.attrs.attr2), attr2=container1.attrs.attr2 + "HELLO WORLD!"
+        attr1=len_sym(container2.attrs.attr2),
+        attr2=container1.attrs.attr2 + "HELLO WORLD!",
     )
     graph.add(container3)
 

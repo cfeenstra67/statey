@@ -12,7 +12,9 @@ import statey as st
 LOGGER = logging.getLogger(__name__)
 
 
-def data_container_resource(name: str, attrs: Optional[Dict[str, Any]] = None) -> Type[st.Resource]:
+def data_container_resource(
+    name: str, attrs: Optional[Dict[str, Any]] = None
+) -> Type[st.Resource]:
     if attrs is None:
         attrs = {}
 
@@ -62,7 +64,9 @@ async def state():
         empty_graph = state.graph()
         plan = await state.plan(empty_graph)
         result = await state.apply(plan)
-        assert result.success, f"Failed to clean up resources from state {state}: {result}"
+        assert (
+            result.success
+        ), f"Failed to clean up resources from state {state}: {result}"
 
 
 @pytest.fixture
