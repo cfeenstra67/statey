@@ -20,7 +20,7 @@ class File(st.Resource):
     A statey resource for a local file containing some data
     """
 
-    type_name = "file"
+    type_name: str = "os.file"
 
     # pylint: disable=missing-docstring
     class Schema(st.Schema):

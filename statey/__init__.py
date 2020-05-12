@@ -1,20 +1,15 @@
-# pylint: disable=cyclic-import,missing-module-docstring
-from statey import schema, resource, exc, plan, storage
-from statey.plan import (
-    Change,
-    NoChange,
-    Create,
-    Delete,
-    DeleteAndRecreate,
-    Update,
-    Plan,
-)
-from statey.resource import Resource, ResourceGraph
-from statey.schema import Field, Schema, Reference, Func, SchemaSnapshot
-from statey.schema.lib import func
-from statey.schema.lib.func import F, f
-from statey.state import State
-from statey.storage import Storage, Middleware, Serializer
+import pluggy
 
 
-__version__ = "0.0.2"
+PLUGGY_NS = 'statey'
+
+hookspec = pluggy.HookspecMarker(PLUGGY_NS)
+
+hookimpl = pluggy.HookimplMarker(PLUGGY_NS)
+
+
+def create_plugin_manager() -> pluggy.PluginManager:
+	"""
+	Factory function to create a plugin manager w/ the default namespace
+	"""
+	return pluggy.PluginManager(PLUGGY_NS)

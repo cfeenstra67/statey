@@ -109,13 +109,31 @@ class ResourceMeta(abc.ABCMeta):
 class Resource(abc.ABC, metaclass=ResourceMeta):
     """
     A resource can be any entity with the following properties:
-    - The entity be created, destroyed, and (optional) updated
+    - The entity be created, destroyed, and (optionally) updated
     - The state of the entity can be refreshed given the attributes in the schema
     """
 
-    type_name = "resource"
+    type_name: str = "resource"
 
-    Schema = Schema
+    Schema: Type[Schema] = Schema
+
+    Credentials: Optional[Type[Credentials]] = None
+
+    # class Schema:
+    #     some_field: Field[int]
+    #     other_field: Field[bool](optional=True)
+
+    #     @st.schema.wrap(List)
+    #     @st.schema.nested
+    #     class A:
+    #         b: Field[int]
+    #         blah_blah_blah: Field[str]
+
+    # # We can 
+    # class Creds:
+    #     pg_main: PostgresCredentials
+    #     aws_main: AwsCredentials
+    #     pg_replica: PostgresCredentials
 
     def __init__(self, *args, **kwargs) -> None:
         if len(args) > 1:
