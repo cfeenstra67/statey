@@ -6,6 +6,7 @@ from functools import partial
 from itertools import count, chain
 from typing import Any, Callable, Sequence, Dict, Union, Optional, Hashable
 
+import statey as st
 from statey.syms import utils, types, exc
 
 
@@ -25,6 +26,9 @@ class Symbol(abc.ABC):
 	def _binary_operator_method(op_func, typ=utils.MISSING):
 		def method(self, other):
 			ret_typ = self.type if typ is utils.MISSING else typ
+			if not isinstance(other, Symbol):
+				other_type = st.registry.infer_type(other)
+				other = Literal(other, other_type)
 			return Function(ret_typ, op_func, (self, other))
 		return method
 
@@ -35,11 +39,17 @@ class Symbol(abc.ABC):
 	__ge__ = _binary_operator_method(operator.ge, types.BooleanType(False))
 	__le__ = _binary_operator_method(operator.le, types.BooleanType(False))
 	__add__ = _binary_operator_method(operator.add)
+	__radd__ = _binary_operator_method(operator.add)
 	__sub__ = _binary_operator_method(operator.sub)
+	__rsub__ = _binary_operator_method(operator.sub)
 	__mul__ = _binary_operator_method(operator.mul)
+	__rmul__ = _binary_operator_method(operator.mul)
 	__div__ = _binary_operator_method(operator.floordiv)
+	__rdiv__ = _binary_operator_method(operator.floordiv)
 	__truediv__ = _binary_operator_method(operator.truediv)
+	__rtruediv__ = _binary_operator_method(operator.truediv)
 	__mod__ = _binary_operator_method(operator.mod)
+	__rmod__ = _binary_operator_method(operator.mod)
 
 	def _unary_operator_method(op_func, typ=utils.MISSING):
 		def method(self):

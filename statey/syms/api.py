@@ -7,8 +7,9 @@ import dataclasses as dc
 import inspect
 from typing import Any, Sequence, Dict, Callable, Type
 
+import statey as st
 from statey.syms import utils, symbols, types
-from statey.syms.ext.plugins import ParseDataClassPlugin
+from statey.syms.plugins import ParseDataClassPlugin, EncodeDataClassPlugin
 
 
 @dc.dataclass(frozen=True)
@@ -39,20 +40,20 @@ class _FunctionFactoryWithFunction(utils.Cloneable):
 			inspect.signature(self.func)
 		except ValueError:
 			wrapped_args = [
-				symbols.Literal(arg, types.registry.infer_type(arg))
+				symbols.Literal(arg, st.registry.infer_type(arg))
 				if not isinstance(arg, symbols.Symbol) else arg
 				for arg in args
 			]
 			wrapped_kwargs = {
-				key: symbols.Literal(arg, types.registry.infer_type(val))
+				key: symbols.Literal(arg, st.registry.infer_type(val))
 				if not isinstance(val, symbols.Symbol) else val
 				for key, val in kwargs.items()
 			}
-			wrapped_return = types.registry.get_type(self.factory.annotation)
+			wrapped_return = st.registry.get_type(self.factory.annotation)
 		else:
-			wrapped_args, wrapped_kwargs, wrapped_return = utils.wrap_function_call(types.registry, self.func, *args, **kwargs)
+			wrapped_args, wrapped_kwargs, wrapped_return = utils.wrap_function_call(st.registry, self.func, *args, **kwargs)
 			if self.factory.annotation is not utils.MISSING:
-				wrapped_return = types.registry.get_type(self.factory.annotation)
+				wrapped_return = st.registry.get_type(self.factory.annotation)
 		return symbols.Function(wrapped_return, self.func, wrapped_args, wrapped_kwargs)
 
 
@@ -65,6 +66,7 @@ def struct(cls: Type[Any]) -> Type[Any]:
 	it will be deserialized properly when bieng added to the session
 	"""
 	if isinstance(cls, type) and dc.is_dataclass(cls):
-		types.registry.pm.register(ParseDataClassPlugin(cls, types.StructType))
+		st.registry.pm.register(ParseDataClassPlugin(cls))
+		st.registry.pm.register(EncodeDataClassPlugin(cls))
 		return cls
 	raise NotImplementedError(f'No known encoding plugin implemented for {cls}.')

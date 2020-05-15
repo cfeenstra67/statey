@@ -1,11 +1,12 @@
 import dataclasses as dc
 import inspect
 from contextlib import contextmanager
-from functools import partial
+from functools import partial, reduce
 from typing import Type, Optional, Union, Any, Dict, Hashable, Sequence, Callable
 
 import marshmallow as ma
 
+from statey import NS
 from statey.syms import exc
 
 
@@ -180,7 +181,7 @@ def infer_annotation(obj: Any) -> Any:
 	Attempt to infer an annotation from obj, falling back on `type(obj)`
 	"""
 	obj_type = type(obj)
-	if isinstance(obj, Sequence) and len(set(map(type, obj))) == 1:
+	if isinstance(obj, Sequence) and obj and reduce(lambda x, y: x is y, map(type, obj)):
 		return Sequence[infer_annotation(obj[0])]
 	return obj_type
 
@@ -233,6 +234,19 @@ def wrap_function_call(registry: 'TypeRegistry', func: Callable[[Any], Any], *ar
 			kwargs[key] = symbols.Literal(arg, registry.get_type(param.annotation))
 
 	return args, kwargs, registry.get_type(sig.return_annotation)
+
+
+def encodeable_dataclass_fields(data: Any) -> Sequence[dc.field]:
+	""".
+	Respect the statey-specific field metadtaa and don't encode fields where statey.encode = False
+	"""
+	out = []
+	for field in dc.fields(data):
+		syms_meta = field.metadata.get(NS) or {}
+		encode = syms_meta.get('encode', True)
+		if encode:
+			out.append(field)
+	return out
 
 
 class Cloneable:

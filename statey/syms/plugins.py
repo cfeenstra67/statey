@@ -1,7 +1,8 @@
 import dataclasses as dc
 from typing import Tuple, Type, Dict, Any, Type as PyType, Union, Callable, Sequence
 
-from statey import hookimpl
+import statey as st
+from statey.registry import Registry
 from statey.syms import types, utils
 
 
@@ -11,8 +12,8 @@ class HandleOptionalPlugin:
 	"""
 	Handle an Optional[] annotation wrapper
 	"""
-	@hookimpl
-	def get_type(self, annotation: Any, registry: types.TypeRegistry, meta: Dict[str, Any]) -> types.Type:
+	@st.hookimpl
+	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
 		inner = utils.extract_optional_annotation(annotation)
 		if inner is None:
 			return None
@@ -29,8 +30,8 @@ class ValuePredicatePlugin:
 	predicate: Union[Callable[[Any], bool], PyType]
 	type_cls: PyType[types.ValueType]
 
-	@hookimpl(tryfirst=True)
-	def get_type(self, annotation: Any, registry: types.TypeRegistry, meta: Dict[str, Any]) -> types.Type:
+	@st.hookimpl(tryfirst=True)
+	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
 		predicate = self.predicate
 		if isinstance(self.predicate, type):
 			predicate = lambda x: isinstance(x, type) and issubclass(x, self.predicate)
@@ -48,8 +49,8 @@ class ParseSequencePlugin:
 	"""
 	array_type_cls: PyType[types.ArrayType] = types.ArrayType
 
-	@hookimpl
-	def get_type(self, annotation: Any, registry: types.TypeRegistry, meta: Dict[str, Any]) -> types.Type:
+	@st.hookimpl
+	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
 		if not isinstance(annotation, type) or not issubclass(annotation, Sequence):
 			return None
 		inner = utils.extract_inner_annotation(annotation)
@@ -68,30 +69,39 @@ class ParseDataClassPlugin:
 	dataclass_cls: PyType
 	struct_type_cls: PyType[types.StructType] = types.StructType
 
-	@hookimpl
-	def get_type(self, annotation: Any, registry: types.TypeRegistry, meta: Dict[str, Any]) -> types.Type:
+	@st.hookimpl
+	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
 		if annotation is not self.dataclass_cls or not dc.is_dataclass(annotation):
 			return None
 		fields = []
-		for dc_field in dc.fields(annotation):
+		for dc_field in utils.encodeable_dataclass_fields(annotation):
 			field_annotation = dc_field.type
 			syms_type = registry.get_type(field_annotation)
 			syms_field = types.StructField(dc_field.name, syms_type)
 			fields.append(syms_field)
 		instance = self.struct_type_cls(tuple(fields), meta.get('nullable', False))
 		# Register encoding hooks
-		instance.pm.register(self)
+		instance.pm.register(EncodeDataClassPlugin(self.dataclass_cls, self.struct_type_cls))
 		return instance
 
-	@hookimpl
+
+@dc.dataclass(frozen=True)
+class EncodeDataClassPlugin:
+	"""
+	Parse a specific dataclass into a StructType
+	"""
+	dataclass_cls: PyType
+	struct_type_cls: PyType[types.StructType] = types.StructType
+
+	@st.hookimpl
 	def decode(self, value: Any) -> Any:
 		return self.dataclass_cls(**value) if value is not None else None
 
-	@hookimpl
+	@st.hookimpl
 	def encode(self, value: Any) -> Any:
 		if not isinstance(value, self.dataclass_cls) or not dc.is_dataclass(value):
 			return None
-		return {field.name: getattr(value, field.name) for field in dc.fields(value)}
+		return {field.name: getattr(value, field.name) for field in utils.encodeable_dataclass_fields(value)}
 
 
 def default_plugins() -> Sequence[Any]:
@@ -115,4 +125,4 @@ def register() -> None:
 	Register default plugins
 	"""
 	for plugin in default_plugins():
-		types.registry.pm.register(plugin)
+		st.registry.pm.register(plugin)

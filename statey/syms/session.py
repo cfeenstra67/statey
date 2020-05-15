@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional, Tuple, Union
 
 import marshmallow as ma
 
+import statey as st
+from statey.registry import Registry
 from statey.syms import types, symbols, exc, utils, path
 
 
@@ -57,9 +59,9 @@ class Session(abc.ABC):
 	"""
 	A session contains a namespace and associated data and symbols
 	"""
-	def __init__(self, ns: Namespace, registry: Optional[types.TypeRegistry] = None) -> None:
+	def __init__(self, ns: Namespace, registry: Optional[Registry] = None) -> None:
 		if registry is None:
-			registry = types.registry
+			registry = st.registry
 		self.ns = ns
 		self.registry = registry
 
