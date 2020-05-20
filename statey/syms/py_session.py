@@ -29,37 +29,6 @@ class PythonNamespace(session.Namespace):
 		self.types[key] = type
 		return symbols.Reference(key, type, self)
 
-	def _resolve_one(self, base: types.Type, comps: Sequence[Any], path: str) -> Tuple[types.Type, Sequence[Any]]:
-		if not comps:
-			return base
-		
-		head, *tail = comps
-		if isinstance(base, types.StructType):
-			return base[head].type, tail
-
-		if not isinstance(base, types.ArrayType):
-			raise exc.SymbolKeyError(path, self)
-
-		if head is utils.EXPLODE:
-			if not tail:
-				return base, tail
-
-			second, *tail = tail
-
-			if not isinstance(base.element_type, types.StructType) or second not in base.element_type:
-				raise exc.SymbolKeyError(path, self)
-
-			second_type = base.element_type[second].type
-			return types.ArrayType(second_type, base.nullable), tail
-
-		if isinstance(head, slice):
-			return base, tail
-
-		if isinstance(head, int):
-			return base.element_type, tail
-
-		raise exc.SymbolKeyError(path, self)
-
 	def resolve(self, key: str) -> types.Type:
 		"""
 		Get the type of the given key, raising an error if it is not in the current schema
@@ -69,43 +38,22 @@ class PythonNamespace(session.Namespace):
 			raise exc.SymbolKeyError(key, self)
 
 		base_type = self.types[base]
-		while rel_path:
-			base_type, rel_path = self._resolve_one(base_type, rel_path, key)
+		for attr in rel_path:
+			semantics = self.registry.get_semantics(base_type)
+			base_type = semantics.attr_type(attr)
+			if base_type is None:
+				raise exc.SymbolKeyError(key, self)
 
 		return base_type
 
-	# def __getitem__(self, attr: Union[slice, str]) -> Symbol:
-	# 	out_path = self.ns.path_parser.join([self.path, attr])
 
-	# 	def get_struct_field(typ):
-	# 		fields_by_name = {field.name: field for field in typ.fields}
-	# 		if attr not in fields_by_name:
-	# 			raise exc.SymbolKeyError(out_path, self.ns)
-	# 		field = fields_by_name[attr]
-	# 		return field
-
-	# 	if isinstance(self.type, types.StructType):
-	# 		typ = get_struct_field(self.type).type
-	# 	elif isinstance(self.type, types.ArrayType):
-	# 		if isinstance(attr, slice):
-	# 			typ = self.type
-	# 		elif isinstance(attr, int):
-	# 			typ = self.type.element_type
-	# 		elif isinstance(self.type.element_type, types.StructType):
-	# 			typ = types.ArrayType(get_struct_field(self.type.element_type).type, self.type.nullable)
-	# 			out_path = self.ns.path_parser.join([self.path, utils.EXPLODE, attr])
-	# 		else:
-	# 			raise exc.SymbolKeyError(out_path, self.ns)
-	# 	else:
-	# 		raise exc.SymbolKeyError(out_path, self.ns)
-	# 	return Reference(out_path, typ, self.ns)
-
-		# base_ref = symbols.Reference(base, self.types[base], self)
-		# print("HERE", base_ref, rel_path)
-		# try:
-		# 	return utils.dict_get_path(base_ref, rel_path, explode=False).type
-		# except KeyError as err:
-		# 	raise exc.SymbolKeyError(key, self) from err
+@dc.dataclass(frozen=True)
+class Unknown:
+	"""
+	Some value that is as-yet unknown. It may or may not be known at some
+	time in the future. Note this is NOT a symbol
+	"""
+	symbol: symbols.Symbol
 
 
 class PythonSession(session.Session):
@@ -125,36 +73,37 @@ class PythonSession(session.Session):
 		data = encoder.encode(data)
 		utils.dict_set_path(self.data, self.ns.path_parser.split(key), data)
 
-	def get_encoded_data(self, key: str) -> Any:
+	def get_encoded_data(self, key: str, allow_unknowns: bool = False) -> Any:
 		"""
 		Return the data or symbol at the given key, with a boolean is_symbol also returned indicating
 		whether that key points to a symbol. If the key has not been set, syms.exc.MissingDataError
 		will be raised
 		"""
 		typ = self.ns.resolve(key)
-		path = self.ns.path_parser.split(key)
-		try:
-			return utils.dict_get_path(self.data, path)
-		except KeyError as err:
-			raise exc.MissingDataError(key, typ, self) from err
+		base, *rel_path = self.ns.path_parser.split(key)
+		if base not in self.data:
+			if not allow_unknowns:
+				raise exc.MissingDataError(key, typ, self)
+			return Unknown(self.ns.ref(key))
+		
+		base_type = self.ns.resolve(base)
+		value = self.data[base]
+		for idx, attr in enumerate(rel_path):
+			semantics = self.ns.registry.get_semantics(base_type)
+			# Type is already resolved, so this will never be none
+			base_type = semantics.attr_type(attr)
+			try:
+				value = semantics.get_attr(value, attr)
+			except (KeyError, AttributeError) as err:
+				if not allow_unknowns:
+					sub_path = [base] + list(rel_path)[:idx + 1]
+					sub_key = self.ns.path_parser.join(sub_path)
+					raise exc.MissingDataError(key, base_type, self) from err
+				return Unknown(self.ns.ref(key))
 
-	def _build_value_dag(self, graph: nx.DiGraph, symbol_id: Any, value: Any, type: types.Type) -> Any:
-		if isinstance(value, symbols.Symbol):
-			yield value, (symbol_id,)
-			return
+		return value
 
-		if value is None:
-			return
-
-		if isinstance(type, types.ArrayType):
-			for val in value:
-				yield from self._build_value_dag(graph, symbol_id, val, type.element_type)
-
-		elif isinstance(type, types.StructType):
-			for key, val in value.items():
-				yield from self._build_value_dag(graph, symbol_id, val, type[key].type)
-
-	def _build_symbol_dag(self, symbol: symbols.Symbol) -> nx.DiGraph:
+	def _build_symbol_dag(self, symbol: symbols.Symbol, allow_unknowns: bool = False) -> nx.DiGraph:
 
 		graph = nx.DiGraph()
 		syms = [(symbol, ())]
@@ -165,21 +114,26 @@ class PythonSession(session.Session):
 			if sym.symbol_id in graph.nodes:
 				processed = True
 			else:
-				# print("SYMBOL", sym.symbol_id, sym)
 				graph.add_node(sym.symbol_id, symbol=sym)
 
 			for symbol_id in downstreams:
-				# print("EDGE", sym.symbol_id, symbol_id)
 				graph.add_edge(sym.symbol_id, symbol_id)
 
 			if processed:
 				continue
 
+			def collect_symbols(value):
+				if isinstance(value, symbols.Symbol):
+					syms.append((value, (sym.symbol_id,)))
+				return value
+
+			semantics = self.ns.registry.get_semantics(sym.type)
+
 			if isinstance(sym, symbols.Literal):
-				syms.extend(self._build_value_dag(graph, sym.symbol_id, sym.value, sym.type))
+				semantics.map(collect_symbols, sym.value)
 			elif isinstance(sym, symbols.Reference):
 				value = self.get_encoded_data(sym.path)
-				syms.extend(self._build_value_dag(graph, sym.symbol_id, value, sym.type))
+				semantics.map(collect_symbols, value)
 			elif isinstance(sym, symbols.Function):
 				for sub_sym in chain(sym.args, sym.kwargs.values()):
 					syms.append((sub_sym, (sym.symbol_id,)))
@@ -190,55 +144,53 @@ class PythonSession(session.Session):
 		if not is_directed_acyclic_graph(graph):
 			raise ValueError(f'{graph} is not a DAG.')
 
-		# print("NODES", graph.nodes)
-
 		return graph
 
-	def _process_value_dag(self, graph: nx.DiGraph, value: Any, type: types.Type) -> Any:
-		# print("VALUE", value, type)
-		if value is None:
-			return None
+	def _process_symbol_dag(self, dag: nx.DiGraph, allow_unknowns: bool = False) -> None:
 
-		if isinstance(value, symbols.Symbol):
-			# print("SYMBOL2", value.symbol_id, value)
-			sym_value = graph.nodes[value.symbol_id]['result']
-			# print("SYM_VALUE", sym_value)
-			return self._process_value_dag(graph, sym_value, value.type)
-
-		if isinstance(type, types.ArrayType):
-			return [self._process_value_dag(graph, item, type.element_type) for item in value]
-
-		if isinstance(type, types.StructType):
-			return {
-				key: self._process_value_dag(graph, val, type[key].type)
-				for key, val in value.items()
-			}
-
-		return value
-
-	def _process_symbol_dag(self, dag: nx.DiGraph) -> None:
 		for symbol_id in topological_sort(dag):
+
 			sym = dag.nodes[symbol_id]['symbol']
-			# print("PROCESSING", symbol_id, sym)
+
 			if isinstance(sym, symbols.Literal):
 				value = sym.value
+
 			elif isinstance(sym, symbols.Reference):
-				value = self.get_encoded_data(sym.path)
+				value = self.get_encoded_data(sym.path, allow_unknowns)
+
 			elif isinstance(sym, symbols.Function):
 				args = []
+				is_unknown = False
 				for sub_sym in sym.args:
-					args.append(dag.nodes[sub_sym.symbol_id]['result'])
+					arg = dag.nodes[sub_sym.symbol_id]['result']
+					if isinstance(arg, Unknown):
+						is_unknown = True
+						break
+					args.append(arg)
 				kwargs = {}
 				for key, sub_sym in sym.kwargs.items():
-					kwargs[key] = dag.nodes[sub_sym.symbol_id]['result']
-				value = sym.func(*args, **kwargs)
+					arg = dag.nodes[sub_sym.symbol_id]['result']
+					if isinstance(arg, Unknown):
+						is_unknown = True
+						break
+					kwargs[key] = arg
+				if is_unknown:
+					value = Unknown(sym)
+				else:
+					value = sym.func(*args, **kwargs)
 			else:
 				raise TypeError(f'Invalid symbol {sym}.')
 
-			resolved = self._process_value_dag(dag, value, sym.type)
+			def resolve_value(x):
+				if isinstance(x, symbols.Symbol):
+					return grapn.nodes[x.symbol_id]['result']
+				return x
+
+			semantics = self.ns.registry.get_semantics(sym.type)
+			resolved = semantics.map(resolve_value, value)
 			dag.nodes[symbol_id]['result'] = resolved
 
-	def resolve(self, symbol: symbols.Symbol) -> Any:
+	def resolve(self, symbol: symbols.Symbol, allow_unknowns: bool = False) -> Any:
 		dag = self._build_symbol_dag(symbol)
 		self._process_symbol_dag(dag)
 		encoded = dag.nodes[symbol.symbol_id]['result']

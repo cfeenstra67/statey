@@ -15,6 +15,15 @@ class SymsTypeError(SymsError, TypeError):
 	"""
 
 
+class NoTypeFound(SymsTypeError):
+	"""
+	Error to indicate we could not find a type for some annotation
+	"""
+	def __init__(self, annotation: Any) -> None:
+		self.annotation = annotation
+		super().__init__(f'No type found for annotation: {annotation}.')
+
+
 class NoEncoderFound(SymsTypeError):
 	"""
 	Error to indicate we could not find an encoder for some type
@@ -22,6 +31,15 @@ class NoEncoderFound(SymsTypeError):
 	def __init__(self, type: 'Type') -> None:
 		self.type = type
 		super().__init__(f'No encoder found for type: {type}.')
+
+
+class NoSemanticsFound(SymsTypeError):
+	"""
+	Error to indicate we could not find semantics for some type
+	"""
+	def __init__(self, type: 'Type') -> None:
+		self.type = type
+		super().__init__(f'No semantics found for type: {type}.')
 
 
 class NamespaceError(SymsError):
@@ -48,6 +66,16 @@ class SymbolKeyError(NamespaceError, KeyError):
 		self.key = key
 		self.ns = ns
 		super().__init__(f'Key "{key}" not found in namespace {ns}.')
+
+
+class SymbolAttributeError(SymsError, AttributeError):
+	"""
+	Error raised to indicate that an attribute reference cannot be resolved on a symbol
+	"""
+	def __init__(self, symbol: 'Symbol', attr: Any) -> None:
+		self.symbol = symbol
+		self.attr = attr
+		super().__init__(f'Could not resolve attribute "{attr}" of symbol {symbol}.')
 
 
 class SessionError(SymsError):

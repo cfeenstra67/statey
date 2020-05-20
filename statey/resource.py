@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, Sequence, Type as PyType, Callable
 import pluggy
 
 import statey as st
-from statey.syms import types, utils
+from statey.syms import types, utils, session
 
 
 @dc.dataclass(frozen=True)
@@ -24,33 +24,25 @@ class BoundState:
 	"""
 
 	"""
-	name: str
 	resource_name: str
+	state: State
 	data: Any
-	# This can be passed as a manual type hint
-	data_type: Optional[types.Type] = dc.field(
-		repr=False, default=utils.MISSING, metadata={st.NS: {'encode': False}}
-	)
 
-	@classmethod
 	@st.hookimpl
-	def infer_type(cls, obj: Any, registry: 'Registry') -> types.Type:
+	@classmethod
+	def infer_type(cls, obj: Any, registry: st.Registry) -> types.Type:
 		if not isinstance(obj, BoundState):
 			return None
-		if obj.data_type is utils.MISSING:
-			return None
-		from statey.syms.plugins import EncodeDataClassPlugin
 
-		typ = types.StructType(
-			[
-				types.StructField('name', types.StringType(False)),
-				types.StructField('resource_name', types.StringType(False)),
-				types.StructField('data', obj.data_type)
-			],
-			False
-		)
-		typ.pm.register(EncodeDataClassPlugin(BoundState))
-		return typ
+			
+
+
+
+
+
+
+
+
 
 
 class ResourceMeta(abc.ABCMeta):
@@ -87,7 +79,7 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
 					x = kwargs
 				elif kwargs:
 					raise ValueError('Either one positional arg or keyword arguments are required for a BoundState.')
-				return BoundState(name=state.name, resource_name=self.name, data=x, data_type=state.type)
+				return BoundState(state=state, resource_name=self.name, data=x)
 			self.set_state_factory(state, partial(state_factory, state))
 
 	def set_state_factory(self, state: State, factory: Callable[[Any], BoundState]) -> None:
@@ -97,3 +89,25 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
 	@abc.abstractmethod
 	def name(self) -> None:
 		raise NotImplementedError
+
+
+class ResourceSession(session.Session):
+	"""
+	Session subclass that wraps a regular session but handles resources in a special manner.
+	"""
+	def __init__(self, session: session.Session) -> None:
+		self.session = session
+		self.states = {}
+
+	def resolve(self, symbol: symbols.Symbol) -> Any:
+		return self.session.resolve(symbol)
+
+	def set_data(self, key: str, data: Any) -> None:
+		if isinstance(data)
+
+		self.session.set_data(key, data)
+
+
+
+
+

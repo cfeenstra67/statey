@@ -6,9 +6,10 @@ import pluggy
 
 import statey as st
 from statey import create_plugin_manager
-from statey.syms.encoders import Encoder
 from statey.resource import Resource
 from statey.syms import types, utils
+from statey.syms.encoders import Encoder
+from statey.syms.semantics import Semantics
 
 
 class Registry(abc.ABC):
@@ -23,18 +24,25 @@ class Registry(abc.ABC):
 		"""
 		raise NotImplementedError
 
+	@abc.abstractmethod
 	def infer_type(self, obj: Any) -> types.Type:
 		"""
 		Attempt to infer the type of `obj`, falling back on self.any_type
 		"""
-		annotation = utils.infer_annotation(obj)
-		return self.get_type(annotation)
+		raise NotImplementedError
 
 	@abc.abstractmethod
 	def get_encoder(self, type: types.Type) -> Encoder:
 		"""
 		Given a type, return an Encoder instance to encode the type, raising an exc.NoEncoderFound to
 		indicate failure
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
+	def get_semantics(self, type: types.Type) -> Semantics:
+		"""
+		Given a type, get the semantics to use for symbols of that type.
 		"""
 		raise NotImplementedError
 
@@ -75,6 +83,12 @@ class RegistryHooks:
 		Handle the given type and produce an Encoder instance that can encode values of that type
 		"""
 
+	@st.hookspec(firstresult=True)
+	def get_semantics(self, type: types.Type, registry: Registry) -> Semantics:
+		"""
+		Handle the given type and produce a Semantics instance for symbols of that type
+		"""
+
 
 def create_registry_plugin_manager():
 	"""
@@ -88,14 +102,9 @@ def create_registry_plugin_manager():
 @dc.dataclass(frozen=True)
 class DefaultRegistry(Registry):
 
-	any_type: types.Type = types.AnyType()
 	pm: pluggy.PluginManager = dc.field(init=False, default_factory=create_registry_plugin_manager, compare=False, repr=False)
 
 	def get_type(self, annotation: Any, meta: Optional[Dict[str, Any]] = None) -> types.Type:
-		"""
-		Parse the given annotation and return a Type. This will properly handle dataclasses
-		similarly to how case classes are handled in spark encoding
-		"""
 		if meta is None:
 			meta = {}
 		handled = self.pm.hook.get_type(
@@ -103,12 +112,11 @@ class DefaultRegistry(Registry):
 			meta=meta,
 			registry=self
 		)
-		return self.any_type if handled is None else handled
+		if handled is None:
+			raise exc.NoTypeFound(annotation)
+		return handled
 
 	def infer_type(self, obj: Any) -> types.Type:
-		"""
-		Attempt to infer the type of `obj`, falling back on self.any_type
-		"""
 		handled = self.pm.hook.infer_type(
 			obj=obj,
 			registry=self
@@ -119,9 +127,6 @@ class DefaultRegistry(Registry):
 		return self.get_type(annotation)
 
 	def get_encoder(self, type: types.Type) -> Encoder:
-		"""
-		Given a type, get an Encoder instance that can encoder it
-		"""
 		handled = self.pm.hook.get_encoder(
 			type=type,
 			registry=self
@@ -130,14 +135,20 @@ class DefaultRegistry(Registry):
 			raise exc.NoEncoderFound(type)
 		return handled
 
+	def get_semantics(self, type: types.Type) -> Semantics:
+		handled = self.pm.hook.get_semantics(
+			type=type,
+			registry=self
+		)
+		if handled is None:
+			raise exc.NoSemanticsFound(type)
+		return handled
+
+	def _get_registered_resource_name(self, resource_name: str) -> str:
+		return f'resource:{resource_name}'
+
 	def register_resource(self, resource: Resource) -> None:
-		"""
-		Register the given resource
-		"""
-		self.pm.register(resource, name=resource.name)
+		self.pm.register(resource, name=self._get_registered_resource_name(resource.name))
 
 	def get_resource(self, name: str) -> Resource:
-		"""
-		Get the resource with the given name
-		"""
-		return self.pm.get_plugin(name)
+		return self.pm.get_plugin(self._get_registered_resource_name(name))

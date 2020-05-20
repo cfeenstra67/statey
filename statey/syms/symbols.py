@@ -1,5 +1,6 @@
 import abc
 import dataclasses as dc
+import inspect
 import operator
 import os
 from functools import partial
@@ -20,8 +21,16 @@ class Symbol(abc.ABC):
 	A symbol represents some value within a session
 	"""
 	type: types.Type
+	registry: 'Registry'
 	# Must be globally unique among all symbols that exist in a namespace
 	symbol_id: int
+
+	@abc.abstractmethod
+	def get_attr(self, attr: Any) -> 'Symbol':
+		"""
+		Get the given attribute on the value of this symbol.
+		"""
+		raise NotImplementedError
 
 	def _binary_operator_method(op_func, typ=utils.MISSING):
 		def method(self, other):
@@ -60,6 +69,45 @@ class Symbol(abc.ABC):
 	__invert__ = _unary_operator_method(operator.invert)
 	__neg__ = _unary_operator_method(operator.neg)
 
+	def __getattr__(self, attr: str) -> Any:
+		"""
+		If this symbol is a struct, struct attributes can be accessed by __getattr__
+		"""
+		try:
+			return getattr(super(), attr)
+		except AttributeError as err1:
+			try:
+				return self[attr]
+			except exc.SymbolKeyError as err2:
+				raise err2 from err1
+
+	def __getitem__(self, attr: Any) -> Symbol:
+		return self.get_attr(attr)
+
+	def map(self, func: Callable[[Any], Any], return_type: types.Type = utils.MISSING) -> 'Symbol':
+		"""
+		Apply `func` to this symbol, optionally with an explicit return type. If return type
+		is not provided, we will try to infer it from `func` or fall back to the curren type
+		"""
+		if return_type is utils.MISSING:
+			try:
+				sig = inspect.signature(func)
+			# No signature
+			except ValueError:
+				return_type = self.type
+			else:
+				if sig.return_annotation is None:
+					return_type = self.type
+				else:
+					return_type = self.registry.get_type(sig.return_annotation)
+
+		return Function(
+			type=return_type,
+			registry=self.registry,
+			func=func,
+			args=(self,)
+		)
+
 
 # We want to explicitly disable hashing for symbols because they can contain non-hashable values
 # and be deeply nested
@@ -76,73 +124,54 @@ class Reference(Symbol):
 	def __post_init__(self) -> None:
 		self.__dict__['symbol_id'] = f'{type(self).__name__}:{self.path}'
 
-	def __getattr__(self, attr: str) -> Any:
-		"""
-		If this symbol is a struct, struct attributes can be accessed by __getattr__
-		"""
-		try:
-			return getattr(super(), attr)
-		except AttributeError as err1:
-			try:
-				return self[attr]
-			except exc.SymbolKeyError as err2:
-				raise err2 from err1
-
-	# def __getitem__(self, attr: Union[slice, str]) -> Symbol:
-	# 	out_path = self.ns.path_parser.join([self.path, attr])
-
-	# 	def get_struct_field(typ):
-	# 		fields_by_name = {field.name: field for field in typ.fields}
-	# 		if attr not in fields_by_name:
-	# 			raise exc.SymbolKeyError(out_path, self.ns)
-	# 		field = fields_by_name[attr]
-	# 		return field
-
-	# 	if isinstance(self.type, types.StructType):
-	# 		typ = get_struct_field(self.type).type
-	# 	elif isinstance(self.type, types.ArrayType):
-	# 		if isinstance(attr, slice):
-	# 			typ = self.type
-	# 		elif isinstance(attr, int):
-	# 			typ = self.type.element_type
-	# 		elif isinstance(self.type.element_type, types.StructType):
-	# 			typ = types.ArrayType(get_struct_field(self.type.element_type).type, self.type.nullable)
-	# 			out_path = self.ns.path_parser.join([self.path, utils.EXPLODE, attr])
-	# 		else:
-	# 			raise exc.SymbolKeyError(out_path, self.ns)
-	# 	else:
-	# 		raise exc.SymbolKeyError(out_path, self.ns)
-	# 	return Reference(out_path, typ, self.ns)
-
-	def __getitem__(self, attr: Union[slice, str]) -> Symbol:
-		path = self.ns.path_parser.join([self.path, attr])
-		typ = self.ns.resolve(path)
-		return Reference(path, typ, self.ns)
-
 	@property
-	def x(self) -> Symbol:
-		"""
-		If this reference is an ArrayType, return a reference with utils.EXPLODE appended to the path
-		"""
-		return self[utils.EXPLODE]
+	def registry(self) -> 'Registry':
+		return self.ns.registry	
+
+	def get_attr(self, attr: Any) -> 'Symbol':
+		typ = self.semantics.attr_type(attr)
+		path = self.ns.path_parser.join([self.path, attr])
+		if typ is None:
+			raise exc.SymbolKeyError(path)
+		return type(self)(path, typ, self.ns)
+
+
+class ValueSemantics(Symbol):
+	"""
+	For all values other than references, we need to implement get_attr by wrapping
+	the underlying semantics.get_attr method in a Function.
+	"""
+	def get_attr(self, attr: Any) -> 'Symbol':
+		semantics = self.registry.get_semantics(self.type)
+		typ = semantics.attr_type(attr)
+		if typ is None:
+			raise exc.SymbolAttributeError(self, attr)
+		return Function(
+			type=typ,
+			registry=self.registry,
+			func=lambda x: semantics.get_attr(x, attr),
+			args=(self,)
+		)
 
 
 @dc.dataclass(frozen=True)
-class Literal(Symbol):
+class Literal(ValueSemantics):
 	"""
 	A literal is a symbol that represents a concrete value
 	"""
 	value: Any
 	type: types.Type
+	registry: 'Registry'
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
 
 
 @dc.dataclass(frozen=True)
-class Function(Symbol):
+class Function(ValueSemantics):
 	"""
 	A symbol that is the result of applying `func` to the given args
 	"""
 	type: types.Type
+	registry: 'Registry'
 	func: Callable[[Any], Any]
 	args: Sequence[Symbol] = dc.field(default_factory=tuple)
 	kwargs: Dict[Hashable, Symbol] = dc.field(default_factory=dict)

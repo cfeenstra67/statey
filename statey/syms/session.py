@@ -99,7 +99,7 @@ class Session(abc.ABC):
 
 	# Abstract methods
 	@abc.abstractmethod
-	def resolve(self, symbol: symbols.Symbol) -> Any:
+	def resolve(self, symbol: symbols.Symbol, allow_unknowns: bool = False) -> Any:
 		"""
 		Resolve the given symbol with the given input data.
 		"""

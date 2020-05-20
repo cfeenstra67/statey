@@ -23,6 +23,6 @@ def create_plugin_manager() -> pluggy.PluginManager:
 	return pluggy.PluginManager(NS)
 
 
-from statey.registry import DefaultRegistry
+from statey.registry import DefaultRegistry, Registry
 
 registry = DefaultRegistry()
