@@ -1,6 +1,7 @@
 import abc
+import copy
 import dataclasses as dc
-from typing import Any, Optional, Callable
+from typing import Any, Optional, Callable, Dict
 
 import statey as st
 from statey.syms import types, utils, symbols
@@ -36,6 +37,13 @@ class Semantics(abc.ABC):
 		"""
 		raise NotImplementedError
 
+	@abc.abstractmethod
+	def clone(self, value: Any) -> Any:
+		"""
+		Return a semantically-correct deep copy of the given value
+		"""
+		raise NotImplementedError
+
 
 @dc.dataclass(frozen=True)
 class ValueSemantics(Semantics):
@@ -58,6 +66,11 @@ class ValueSemantics(Semantics):
 	@st.hookimpl
 	def get_semantics(cls, type: types.Type, registry: st.Registry) -> Semantics:
 		return cls(type)
+
+	def clone(self, value: Any) -> Any:
+		if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+			return value.clone()
+		return copy.copy(value)
 
 
 @dc.dataclass(frozen=True)
@@ -88,10 +101,7 @@ class ArraySemantics(Semantics):
 		# "exploding"
 		out = []
 		for item in value:
-			if isinstance(item, symbols.Symbol):
-				out.append(item.get_attr(attr))
-			else:
-				out.append(self.element_semantics.get_attr(item, attr))
+			out.append(self.element_semantics.get_attr(item, attr))
 		return out
 
 	def map(self, func: Callable[[Any], Any], value: Any) -> Any:
@@ -100,17 +110,22 @@ class ArraySemantics(Semantics):
 			return None
 
 		def process_value(x):
-			out = []
-			for item in x:
-				if isinstance(item, symbols.Symbol):
-					out.append(item.map(func, self.type.element_type))
-				else:
-					out.append(self.element_semantics.map(func, item))
-			return out
+			return [
+				self.element_semantics.map(func, item)
+				for item in x
+			]
 
-		if isinstance(value, symbols.Symbol):
+		if isinstance(value, (symbols.Symbol, symbols.Unknown)):
 			return value.map(process_value)
 		return process_value(value)
+
+	def clone(self, value: Any) -> Any:
+		if value is None:
+			return None
+
+		if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+			return value.clone()
+		return [self.element_semantics.clone(item) for item in value]
 
 	@classmethod
 	@st.hookimpl
@@ -147,17 +162,25 @@ class StructSemantics(Semantics):
 			return None
 
 		def process_value(x):
-			out = {}
-			for key, val in x.items():
-				if isinstance(val, symbols.Symbol):
-					out[key] = val.map(func, self.type[key].type)
-				else:
-					out[key] = self.field_semantics[key].map(func, val)
-			return out
+			return {
+				key: self.field_semantics[key].map(func, val)
+				for key, val in x.items()
+			}
 
-		if isinstance(value, symbols.Symbol):
+		if isinstance(value, (symbols.Symbol, symbols.Unknown)):
 			return value.map(process_value)
 		return process_value(value)
+
+	def clone(self, value: Any) -> Any:
+		if value is None:
+			return None
+
+		if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+			return value.clone()
+		out = {}
+		for key, val in value.items():
+			out[key] = self.field_semantics[key].clone(val)
+		return out
 
 	@classmethod
 	@st.hookimpl

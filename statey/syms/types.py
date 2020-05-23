@@ -163,3 +163,6 @@ class StructType(AnyType):
 		Indicate whether this StructType has a field with the given name
 		"""
 		return any(field.name == name for field in self.fields)
+
+
+EmptyType = StructType(())

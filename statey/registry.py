@@ -4,12 +4,8 @@ from typing import Dict, Any, Optional
 
 import pluggy
 
-import statey as st
-from statey import create_plugin_manager
-from statey.resource import Resource
-from statey.syms import types, utils
-from statey.syms.encoders import Encoder
-from statey.syms.semantics import Semantics
+from statey.hooks import hookspec, create_plugin_manager
+from statey.syms import types, utils, exc
 
 
 class Registry(abc.ABC):
@@ -32,7 +28,7 @@ class Registry(abc.ABC):
 		raise NotImplementedError
 
 	@abc.abstractmethod
-	def get_encoder(self, type: types.Type) -> Encoder:
+	def get_encoder(self, type: types.Type) -> 'Encoder':
 		"""
 		Given a type, return an Encoder instance to encode the type, raising an exc.NoEncoderFound to
 		indicate failure
@@ -40,21 +36,21 @@ class Registry(abc.ABC):
 		raise NotImplementedError
 
 	@abc.abstractmethod
-	def get_semantics(self, type: types.Type) -> Semantics:
+	def get_semantics(self, type: types.Type) -> 'Semantics':
 		"""
 		Given a type, get the semantics to use for symbols of that type.
 		"""
 		raise NotImplementedError
 
 	@abc.abstractmethod
-	def register_resource(self, resource: Resource) -> None:
+	def register_resource(self, resource: 'Resource') -> None:
 		"""
 		Register the given resource
 		"""
 		raise NotImplementedError
 
 	@abc.abstractmethod
-	def get_resource(self, name: str) -> Resource:
+	def get_resource(self, name: str) -> 'Resource':
 		"""
 		Get the resource with the given name
 		"""
@@ -65,26 +61,26 @@ class RegistryHooks:
 	"""
 	Specifies hooks for handling different annotations and converting them to types
 	"""
-	@st.hookspec(firstresult=True)
+	@hookspec(firstresult=True)
 	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
 		"""
 		Handle the given annotation and return a Type, or None to indicate it can't be handled by this hook
 		"""
 
-	@st.hookspec(firstresult=True)
+	@hookspec(firstresult=True)
 	def infer_type(self, obj: Any, registry: Registry) -> types.Type:
 		"""
 		Infer a type given an object
 		"""
 
-	@st.hookspec(firstresult=True)
-	def get_encoder(self, type: types.Type, registry: Registry) -> Encoder:
+	@hookspec(firstresult=True)
+	def get_encoder(self, type: types.Type, registry: Registry) -> 'Encoder':
 		"""
 		Handle the given type and produce an Encoder instance that can encode values of that type
 		"""
 
-	@st.hookspec(firstresult=True)
-	def get_semantics(self, type: types.Type, registry: Registry) -> Semantics:
+	@hookspec(firstresult=True)
+	def get_semantics(self, type: types.Type, registry: Registry) -> 'Semantics':
 		"""
 		Handle the given type and produce a Semantics instance for symbols of that type
 		"""
@@ -126,7 +122,7 @@ class DefaultRegistry(Registry):
 		annotation = utils.infer_annotation(obj)
 		return self.get_type(annotation)
 
-	def get_encoder(self, type: types.Type) -> Encoder:
+	def get_encoder(self, type: types.Type) -> 'Encoder':
 		handled = self.pm.hook.get_encoder(
 			type=type,
 			registry=self
@@ -135,7 +131,7 @@ class DefaultRegistry(Registry):
 			raise exc.NoEncoderFound(type)
 		return handled
 
-	def get_semantics(self, type: types.Type) -> Semantics:
+	def get_semantics(self, type: types.Type) -> 'Semantics':
 		handled = self.pm.hook.get_semantics(
 			type=type,
 			registry=self
@@ -147,8 +143,11 @@ class DefaultRegistry(Registry):
 	def _get_registered_resource_name(self, resource_name: str) -> str:
 		return f'resource:{resource_name}'
 
-	def register_resource(self, resource: Resource) -> None:
+	def register_resource(self, resource: 'Resource') -> None:
 		self.pm.register(resource, name=self._get_registered_resource_name(resource.name))
 
-	def get_resource(self, name: str) -> Resource:
-		return self.pm.get_plugin(self._get_registered_resource_name(name))
+	def get_resource(self, name: str) -> 'Resource':
+		resource = self.pm.get_plugin(self._get_registered_resource_name(name))
+		if resource is None:
+			raise exc.NoResourceFound(name)
+		return resource

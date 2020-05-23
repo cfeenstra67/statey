@@ -1,12 +1,13 @@
 import abc
+import copy
 import dataclasses as dc
 from functools import partial
 from itertools import chain
-from typing import Dict, Any, Optional, Tuple, Union, Sequence
+from typing import Dict, Any, Optional, Tuple, Union, Sequence, Iterator
 
 import marshmallow as ma
 import networkx as nx
-from networkx.algorithms.dag import is_directed_acyclic_graph, topological_sort
+from networkx.algorithms.dag import is_directed_acyclic_graph, topological_sort, ancestors, descendants
 
 from statey.syms import types, symbols, exc, utils, path, session
 
@@ -27,7 +28,10 @@ class PythonNamespace(session.Namespace):
 		if key in self.types:
 			raise exc.DuplicateSymbolKey(key, self)
 		self.types[key] = type
-		return symbols.Reference(key, type, self)
+		return self.ref(key)
+
+	def keys(self) -> Iterator[str]:
+		return self.types.keys()
 
 	def resolve(self, key: str) -> types.Type:
 		"""
@@ -47,15 +51,6 @@ class PythonNamespace(session.Namespace):
 		return base_type
 
 
-@dc.dataclass(frozen=True)
-class Unknown:
-	"""
-	Some value that is as-yet unknown. It may or may not be known at some
-	time in the future. Note this is NOT a symbol
-	"""
-	symbol: symbols.Symbol
-
-
 class PythonSession(session.Session):
 	"""
 	A pure python session implementation for resolving objects.
@@ -69,11 +64,13 @@ class PythonSession(session.Session):
 		Set the given data for the given key.
 		"""
 		typ = self.ns.resolve(key)
-		encoder = self.registry.get_encoder(typ)
-		data = encoder.encode(data)
-		utils.dict_set_path(self.data, self.ns.path_parser.split(key), data)
 
-	def get_encoded_data(self, key: str, allow_unknowns: bool = False) -> Any:
+		encoder = self.ns.registry.get_encoder(typ)
+		encoded_data = encoder.encode(data)
+
+		utils.dict_set_path(self.data, self.ns.path_parser.split(key), encoded_data)
+
+	def get_encoded_data(self, key: str) -> Any:
 		"""
 		Return the data or symbol at the given key, with a boolean is_symbol also returned indicating
 		whether that key points to a symbol. If the key has not been set, syms.exc.MissingDataError
@@ -84,7 +81,7 @@ class PythonSession(session.Session):
 		if base not in self.data:
 			if not allow_unknowns:
 				raise exc.MissingDataError(key, typ, self)
-			return Unknown(self.ns.ref(key))
+			return symbols.Unknown(self.ns.ref(key))
 		
 		base_type = self.ns.resolve(base)
 		value = self.data[base]
@@ -95,11 +92,9 @@ class PythonSession(session.Session):
 			try:
 				value = semantics.get_attr(value, attr)
 			except (KeyError, AttributeError) as err:
-				if not allow_unknowns:
-					sub_path = [base] + list(rel_path)[:idx + 1]
-					sub_key = self.ns.path_parser.join(sub_path)
-					raise exc.MissingDataError(key, base_type, self) from err
-				return Unknown(self.ns.ref(key))
+				sub_path = [base] + list(rel_path)[:idx + 1]
+				sub_key = self.ns.path_parser.join(sub_path)
+				raise exc.MissingDataError(key, base_type, self) from err
 
 		return value
 
@@ -137,6 +132,8 @@ class PythonSession(session.Session):
 			elif isinstance(sym, symbols.Function):
 				for sub_sym in chain(sym.args, sym.kwargs.values()):
 					syms.append((sub_sym, (sym.symbol_id,)))
+			elif isinstance(sym, (symbols.Future, symbols.Unknown)):
+				continue
 			else:
 				raise TypeError(f"Invalid symbol {sym}")
 
@@ -148,6 +145,19 @@ class PythonSession(session.Session):
 
 	def _process_symbol_dag(self, dag: nx.DiGraph, allow_unknowns: bool = False) -> None:
 
+		def resolve_future(future):
+			try:
+				return future.get_result()
+			except exc.FutureResultNotSet:
+				if not allow_unknowns:
+					raise
+				return symbols.Unknown(sym)
+
+		def resolve_unknown(unknown):
+			if not allow_unknowns:
+				raise exc.SessionError(f'Found an Unknown: {unknown} while resolving.')
+			return unknown
+
 		for symbol_id in topological_sort(dag):
 
 			sym = dag.nodes[symbol_id]['symbol']
@@ -156,46 +166,112 @@ class PythonSession(session.Session):
 				value = sym.value
 
 			elif isinstance(sym, symbols.Reference):
-				value = self.get_encoded_data(sym.path, allow_unknowns)
+				value = self.get_encoded_data(sym.path)
 
 			elif isinstance(sym, symbols.Function):
 				args = []
 				is_unknown = False
 				for sub_sym in sym.args:
 					arg = dag.nodes[sub_sym.symbol_id]['result']
-					if isinstance(arg, Unknown):
+					if isinstance(arg, symbols.Unknown):
 						is_unknown = True
 						break
 					args.append(arg)
 				kwargs = {}
 				for key, sub_sym in sym.kwargs.items():
 					arg = dag.nodes[sub_sym.symbol_id]['result']
-					if isinstance(arg, Unknown):
+					if isinstance(arg, symbols.Unknown):
 						is_unknown = True
 						break
 					kwargs[key] = arg
 				if is_unknown:
-					value = Unknown(sym)
+					value = symbols.Unknown(sym)
 				else:
 					value = sym.func(*args, **kwargs)
+
+			elif isinstance(sym, symbols.Future):
+				value = resolve_future(sym)
+			elif isinstance(sym, symbols.Unknown):
+				value = resolve_unknown(sym)
 			else:
 				raise TypeError(f'Invalid symbol {sym}.')
 
 			def resolve_value(x):
+				if isinstance(x, symbols.Future):
+					return resolve_future(x)
+				if isinstance(x, symbols.Unknown):
+					return resolve_unknown(x)
 				if isinstance(x, symbols.Symbol):
-					return grapn.nodes[x.symbol_id]['result']
+					return dag.nodes[x.symbol_id]['result']
 				return x
 
 			semantics = self.ns.registry.get_semantics(sym.type)
 			resolved = semantics.map(resolve_value, value)
 			dag.nodes[symbol_id]['result'] = resolved
 
-	def resolve(self, symbol: symbols.Symbol, allow_unknowns: bool = False) -> Any:
+	def resolve(self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True) -> Any:
 		dag = self._build_symbol_dag(symbol)
-		self._process_symbol_dag(dag)
+		self._process_symbol_dag(dag, allow_unknowns)
 		encoded = dag.nodes[symbol.symbol_id]['result']
-		encoder = self.registry.get_encoder(symbol.type)
+		if not decode:
+			return encoded
+		encoder = self.ns.registry.get_encoder(symbol.type)
 		return encoder.decode(encoded)
+
+	def dependency_graph(self) -> nx.MultiDiGraph:
+		graph = nx.MultiDiGraph()
+
+		dependent_symbols = []
+
+		def add_deps(path):
+			def handle(x):
+				if isinstance(x, symbols.Symbol):
+					dependent_symbols.append((x, path))
+				return x
+			return handle
+
+		for key in self.ns.keys():
+			try:
+				data = self.get_encoded_data(key)
+			except exc.SymbolKeyError:
+				continue
+
+			typ = self.ns.resolve(key)
+			semantics = self.ns.registry.get_semantics(typ)
+
+			semantics.map(add_deps(key), data)
+			graph.add_node(key)
+
+		while dependent_symbols:
+			symbol, dependent_path = dependent_symbols.pop(0)
+
+			if isinstance(symbol, symbols.Literal):
+				semantics = self.ns.registry.get_semantics(symbol.type)
+				semantics.map(add_deps(dependent_path), symbol.value)
+			elif isinstance(symbol, symbols.Reference):
+				base, *rel_path = self.ns.path_parser.split(symbol.path)
+				graph.add_edge(base, dependent_path, path=rel_path)
+			elif isinstance(symbol, symbols.Function):
+				for sub_sym in chain(symbol.args, symbol.kwargs.values()):
+					dependent_symbols.append((sub_sym, dependent_path))
+			elif isinstance(symbol, (symbols.Unknown, symbols.Future)):
+				for sub_sym in symbol.refs:
+					dependent_symbols.append((sub_sym, dependent_path))
+			else:
+				raise TypeError(f"Invalid symbol {sym}")
+
+		return graph
+
+	def clone(self) -> session.Session:
+		new_inst = copy.copy(self)
+		out = {}
+		for key, val in new_inst.data.items():
+			typ = self.ns.resolve(key)
+			semantics = self.ns.registry.get_semantics(typ)
+			out[key] = semantics.clone(val)
+		new_inst.data = out
+		new_inst.pm = self.pm
+		return new_inst
 
 
 def create_session() -> session.Session:

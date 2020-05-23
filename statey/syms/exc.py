@@ -42,6 +42,15 @@ class NoSemanticsFound(SymsTypeError):
 		super().__init__(f'No semantics found for type: {type}.')
 
 
+class NoResourceFound(SymsError):
+	"""
+	Error to indicate no resource could be found for a given name
+	"""
+	def __init__(self, resource_name: str) -> None:
+		self.resource_name = resource_name
+		super().__init__(f'No resource registered for name: {resource_name}.')
+
+
 class NamespaceError(SymsError):
 	"""
 	Error raised from a namespace
@@ -76,6 +85,32 @@ class SymbolAttributeError(SymsError, AttributeError):
 		self.symbol = symbol
 		self.attr = attr
 		super().__init__(f'Could not resolve attribute "{attr}" of symbol {symbol}.')
+
+
+class FutureError(SymsError):
+	"""
+	symbols.Future-related errors
+	"""
+
+
+class FutureResultNotSet(FutureError):
+	"""
+	Error indicating that get_result() was called on a future whose
+	result was not set yet
+	"""
+	def __init__(self, future: 'Future') -> None:
+		self.future = future
+		super().__init__(f'Result has not yet been set for future: {future}.')
+
+
+class FutureResultAlreadySet(FutureError):
+	"""
+	Error indicating that get_result() was called on a future whose
+	result was not set yet
+	"""
+	def __init__(self, future: 'Future') -> None:
+		self.future = future
+		super().__init__(f'Result has already been set for future: {future} as {future.get_result()}.')
 
 
 class SessionError(SymsError):

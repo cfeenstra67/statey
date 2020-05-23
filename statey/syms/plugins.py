@@ -2,7 +2,6 @@ import dataclasses as dc
 from typing import Tuple, Type, Dict, Any, Type as PyType, Union, Callable, Sequence
 
 import statey as st
-from statey.registry import Registry
 from statey.syms import types, utils
 
 
@@ -13,7 +12,7 @@ class HandleOptionalPlugin:
 	Handle an Optional[] annotation wrapper
 	"""
 	@st.hookimpl
-	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
+	def get_type(self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]) -> types.Type:
 		inner = utils.extract_optional_annotation(annotation)
 		if inner is None:
 			return None
@@ -31,7 +30,7 @@ class ValuePredicatePlugin:
 	type_cls: PyType[types.ValueType]
 
 	@st.hookimpl(tryfirst=True)
-	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
+	def get_type(self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]) -> types.Type:
 		predicate = self.predicate
 		if isinstance(self.predicate, type):
 			predicate = lambda x: isinstance(x, type) and issubclass(x, self.predicate)
@@ -50,7 +49,7 @@ class ParseSequencePlugin:
 	array_type_cls: PyType[types.ArrayType] = types.ArrayType
 
 	@st.hookimpl
-	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
+	def get_type(self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]) -> types.Type:
 		if not isinstance(annotation, type) or not issubclass(annotation, Sequence):
 			return None
 		inner = utils.extract_inner_annotation(annotation)
@@ -70,7 +69,7 @@ class ParseDataClassPlugin:
 	struct_type_cls: PyType[types.StructType] = types.StructType
 
 	@st.hookimpl
-	def get_type(self, annotation: Any, registry: Registry, meta: Dict[str, Any]) -> types.Type:
+	def get_type(self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]) -> types.Type:
 		if annotation is not self.dataclass_cls or not dc.is_dataclass(annotation):
 			return None
 		fields = []

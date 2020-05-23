@@ -16,7 +16,7 @@ from statey.syms import utils, types, exc
 NEXT_ID = partial(next, count(1))
 
 
-class Symbol(abc.ABC):
+class Symbol(abc.ABC, utils.Cloneable):
 	"""
 	A symbol represents some value within a session
 	"""
@@ -37,8 +37,8 @@ class Symbol(abc.ABC):
 			ret_typ = self.type if typ is utils.MISSING else typ
 			if not isinstance(other, Symbol):
 				other_type = st.registry.infer_type(other)
-				other = Literal(other, other_type)
-			return Function(ret_typ, op_func, (self, other))
+				other = Literal(other, other_type, self.registry)
+			return Function(ret_typ, self.registry, op_func, (self, other))
 		return method
 
 	__eq__ = _binary_operator_method(operator.eq, types.BooleanType(False))
@@ -76,12 +76,15 @@ class Symbol(abc.ABC):
 		try:
 			return getattr(super(), attr)
 		except AttributeError as err1:
+			# Safety measure--we always want to be able to access __dict__ safely
+			if attr == '__dict__':
+				raise
 			try:
 				return self[attr]
 			except exc.SymbolKeyError as err2:
 				raise err2 from err1
 
-	def __getitem__(self, attr: Any) -> Symbol:
+	def __getitem__(self, attr: Any) -> 'Symbol':
 		return self.get_attr(attr)
 
 	def map(self, func: Callable[[Any], Any], return_type: types.Type = utils.MISSING) -> 'Symbol':
@@ -96,7 +99,7 @@ class Symbol(abc.ABC):
 			except ValueError:
 				return_type = self.type
 			else:
-				if sig.return_annotation is None:
+				if sig.return_annotation is inspect._empty:
 					return_type = self.type
 				else:
 					return_type = self.registry.get_type(sig.return_annotation)
@@ -118,7 +121,7 @@ class Reference(Symbol):
 	"""
 	path: str
 	type: types.Type
-	ns: 'syms.session.Namespace' = dc.field(repr=False, hash=False)
+	ns: 'Namespace' = dc.field(repr=False, hash=False)
 	symbol_id: int = dc.field(init=False, default=None, repr=False)
 
 	def __post_init__(self) -> None:
@@ -126,14 +129,16 @@ class Reference(Symbol):
 
 	@property
 	def registry(self) -> 'Registry':
-		return self.ns.registry	
+		return self.ns.registry
 
 	def get_attr(self, attr: Any) -> 'Symbol':
-		typ = self.semantics.attr_type(attr)
-		path = self.ns.path_parser.join([self.path, attr])
+		ns = self.__dict__['ns']
+		semantics = ns.registry.get_semantics(self.type)
+		typ = semantics.attr_type(attr)
+		path = ns.path_parser.join([self.__dict__['path'], attr])
 		if typ is None:
-			raise exc.SymbolKeyError(path)
-		return type(self)(path, typ, self.ns)
+			raise exc.SymbolKeyError(path, ns)
+		return type(self)(path, typ, ns)
 
 
 class ValueSemantics(Symbol):
@@ -142,13 +147,14 @@ class ValueSemantics(Symbol):
 	the underlying semantics.get_attr method in a Function.
 	"""
 	def get_attr(self, attr: Any) -> 'Symbol':
-		semantics = self.registry.get_semantics(self.type)
+		registry = self.__dict__['registry']
+		semantics = registry.get_semantics(self.type)
 		typ = semantics.attr_type(attr)
 		if typ is None:
 			raise exc.SymbolAttributeError(self, attr)
 		return Function(
 			type=typ,
-			registry=self.registry,
+			registry=registry,
 			func=lambda x: semantics.get_attr(x, attr),
 			args=(self,)
 		)
@@ -161,7 +167,7 @@ class Literal(ValueSemantics):
 	"""
 	value: Any
 	type: types.Type
-	registry: 'Registry'
+	registry: 'Registry'  = dc.field(repr=False, hash=False)
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
 
 
@@ -171,8 +177,68 @@ class Function(ValueSemantics):
 	A symbol that is the result of applying `func` to the given args
 	"""
 	type: types.Type
-	registry: 'Registry'
+	registry: 'Registry'  = dc.field(repr=False, hash=False)
 	func: Callable[[Any], Any]
 	args: Sequence[Symbol] = dc.field(default_factory=tuple)
 	kwargs: Dict[Hashable, Symbol] = dc.field(default_factory=dict)
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+
+
+@dc.dataclass(frozen=True)
+class Future(ValueSemantics):
+	"""
+	A future is a symbol that may or may not yet be set
+	"""
+	type: types.Type
+	registry: 'Registry' = dc.field(repr=False, hash=False)
+	refs: Sequence[Reference] = ()
+	result: Any = dc.field(init=False, default=utils.MISSING)
+	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+
+	def get_result(self) -> Any:
+		"""
+		Get the result of the future, raising exc.FutureResultNotSet
+		if it hasn't been set yet
+		"""
+		if self.result is utils.MISSING:
+			raise exc.FutureResultNotSet(self)
+		return self.result
+
+	def set_result(self, result: Any) -> None:
+		"""
+		Set the result, raising exc.FutureResultAlreadySet if it has
+		already been set
+		"""
+		if self.result is not utils.MISSING:
+			raise exc.FutureResultAlreadySet(self)
+		self.__dict__['result'] = result
+
+
+@dc.dataclass(frozen=True)
+class Unknown(Symbol):
+	"""
+	Some value that is as-yet unknown. It may or may not be known at some
+	time in the future. Note this is NOT a symbol
+	"""
+	symbol: Symbol
+	refs: Sequence[Reference] = ()
+	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+
+	@property
+	def registry(self) -> 'Registry':
+		return self.symbol.registry
+
+	@property
+	def type(self) -> types.Type:
+		return self.symbol.type
+
+	def clone(self, **kwargs) -> 'Unknown':
+		kws = {'symbol': self.symbol.clone()}
+		kws.update(kwargs)
+		return super().clone(**kws)
+
+	def map(self, func: Callable[[Any], Any]) -> 'Unknown':
+		return self.clone(symbol=self.symbol.map(func))
+
+	def get_attr(self, attr: str) -> Any:
+		return self.clone(symbol=self.__dict__['symbol'].get_attr(attr))

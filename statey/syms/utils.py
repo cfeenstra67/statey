@@ -123,8 +123,8 @@ class PossiblySymbolicField(ma.fields.Field):
 		if not isinstance(value, symbols.Symbol):
 			return self.field._deserialize(value, attr, data, **kwargs)
 
-		if value.type != self.type:
-			raise ma.ValidationError(f'Invalid symbol type (expected {self.type}, got {value.type}).')
+		if self.type != value.type:
+			raise ma.ValidationError(f'Invalid symbol type (expected {self.type}, got {typ}).')
 		return value
 
 	def __repr__(self) -> str:
