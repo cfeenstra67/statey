@@ -59,6 +59,16 @@ class BoundState:
 	resource_state: ResourceState
 	data: Any
 
+	def to_literal(self, registry: 'Registry') -> symbols.Literal:
+		"""
+		Convenience method to convert a bound state to a literal with some registry.
+		"""
+		return symbols.Literal(
+			value=self.data,
+			type=self.resource_state.state.type,
+			registry=registry
+		)
+
 
 class ResourceMeta(abc.ABCMeta):
 	"""

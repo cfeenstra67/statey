@@ -1,6 +1,7 @@
 import abc
 import copy
 import dataclasses as dc
+from datetime import datetime
 from itertools import chain
 from typing import Optional
 
@@ -26,11 +27,13 @@ class Plan(abc.ABC):
 		output_session: session.Session,
 		# this is required if self.state_session is not None
 		state_output_session: Optional[session.Session] = None
-	) -> nx.DiGraph:
+	) -> 'TaskGraph':
 		"""
 		Given a directed resolution graph, we will build a task graph from its task
 		sessions
 		"""
+		from statey.executor import TaskGraph
+
 		if state_output_session is None and self.state_session is not None:
 			raise ValueError('state_output_session must be provided when state_session is not None.')
 
@@ -46,7 +49,7 @@ class Plan(abc.ABC):
 				state_output_session.set_data(node, self.state_session.resolve(self.state_session.ns.ref(node)))
 
 		config_nodes = {node for node in self.nested_task_graph if not self.nested_task_graph.nodes[node]['state_only']}
-		for node in set(self.config_session.ns.keys()) - config_nodes:
+		for node in self.config_session.ns.keys():
 			typ = self.config_session.ns.resolve(node)
 			output_session.ns.new(node, typ)
 			output_session.set_data(node, self.config_session.session.get_encoded_data(node))
@@ -63,6 +66,7 @@ class Plan(abc.ABC):
 				output_key=data['input_key']
 			)
 			input_key = f'{node}:input'
+			print("TASK", input_key, input_switch_task)
 			out_graph.add_node(input_key, task=input_switch_task, source=node)
 
 			# Add upstream edges
@@ -78,6 +82,7 @@ class Plan(abc.ABC):
 				overwrite_output_type=data['config_state'].state.type
 			)
 			output_key = f'{node}:output'
+			print("TASK2", output_key, output_switch_task)
 			out_graph.add_node(output_key, task=output_switch_task, source=node)
  
 			task_graph = data['task_session'].task_graph()
@@ -103,7 +108,7 @@ class Plan(abc.ABC):
 				if not task_graph.succ[sub_node]:
 					out_graph.add_edge(node_key, output_key)
 
-		return out_graph
+		return TaskGraph(out_graph)
 
 
 class Migrator(abc.ABC):
@@ -164,7 +169,7 @@ class DefaultMigrator(Migrator):
 			# should think of something better though.
 			output_session.set_data(other_key, config_session.session.get_encoded_data(other_key))
 
-		# First, go through the resources that only exist in the old state and do the planning
+		# Next, go through the resources that only exist in the old state and do the planning
 		# there, storing the edges to be added at the end
 		for node in reversed(list(topological_sort(state_only_graph))):
 			previous_state = state_only_graph.nodes[node]['state']

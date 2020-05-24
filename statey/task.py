@@ -1,5 +1,7 @@
 import abc
 import dataclasses as dc
+import enum
+from datetime import datetime
 from typing import Tuple, Any, Optional, Callable
 
 import networkx as nx
@@ -9,12 +11,34 @@ import statey as st
 from statey.syms import session, types, symbols, utils
 
 
+class TaskStatus(enum.Enum):
+	"""
+
+	"""
+	NOT_STARTED = 'not_started'
+	SKIPPED = 'skipped'
+	PENDING = 'pending'
+	FAILED = 'failed'
+	SUCCESS = 'success'
+
+
+@dc.dataclass(frozen=True)
+class TaskInfo:
+	"""
+	Contains information about the state of a task
+	"""
+	status: TaskStatus
+	timestamp: datetime = dc.field(default_factory=datetime.utcnow)
+	error: Optional[Exception] = None
+	skipped_by: Optional[str] = None
+
+
 class Task(abc.ABC):
 	"""
 	Base class for tasks. A task is a unit of computation
 	"""
 	@abc.abstractmethod
-	def run(self) -> None:
+	async def run(self) -> None:
 		"""
 		This should be overridden to implement actual task logic.
 		"""
@@ -30,7 +54,7 @@ class SessionTaskSpec(abc.ABC):
 	output_type: types.Type
 
 	@abc.abstractmethod
-	def run(self, data: Any) -> Any:
+	async def run(self, data: Any) -> Any:
 		"""
 		Perform a task on the given input data
 		"""
@@ -47,11 +71,11 @@ class FunctionTaskSpec(SessionTaskSpec):
 	"""
 	func: Callable[[Any], Any]
 
-	def run(self, data: Any) -> Any:
+	async def run(self, data: Any) -> Any:
 		"""
 		Perform a task on the given input data
 		"""
-		return self.func(data)
+		return await self.func(data)
 
 	def __call__(self, data: Any) -> 'BoundTask':
 		return BoundTaskSpec(self, data)
@@ -85,10 +109,15 @@ class SessionTask(Task):
 	data: Any
 	output_future: symbols.Future
 
-	def run(self) -> None:
-		resolved_input = self.session.resolve(self.data)
-		output = self.spec.run(resolved_input)
-		resolved_output = self.session.resolve(output)
+	async def run(self) -> None:
+		resolved_input = self.session.resolve(self.data, decode=False)
+		output = await self.spec.run(resolved_input)
+		output_symbol = symbols.Literal(
+			value=output,
+			type=self.output_future.type,
+			registry=self.session.ns.registry
+		)
+		resolved_output = self.session.resolve(output_symbol, decode=False)
 		self.output_future.set_result(resolved_output)
 
 
@@ -104,8 +133,8 @@ class SessionSwitch(Task):
 	allow_unknowns: bool = True
 	overwrite_output_type: Optional[types.Type] = None
 
-	def run(self) -> None:
-		resolved_input = self.input_session.resolve(self.input_symbol, allow_unknowns=self.allow_unknowns)
+	async def run(self) -> None:
+		resolved_input = self.input_session.resolve(self.input_symbol, allow_unknowns=self.allow_unknowns, decode=False)
 		if self.overwrite_output_type is not None:
 			self.output_session.ns.new(self.output_key, self.overwrite_output_type, overwrite=True)
 		self.output_session.set_data(self.output_key, resolved_input)

@@ -25,7 +25,6 @@ class PythonNamespace(session.Namespace):
 		Create a new symbol for the given key and schema and add it to the current namespace
 		"""
 		self.path_parser.validate_name(key)
-		print("HERE", key, self.types)
 		if key in self.types and not overwrite:
 			raise exc.DuplicateSymbolKey(key, self)
 		self.types[key] = type
