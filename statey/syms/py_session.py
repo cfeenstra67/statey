@@ -20,12 +20,13 @@ class PythonNamespace(session.Namespace):
 		super().__init__(*args, **kwargs)
 		self.types = {}
 
-	def new(self, key: str, type: types.Type) -> symbols.Symbol:
+	def new(self, key: str, type: types.Type, overwrite: bool = False) -> symbols.Symbol:
 		"""
 		Create a new symbol for the given key and schema and add it to the current namespace
 		"""
 		self.path_parser.validate_name(key)
-		if key in self.types:
+		print("HERE", key, self.types)
+		if key in self.types and not overwrite:
 			raise exc.DuplicateSymbolKey(key, self)
 		self.types[key] = type
 		return self.ref(key)
@@ -79,9 +80,7 @@ class PythonSession(session.Session):
 		typ = self.ns.resolve(key)
 		base, *rel_path = self.ns.path_parser.split(key)
 		if base not in self.data:
-			if not allow_unknowns:
-				raise exc.MissingDataError(key, typ, self)
-			return symbols.Unknown(self.ns.ref(key))
+			raise exc.MissingDataError(key, typ, self)
 		
 		base_type = self.ns.resolve(base)
 		value = self.data[base]
@@ -151,7 +150,7 @@ class PythonSession(session.Session):
 			except exc.FutureResultNotSet:
 				if not allow_unknowns:
 					raise
-				return symbols.Unknown(sym)
+				return symbols.Unknown(sym, refs=future.refs)
 
 		def resolve_unknown(unknown):
 			if not allow_unknowns:
@@ -171,21 +170,24 @@ class PythonSession(session.Session):
 			elif isinstance(sym, symbols.Function):
 				args = []
 				is_unknown = False
+				unknown_refs = []
 				for sub_sym in sym.args:
 					arg = dag.nodes[sub_sym.symbol_id]['result']
 					if isinstance(arg, symbols.Unknown):
 						is_unknown = True
-						break
+						unknown_refs.extend(arg.refs)
+						continue
 					args.append(arg)
 				kwargs = {}
 				for key, sub_sym in sym.kwargs.items():
 					arg = dag.nodes[sub_sym.symbol_id]['result']
 					if isinstance(arg, symbols.Unknown):
 						is_unknown = True
-						break
+						unknown_refs.extend(arg.refs)
+						continue
 					kwargs[key] = arg
 				if is_unknown:
-					value = symbols.Unknown(sym)
+					value = symbols.Unknown(sym, refs=tuple(unknown_refs))
 				else:
 					value = sym.func(*args, **kwargs)
 

@@ -2,9 +2,11 @@ import dataclasses as dc
 import inspect
 from contextlib import contextmanager
 from functools import partial, reduce
+from itertools import product
 from typing import Type, Optional, Union, Any, Dict, Hashable, Sequence, Callable
 
 import marshmallow as ma
+import networkx as nx
 
 from statey import NS
 from statey.syms import exc
@@ -259,3 +261,16 @@ class Cloneable:
 		object should be an instance of a dataclass
 		"""
 		return dc.replace(self, **kwargs)
+
+
+def subgraph_retaining_dependencies(dag: nx.DiGraph, keep_nodes: Sequence[str]) -> None:
+	"""
+	Remove nodes while retaining any indirect dependencies between them. Modifies the graph
+	in place.
+	"""
+	drop_nodes = set(dag.nodes) - set(keep_nodes)
+
+	for node in nx.topological_sort(dag.subgraph(drop_nodes)):
+		for predecessor, successor in product(dag.pred[node], dag.succ[node]):
+			dag.add_edge(predecessor, successor)
+		dag.remove_node(node)

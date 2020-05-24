@@ -6,7 +6,7 @@ import networkx as nx
 import pluggy
 
 import statey as st
-from statey.syms import session, types, symbols
+from statey.syms import session, types, symbols, utils
 
 
 class Task(abc.ABC):
@@ -102,9 +102,12 @@ class SessionSwitch(Task):
 	output_session: session.Session
 	output_key: str
 	allow_unknowns: bool = True
+	overwrite_output_type: Optional[types.Type] = None
 
 	def run(self) -> None:
 		resolved_input = self.input_session.resolve(self.input_symbol, allow_unknowns=self.allow_unknowns)
+		if self.overwrite_output_type is not None:
+			self.output_session.ns.new(self.output_key, self.overwrite_output_type, overwrite=True)
 		self.output_session.set_data(self.output_key, resolved_input)
 
 
@@ -112,8 +115,8 @@ class TaskSession(session.Session):
 	"""
 	Session subclass that wraps a regular session but handles resources in a special manner.
 	"""
-	def __init__(self, session: session.Session) -> None:
-		super().__init__(session.ns)
+	def __init__(self, session: session.Session, unsafe: bool = False) -> None:
+		super().__init__(session.ns, unsafe=unsafe)
 		self.session = session
 		self.tasks = {}
 		self.pm.register(self)
@@ -135,7 +138,8 @@ class TaskSession(session.Session):
 		return self.session.dependency_graph()
 
 	def task_graph(self) -> nx.DiGraph:
-		task_subgraph = self.dependency_graph().subgraph(list(self.tasks))
+		task_subgraph = self.dependency_graph()
+		utils.subgraph_retaining_dependencies(task_subgraph, list(self.tasks))
 		for node in task_subgraph.nodes:
 			task_subgraph.nodes[node]['task'] = self.tasks[node]
 		return task_subgraph

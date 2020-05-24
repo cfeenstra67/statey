@@ -21,10 +21,14 @@ class Namespace(abc.ABC):
 		self.registry = registry
 
 	@abc.abstractmethod
-	def new(self, key: str, type: types.Type) -> symbols.Symbol:
+	def new(self, key: str, type: types.Type, overwrite: bool = False) -> symbols.Symbol:
 		"""
 		Create a new symbol for the given key and schema and add it to the current namespace.
 		Will raise an error if the key already exists.
+
+		The overwrite argument can be used to force an overwrite of an existing type if the
+		key already exists in this namespace. Note this should be used with EXTREME CAUTION
+		because it can leave dependent sessions with invalid references.
 		"""
 		raise NotImplementedError
 
@@ -90,8 +94,9 @@ class Session(abc.ABC):
 	"""
 	A session contains a namespace and associated data and symbols
 	"""
-	def __init__(self, ns: Namespace) -> None:
+	def __init__(self, ns: Namespace, unsafe: bool = False) -> None:
 		self.ns = ns
+		self.unsafe = unsafe
 		self.pm = st.create_plugin_manager()
 		self.pm.add_hookspecs(SessionHooks)
 
@@ -112,7 +117,7 @@ class Session(abc.ABC):
 			else:
 				typ = self.ns.registry.get_type(annotation)
 
-		ref = self.ns.new(key, typ)
+		ref = self.ns.new(key, typ, overwrite=self.unsafe)
 		self.set_data(key, value)
 
 		other_result = self.pm.hook.after_set(key=key, value=value, type=typ)

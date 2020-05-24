@@ -131,8 +131,8 @@ class ResourceSession(session.Session):
 	"""
 	Session subclass that wraps a regular session but handles resources in a special manner.
 	"""
-	def __init__(self, session: session.Session) -> None:
-		super().__init__(session.ns)
+	def __init__(self, session: session.Session, unsafe: bool = False) -> None:
+		super().__init__(session.ns, unsafe=unsafe)
 		self.session = session
 		self.states = {}
 		self.pm.register(self)
@@ -154,7 +154,8 @@ class ResourceSession(session.Session):
 		return self.session.dependency_graph()
 
 	def resource_graph(self) -> nx.MultiDiGraph:
-		graph = self.dependency_graph().subgraph(list(self.states))
+		graph = self.dependency_graph()
+		utils.subgraph_retaining_dependencies(graph, list(self.states))
 		for node in graph.nodes:
 			graph.nodes[node]['state'] = self.states[node]
 		return graph
