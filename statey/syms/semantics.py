@@ -163,8 +163,8 @@ class StructSemantics(Semantics):
 
 		def process_value(x):
 			return {
-				key: self.field_semantics[key].map(func, val)
-				for key, val in x.items()
+				key: semantics.map(func, x[key])
+				for key, semantics in self.field_semantics.items()
 			}
 
 		if isinstance(value, (symbols.Symbol, symbols.Unknown)):
@@ -178,8 +178,8 @@ class StructSemantics(Semantics):
 		if isinstance(value, (symbols.Symbol, symbols.Unknown)):
 			return value.clone()
 		out = {}
-		for key, val in value.items():
-			out[key] = self.field_semantics[key].clone(val)
+		for key, semantics in self.field_semantics.items():
+			out[key] = semantics.clone(value[key])
 		return out
 
 	@classmethod

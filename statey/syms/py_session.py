@@ -20,15 +20,19 @@ class PythonNamespace(session.Namespace):
 		super().__init__(*args, **kwargs)
 		self.types = {}
 
-	def new(self, key: str, type: types.Type, overwrite: bool = False) -> symbols.Symbol:
+	def new(self, key: str, type: types.Type) -> symbols.Symbol:
 		"""
 		Create a new symbol for the given key and schema and add it to the current namespace
 		"""
 		self.path_parser.validate_name(key)
-		if key in self.types and not overwrite:
+		if key in self.types:
 			raise exc.DuplicateSymbolKey(key, self)
 		self.types[key] = type
 		return self.ref(key)
+
+	def delete(self, key: str) -> None:
+		self.resolve(key)
+		del self.types[key]
 
 	def keys(self) -> Iterator[str]:
 		return self.types.keys()
@@ -68,7 +72,15 @@ class PythonSession(session.Session):
 		encoder = self.ns.registry.get_encoder(typ)
 		encoded_data = encoder.encode(data)
 
-		utils.dict_set_path(self.data, self.ns.path_parser.split(key), encoded_data)
+		root, *rel_path = self.ns.path_parser.split(key)
+		if rel_path:
+			raise ValueError('Data can only be set on the root level.')
+		self.data[key] = encoded_data
+
+	def delete_data(self, key: str) -> None:
+		if key not in self.data:
+			raise exc.SymbolKeyError(key, self.ns)
+		del self.data[key]
 
 	def get_encoded_data(self, key: str) -> Any:
 		"""
@@ -265,13 +277,9 @@ class PythonSession(session.Session):
 
 	def clone(self) -> session.Session:
 		new_inst = copy.copy(self)
-		out = {}
-		for key, val in new_inst.data.items():
-			typ = self.ns.resolve(key)
-			semantics = self.ns.registry.get_semantics(typ)
-			out[key] = semantics.clone(val)
-		new_inst.data = out
-		new_inst.pm = self.pm
+		# Since data can only be set at the root level and is immutable while in the
+		# session, a shallow copy works fine here.
+		new_inst.data = new_inst.data.copy()
 		return new_inst
 
 

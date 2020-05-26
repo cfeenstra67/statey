@@ -2,7 +2,7 @@ import abc
 import dataclasses as dc
 import enum
 from datetime import datetime
-from typing import Tuple, Any, Optional, Callable
+from typing import Tuple, Any, Optional, Callable, Sequence
 
 import networkx as nx
 import pluggy
@@ -15,11 +15,11 @@ class TaskStatus(enum.Enum):
 	"""
 
 	"""
-	NOT_STARTED = 'not_started'
-	SKIPPED = 'skipped'
-	PENDING = 'pending'
-	FAILED = 'failed'
-	SUCCESS = 'success'
+	NOT_STARTED = 0
+	PENDING = 1
+	SKIPPED = 2
+	FAILED = 3
+	SUCCESS = 4
 
 
 @dc.dataclass(frozen=True)
@@ -140,13 +140,77 @@ class SessionSwitch(Task):
 		self.output_session.set_data(self.output_key, resolved_input)
 
 
+@dc.dataclass(frozen=True)
+class ResourceGraphOperation(Task):
+	"""
+	Defines some operation to perform against a resource graph
+	"""
+	key: str
+	resource_graph: 'ResourceGraph'
+
+
+@dc.dataclass(frozen=True)
+class GraphSetKey(ResourceGraphOperation):
+	"""
+	Set some key in a resource graph
+	"""
+	input_session: session.Session
+	input_symbol: symbols.Symbol
+	dependencies: Sequence[str] = ()
+	remove_dependencies: bool = True
+	state: Optional['ResourceState'] = None
+
+	async def run(self) -> None:
+		self.resource_graph.set(
+			key=self.key,
+			value=self.input_session.resolve(self.input_symbol, decode=False),
+			type=self.input_symbol.type,
+			remove_dependencies=self.remove_dependencies,
+			state=self.state
+		)
+		if self.dependencies:
+			self.resource_graph.add_dependencies(self.key, self.dependencies)
+
+
+class GraphDeleteKey(ResourceGraphOperation):
+	"""
+	Delete some key in a resource graph.
+	"""
+	async def run(self) -> None:
+		self.resource_graph.delete(self.key)
+
+
+@dc.dataclass(frozen=True)
+class Checkpointer:
+	"""
+	A checkpointer can store partially migrates states of a resource
+	"""
+	output_session: 'ResourceSession'
+	output_key: str
+	resource_name: str
+
+	def checkpoint(self, value: Any, state: 'State') -> None:
+		"""
+		Save a partially migrated state as a checkpoing in `output_session`.
+		"""
+		from statey.resource import ResourceState, BoundState
+		# This can change in different checkpoints, so overwrite to be safe.
+		self.output_session.ns.new(self.output_key, state.type, overwrite=True)
+		state = BoundState(
+			resource_state=ResourceState(state=state, resource_name=self.resource_name),
+			data=value
+		)
+		self.output_session.set(sel.key, state)
+
+
 class TaskSession(session.Session):
 	"""
 	Session subclass that wraps a regular session but handles resources in a special manner.
 	"""
-	def __init__(self, session: session.Session, unsafe: bool = False) -> None:
-		super().__init__(session.ns, unsafe=unsafe)
+	def __init__(self, session: session.Session, checkpointer: Optional[Checkpointer] = None) -> None:
+		super().__init__(session.ns)
 		self.session = session
+		self.checkpointer = checkpointer
 		self.tasks = {}
 		self.pm.register(self)
 
@@ -157,11 +221,27 @@ class TaskSession(session.Session):
 		self.tasks[key] = bound = value.bind(self)
 		return bound.output_future, bound.output_future.type
 
+	def checkpoint(self, symbol: symbols.Symbol, state: 'State') -> BoundTaskSpec:
+
+		async def _checkpoint(value):
+			if self.checkpointer is not None:
+				self.checkpointer.checkpoint(value, state)
+			return {}
+
+		return FunctionTaskSpec(
+			input_type=symbol.type,
+			output_type=types.EmptyType,
+			func=_checkpoint
+		)(symbol)
+
 	def resolve(self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True) -> Any:
 		return self.session.resolve(symbol, allow_unknowns, decode)
 
 	def set_data(self, key: str, data: Any) -> None:
 		return self.session.set_data(key, data)
+
+	def delete_data(self, key: str) -> None:
+		return self.session.delete_data(key)
 
 	def dependency_graph(self) -> nx.MultiDiGraph:
 		return self.session.dependency_graph()

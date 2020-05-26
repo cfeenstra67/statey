@@ -8,8 +8,9 @@ from typing import Sequence, Coroutine, Dict, Optional, Any
 import networkx as nx
 from networkx.algorithms.dag import descendants
 
-from statey.syms import utils
-from statey.task import Task, TaskStatus, TaskInfo
+from statey.resource import ResourceSession, ResourceGraph
+from statey.syms import utils, session, exc
+from statey.task import Task, TaskStatus, TaskInfo, SessionSwitch
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,8 @@ class TaskGraph:
 	an executor
 	"""
 	task_graph: nx.DiGraph
+	output_session: session.Session
+	resource_graph: ResourceGraph
 
 	def __post_init__(self) -> None:
 		"""
@@ -73,6 +76,54 @@ class TaskGraph:
 				continue
 			out.append(task_key)
 		return out
+
+	# def finalize_output_sessions(self) -> None:
+	# 	"""
+	# 	Clean up the state of any output sessions, adding unknowns where
+	# 	relevant.
+	# 	"""
+	# 	# Collect sources with at least one non-completed task
+	# 	non_completed = {
+	# 		self.task_graph.nodes[node]['source'] for node in self.task_graph.nodes
+	# 		# This includes NOT_STARTED, PENDING, and SKIPPED
+	# 		if self.get_info(node).status < TaskStatus.FAILED
+	# 	}
+
+	# 	# for each one of these, set the state in the output session based on
+	# 	# a checkpoint, the previous state, or a null state as a backup
+	# 	for node in non_completed:
+	# 		try:
+	# 			checkpoint = self.checkpoint_session.resource_state(node)
+	# 		except exc.SymbolKeyError:
+	# 			pass
+	# 		else:
+	# 			self.output_session.ns.new(node, checkpoint.resource_state.state.type, overwrite=True)
+	# 			self.output_session.set_data(node, checkpoint.data)
+	# 			continue
+
+
+
+
+
+	# 		else:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class ExecutionStrategy(enum.Enum):
@@ -215,7 +266,7 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 					self.hard_cancel(exec_info)
 					raise
 
-				LOGGER.info(
+				logger.info(
 					"Caught %s. Continuing as signals < max_signals (%s < %s)."
 					" Please wait for the program to exit normally, as data loss may"
 					"occur otherwise",

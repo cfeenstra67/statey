@@ -2,113 +2,404 @@ import abc
 import copy
 import dataclasses as dc
 from datetime import datetime
+from functools import reduce
 from itertools import chain
-from typing import Optional
+from typing import Optional, Sequence, Dict, Tuple, Any
 
 import networkx as nx
 from networkx.algorithms.dag import topological_sort, is_directed_acyclic_graph
 
-from statey.resource import ResourceSession, BoundState
-from statey.syms import session, symbols, exc, utils
-from statey.task import TaskSession, SessionSwitch
+from statey.resource import ResourceSession, BoundState, ResourceState, Resource, ResourceGraph
+from statey.syms import session, symbols, exc, utils, types
+from statey.task import TaskSession, SessionSwitch, Checkpointer, GraphDeleteKey, GraphSetKey
+
+
+class PlanAction(abc.ABC):
+	"""
+	A plan action is some subset of a full task graph for a given name.
+	"""
+	@abc.abstractmethod
+	def render(
+		self,
+		graph: nx.DiGraph,
+		prefix: str,
+		resource_graph: ResourceGraph,
+		output_session: session.Session,
+		# Dependencies of the configuration
+		dependencies: Sequence[str]
+	) -> None:
+		"""
+		Add the tasks in this graph to the given graph. Note that the output
+		node must be {prefix}:output
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
+	def input_task(self, prefix: str) -> str:
+		"""
+		Return the name of the task, given a prefix, that will be the "input" task when
+		rendering this action
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
+	def output_task(self, prefix: str) -> str:
+		"""
+		Return the name of the task, given a prefix, that will be the "output" task when
+		rendering this action
+		"""
+		raise NotImplementedError
 
 
 @dc.dataclass(frozen=True)
-class Plan(abc.ABC):
+class ExecuteTaskSession(PlanAction):
 	"""
 
 	"""
-	nested_task_graph: nx.DiGraph
-	config_session: ResourceSession
-	state_session: Optional[ResourceSession]
+	task_session: TaskSession
+	task_input_key: str
+	output_ref: symbols.Symbol
+	output_key: str
+	config_state: ResourceState
+	previous_state: ResourceState
+	resource: Resource
+	input_symbol: symbols.Symbol
 
-	def flatten_task_graph(
+	def input_task(self, prefix: str) -> str:
+		return f'{prefix}:input'
+
+	def output_task(self, prefix: str) -> str:
+		return f'{prefix}:output'
+
+	def render(
 		self,
+		graph: nx.DiGraph,
+		prefix: str,
+		resource_graph: ResourceGraph,
 		output_session: session.Session,
-		# this is required if self.state_session is not None
-		state_output_session: Optional[session.Session] = None
-	) -> 'TaskGraph':
+		# Dependencies of the configuration
+		dependencies: Sequence[str]
+	) -> None:
+		task_graph = self.task_session.task_graph()
+
+		input_switch_task = SessionSwitch(
+			input_session=output_session,
+			input_symbol=self.input_symbol,
+			output_session=self.task_session,
+			output_key=self.task_input_key
+		)
+
+		input_key = self.input_task(prefix)
+		graph.add_node(input_key, task=input_switch_task, source=prefix)
+
+		# If output state is null, our graph operation is a deletion. Otherwise, it's a "set"
+		if self.config_state == self.resource.null_state:
+			output_key = self.output_task(prefix)
+			output_graph_task = GraphDeleteKey(
+				key=self.output_key,
+				resource_graph=resource_graph
+			)
+			graph.add_node(output_key, task=output_graph_task, source=prefix)
+		else:
+			output_key = f'{prefix}:state'
+			output_graph_task = GraphSetKey(
+				input_session=self.task_session,
+				input_symbol=self.output_ref,
+				dependencies=dependencies,
+				key=self.output_key,
+				resource_graph=resource_graph,
+				state=self.config_state
+			)
+			graph.add_node(output_key, task=output_graph_task, source=prefix)
+
+			output_switch_task = SessionSwitch(
+				input_session=self.task_session,
+				input_symbol=self.output_ref,
+				output_session=output_session,
+				output_key=self.output_key
+			)
+			output_switch_key = self.output_task(prefix)
+			graph.add_node(output_switch_key, task=output_switch_task, source=prefix)
+
+			# We should always update the state before the session
+			graph.add_edge(output_key, output_switch_key)
+
+		task_graph = self.task_session.task_graph()
+		if not task_graph.nodes:
+			graph.add_edge(input_key, output_key)
+
+		task_key = lambda x: f'{prefix}:task:{x}'
+
+		for sub_node in topological_sort(task_graph):
+			node_key = task_key(sub_node)
+			task = task_graph.nodes[sub_node]['task']
+
+			graph.add_node(node_key, task=task, source=prefix)
+
+			# If not predecessors, make it dependent on the input
+			# switch
+			if not task_graph.pred[sub_node]:
+				graph.add_edge(input_key, node_key)
+			# Otherwise, add upstream edges
+			else:
+				for pred in task_graph.pred[sub_node]:
+					graph.add_edge(task_key(pred), node_key)
+
+			# The opposite of above--if no dependencies, make the
+			# output a dependency
+			if not task_graph.succ[sub_node]:
+				graph.add_edge(node_key, output_key)
+
+
+@dc.dataclass(frozen=True)
+class SetValue(PlanAction):
+	"""
+	
+	"""
+	output_key: str
+	output_symbol: symbols.Symbol
+
+	def input_task(self, prefix: str) -> str:
+		return f'{prefix}:state'
+
+	def output_task(self, prefix: str) -> str:
+		return f'{prefix}:state'
+
+	def render(
+		self,
+		graph: nx.DiGraph,
+		prefix: str,
+		resource_graph: ResourceGraph,
+		output_session: session.Session,
+		# Dependencies of the configuration
+		dependencies: Sequence[str]
+	) -> None:
+
+		graph_task_name = self.input_task(prefix)
+		graph_task = GraphSetKey(
+			input_session=output_session,
+			key=self.output_key,
+			input_symbol=self.output_symbol,
+			resource_graph=resource_graph,
+			dependencies=dependencies
+		)
+		graph.add_node(graph_task_name, task=graph_task, source=prefix)
+
+
+@dc.dataclass(frozen=True)
+class DeleteValue(PlanAction):
+	"""
+
+	"""
+	delete_key: str
+
+	def input_task(self, prefix: str) -> str:
+		return f'{prefix}:state'
+
+	def output_task(self, prefix: str) -> str:
+		return f'{prefix}:state'
+
+	def render(
+		self,
+		graph: nx.DiGraph,
+		prefix: str,
+		resource_graph: ResourceGraph,
+		output_session: session.Session,
+		# Dependencies of the configuration
+		dependencies: Sequence[str]
+	) -> None:
+
+		graph_task_name = self.input_task(prefix)
+		graph_task = GraphDeleteKey(
+			key=self.delete_key,
+			resource_graph=resource_graph
+		)
+		graph.add_node(graph_task_name, task=graph_task, source=prefix)
+
+
+@dc.dataclass(frozen=True)
+class PlanNode:
+	"""
+	A plan node contains information about the state of a given name and before
+	and after this migration, including any unknowns. It also contains information
+	about the up and downstream dependencies of the configuration and previous state
+	respectively
+	"""
+	key: str
+	# This will always be fully resolved
+	current_data: Any
+	current_type: types.Type
+	current_state: Optional[ResourceState]
+	current_depends_on: Sequence[str]
+	current_action: Optional[PlanAction]
+	# This may contain unknowns
+	config_data: Any
+	config_type: types.Type
+	config_state: Optional[ResourceState]
+	config_depends_on: Sequence[str]
+	config_action: Optional[PlanAction]
+
+	def input_task(self) -> str:
 		"""
-		Given a directed resolution graph, we will build a task graph from its task
-		sessions
+
+		"""
+		action = self.current_action or self.config_action
+		return action.input_task(self.current_prefix())
+
+	def current_prefix(self) -> str:
+		"""
+
+		"""
+		if self.current_action is not None and self.config_action is not None:
+			return f'{self.key}:current'
+		return self.key
+
+	def current_output_task(self) -> str:
+		"""
+		The output task of migrating the current state. This may or may not be the
+		same as output_task(); the case where it is the same is when either this key
+		only exists in one of the previous of configured namespaces or when it is a single
+		resource whose state is being migrated.
+		"""
+		action = self.current_action or self.config_action
+		return action.output_task(self.current_prefix())
+
+	def config_prefix(self) -> str:
+		"""
+
+		"""
+		if self.current_action is not None and self.config_action is not None:
+			return f'{self.key}:config'
+		return self.key
+
+	def config_input_task(self) -> str:
+		"""
+
+		"""
+		action = self.config_action or self.current_action
+		return action.input_task(self.config_prefix())
+
+	def output_task(self) -> str:
+		"""
+
+		"""
+		action = self.config_action or self.current_action
+		return action.output_task(self.config_prefix())
+
+	def get_edges(self, other_nodes: Dict[str, 'PlanNode']) -> Sequence[Tuple[str, str]]:
+		"""
+		Get the edges for this node, given the other nodes.
+		"""
+		edges = set()
+
+		input_task = self.input_task()
+		current_output_task = self.current_output_task()
+
+		for upstream in self.config_depends_on:
+			node = other_nodes[upstream]
+			ref = node.output_task()
+
+			edges.add((ref, input_task))
+
+		for downstream in self.current_depends_on:
+			node = other_nodes[downstream]
+			current_ref = node.current_output_task()
+			config_ref = node.output_task()
+
+			# So we are checking if our input/config currently depends on the _current_
+			# output of the other task. If not, we'll make the other input dependent
+			# on the _current output task_
+			if not {(current_ref, input_task), (config_ref, input_task)} & edges:
+				input_ref = node.input_task()
+				edges.add((current_output_task, input_ref))
+
+		return edges
+
+	def get_task_graph(
+		self,
+		resource_graph: ResourceGraph,
+		output_session: session.Session
+	) -> nx.DiGraph:
+		"""
+		Render a task graph for this specific node of the plan. The names specified
+		by current_output_task() and output_task() should be tasks in this graph.
+		"""
+		tasks = nx.DiGraph()
+
+		if self.current_action is not None and self.config_action is not None:
+			self.current_action.render(
+				graph=tasks,
+				prefix=self.current_prefix(),
+				resource_graph=resource_graph,
+				output_session=output_session,
+				# The current task will always have a null result
+				dependencies=()
+			)
+			self.config_action.render(
+				graph=tasks,
+				prefix=self.config_prefix(),
+				resource_graph=resource_graph,
+				output_session=output_session,
+				dependencies=self.config_depends_on
+			)
+			# Make these two graphs depend on one another
+			tasks.add_edge(self.current_output_task(), self.config_input_task())
+		elif self.current_action:
+			self.current_action.render(
+				graph=tasks,
+				prefix=self.current_prefix(),
+				resource_graph=resource_graph,
+				output_session=output_session,
+				dependencies=()
+			)
+		else:
+			self.config_action.render(
+				graph=tasks,
+				prefix=self.config_prefix(),
+				resource_graph=resource_graph,
+				output_session=output_session,
+				dependencies=self.config_depends_on
+			)
+
+		return tasks
+
+
+@dc.dataclass(frozen=True)
+class Plan:
+	nodes: Sequence[PlanNode]
+	config_session: ResourceSession
+	state_graph: ResourceGraph
+
+	def task_graph(self) -> 'TaskGraph':
+		"""
+		Render a full task graph from this plan
 		"""
 		from statey.executor import TaskGraph
 
-		if state_output_session is None and self.state_session is not None:
-			raise ValueError('state_output_session must be provided when state_session is not None.')
+		state_graph = self.state_graph.clone()
+		output_session = self.config_session.clone()
 
-		out_graph = nx.DiGraph()
+		node_dict = {node.key: node for node in self.nodes}
 
-		# First we want to fill in 2 things:
-		# previous states
-		# symbols in the output session
-		if self.state_session is not None:
-			for node in self.state_session.ns.keys():
-				typ = self.state_session.ns.resolve(node)
-				state_output_session.ns.new(node, typ)
-				state_output_session.set_data(node, self.state_session.resolve(self.state_session.ns.ref(node)))
+		graphs = []
+		edges = set()
 
-		config_nodes = {node for node in self.nested_task_graph if not self.nested_task_graph.nodes[node]['state_only']}
-		for node in self.config_session.ns.keys():
-			typ = self.config_session.ns.resolve(node)
-			output_session.ns.new(node, typ)
-			output_session.set_data(node, self.config_session.session.get_encoded_data(node))
+		for node in self.nodes:
+			graphs.append(node.get_task_graph(
+				resource_graph=state_graph,
+				output_session=output_session
+			))
+			edges |= node.get_edges(node_dict)
 
-		for node in topological_sort(self.nested_task_graph):
-			data = self.nested_task_graph.nodes[node]
+		# This will raise an error if there are overlapping keys, which there
+		# shouldn't be.
+		full_graph = reduce(nx.union, graphs) if graphs else nx.DiGraph()
+		full_graph.add_edges_from(edges)
 
-			use_output_session = state_output_session if data['state_only'] else output_session
+		if not is_directed_acyclic_graph(full_graph):
+			raise ValueError(f'{repr(full_graph)} is not a DAG!')
 
-			input_switch_task = SessionSwitch(
-				input_session=use_output_session,
-				input_symbol=data['input_symbol'],
-				output_session=data['task_session'],
-				output_key=data['input_key']
-			)
-			input_key = f'{node}:input'
-			print("TASK", input_key, input_switch_task)
-			out_graph.add_node(input_key, task=input_switch_task, source=node)
-
-			# Add upstream edges
-			for up_node in self.nested_task_graph.pred[node]:
-				out_graph.add_edge(f'{up_node}:output', input_key)
-
-			output_switch_task = SessionSwitch(
-				input_session=data['task_session'],
-				input_symbol=data['output_ref'],
-				output_session=use_output_session,
-				output_key=node,
-				allow_unknowns=False,
-				overwrite_output_type=data['config_state'].state.type
-			)
-			output_key = f'{node}:output'
-			print("TASK2", output_key, output_switch_task)
-			out_graph.add_node(output_key, task=output_switch_task, source=node)
- 
-			task_graph = data['task_session'].task_graph()
-			if not task_graph.nodes:
-				out_graph.add_edge(input_key, output_key)
-
-			for sub_node in topological_sort(task_graph):
-				node_key = f'{node}:task:{sub_node}'
-				task = task_graph.nodes[sub_node]['task']
-				out_graph.add_node(node_key, task=task, source=node)
-
-				# If not predecessors, make it dependent on the input
-				# switch
-				if not task_graph.pred[sub_node]:
-					out_graph.add_edge(input_key, node_key)
-				# Otherwise, add upstream edges
-				else:
-					for pred in task_graph.pred[sub_node]:
-						out_graph.add_edge(f'{node}:task:{pred}', node_key)
-
-				# The opposite of above--if no dependencies, make the
-				# output a dependency
-				if not task_graph.succ[sub_node]:
-					out_graph.add_edge(node_key, output_key)
-
-		return TaskGraph(out_graph)
+		return TaskGraph(full_graph, output_session, state_graph)
 
 
 class Migrator(abc.ABC):
@@ -144,142 +435,192 @@ class DefaultMigrator(Migrator):
 		from statey.syms.py_session import create_session
 		return create_session()
 
-	def nested_task_graph(self, config_session: ResourceSession, state_session: Optional[ResourceSession] = None) -> Plan:
+	def plan(self, config_session: ResourceSession, state_graph: Optional[ResourceGraph] = None) -> Plan:
+		config_dep_graph = config_session.dependency_graph()
+		state_dep_graph = state_graph.graph
 
-		config_graph = config_session.resource_graph()
-		state_graph = state_session.resource_graph() if state_session else nx.MultiDiGraph()
-		config_nodes = set(config_graph.nodes)
-		state_nodes = set(state_graph.nodes)
-		state_only_graph = state_graph.subgraph(state_nodes - config_nodes)
+		# For planning we need a copy of the config session that we will partially resolve
+		# (maybe w/ unknowns) as we go
+		output_session = config_session.clone()
 
-		resolution_graph = nx.DiGraph()
-		edges = set()
+		config_nodes = set(config_dep_graph.nodes)
+		state_nodes = set(state_dep_graph.nodes)
 
-		output_session = self.create_session()
+		state_only_nodes = state_nodes - config_nodes
 
-		# First, fill any non-resource keys into the output session. We put the symbolic representation
-		# only here, since these are not stateful and thus don't need to be resolved in any particular
-		# order. They need to be added to the output session so that references work properly.
-		config_other_keys = set(config_session.ns.keys()) - config_nodes
-		for other_key in config_other_keys:
-			typ = config_session.ns.resolve(other_key)
-			output_session.ns.new(other_key, typ, overwrite=True)
-			# TODO(cam): need to expose this method in the session API if it is required here,
-			# or maybe say only python session can be used here? This is fine for the short term,
-			# should think of something better though.
-			output_session.set_data(other_key, config_session.session.get_encoded_data(other_key))
+		plan_nodes = []
 
-		# Next, go through the resources that only exist in the old state and do the planning
-		# there, storing the edges to be added at the end
-		for node in reversed(list(topological_sort(state_only_graph))):
-			previous_state = state_only_graph.nodes[node]['state']
-			resource = state_session.ns.registry.get_resource(previous_state.resource_name)
-			previous_resolved = state_session.resolve(state_session.ns.ref(node), decode=False)
-			config_state = resource.null_state
+		for node in chain(topological_sort(config_dep_graph), state_only_nodes):
+			previous_exists = node in state_nodes
+			previous_state = None
+			if node in state_dep_graph.nodes:
+				previous_state = state_dep_graph.nodes[node]['state']
 
-			for dependent_node in state_graph.succ[node]:
-				edges.add((node, dependent_node))
-
-			task_session = self.create_task_session()
-			input_ref = task_session.ns.new('input', config_state.state.type)
-			task_session.set_data('input', {})
-
-			previous_bound = BoundState(data=previous_resolved, resource_state=previous_state)
-			current_bound = BoundState(data={}, resource_state=config_state)
-
-			output_ref = resource.plan(previous_bound, current_bound, task_session, input_ref)
-			# This needs to be fully resolved
-			output_resolved = task_session.resolve(output_ref, allow_unknowns=True, decode=False)
-
-			resolution_graph.add_node(
-				node,
-				expected_data=output_resolved,
-				previous_data=previous_resolved,
-				task_session=task_session,
-				input_key='input',
-				output_ref=output_ref,
-				config_state=config_state,
-				previous_state=previous_state,
-				resource=resource,
-				input_symbol=symbols.Literal(
-					value={},
-					type=config_state.state.type,
-					registry=state_session.ns.registry
-				),
-				state_only=True
-			)
-
-		# Next, go through the configured resources in topological sort order
-		for node in topological_sort(config_graph):
-			config_state = config_graph.nodes[node]['state']
-			resource = config_session.ns.registry.get_resource(config_state.resource_name)
-			previous_state = state_graph.nodes[node]['state'] if node in state_graph else resource.null_state
+			config_exists = node in config_nodes
+			config_state = None
 			try:
-				previous_resolved = state_session.resolve(state_session.ns.ref(node), decode=False) if state_session else {}
+				config_state = output_session.resource_state(node)
 			except exc.SymbolKeyError:
-				previous_resolved = {}
+				pass
 
-			output_session.ns.new(node, config_state.state.type)
-			# Again, this is not ideal
-			output_session.set_data(node, config_session.session.get_encoded_data(node))
+			current_depends_on = list(state_dep_graph.pred[node]) if previous_exists else []
+			config_depends_on = list(config_dep_graph.pred[node]) if config_exists else []
 
-			partial_resolved = output_session.resolve(output_session.ns.ref(node), allow_unknowns=True, decode=False)
+			# We can handle this node with one action--otherwise we need two, though
+			# one or both may just be state update operations.
+			if (
+				config_state is not None
+				and previous_state is not None
+				and config_state.resource_name == previous_state.resource_name
+			):
+				resource = config_session.ns.registry.get_resource(config_state.resource_name)
+				previous_resolved = state_dep_graph.nodes[node]['value']
+				config_partial_resolved = config_session.resolve(config_session.ns.ref(node), decode=False, allow_unknowns=True)
 
-			# use the partially resolved symbolic representation to get the unresolved dependencies
-			output_session.set_data(node, partial_resolved)
-			dep_graph = output_session.dependency_graph()
-			utils.subgraph_retaining_dependencies(dep_graph, config_nodes)
+				previous_bound = BoundState(data=previous_resolved, resource_state=previous_state)
+				config_bound = BoundState(data=config_partial_resolved, resource_state=config_state)
 
-			for other in dep_graph.pred[node]:
-				resolution_graph.add_edge(other, node)
+				task_session = self.create_task_session()
+				input_ref = task_session.ns.new('input', config_state.state.type)
+				task_session.set_data('input', config_partial_resolved)
 
-			task_session = self.create_task_session()
-			input_ref = task_session.ns.new('input', config_state.state.type)
-			task_session.set_data('input', partial_resolved)
+				output_ref = resource.plan(previous_bound, config_bound, task_session, input_ref)
 
-			previous_bound = BoundState(data=previous_resolved, resource_state=previous_state)
-			current_bound = BoundState(data=partial_resolved, resource_state=config_state)
+				output_partial_resolved = task_session.resolve(output_ref, allow_unknowns=True, decode=False)
 
-			output_ref = resource.plan(previous_bound, current_bound, task_session, input_ref)
-			output_partial = task_session.resolve(output_ref, allow_unknowns=True, decode=False)
+				action = ExecuteTaskSession(
+					task_session=task_session,
+					task_input_key='input',
+					output_key=node,
+					output_ref=output_ref,
+					config_state=config_state,
+					previous_state=previous_state,
+					resource=resource,
+					input_symbol=config_session.ns.ref(node)
+				)
 
-			def add_refs(x):
-				if isinstance(x, symbols.Unknown):
-					return x.clone(refs=(output_session.ns.ref(node),))
-				return x
+				plan_node = PlanNode(
+					key=node,
+					current_data=previous_resolved,
+					current_type=previous_state.state.type,
+					current_state=previous_state,
+					current_depends_on=current_depends_on,
+					current_action=None,
+					config_data=output_partial_resolved,
+					config_type=config_state.state.type,
+					config_state=config_state,
+					config_depends_on=config_depends_on,
+					config_action=action
+				)
+				plan_nodes.append(plan_node)
+				continue
 
-			semantics = output_session.ns.registry.get_semantics(config_state.state.type)
-			output_partial = semantics.map(add_refs, output_partial)
+			args = {
+				'key': node,
+				'current_data': None,
+				'current_type': None,
+				'current_state': None,
+				'current_depends_on': current_depends_on,
+				'current_action': None,
+				'config_data': None,
+				'config_type': None,
+				'config_state': None,
+				'config_depends_on': config_depends_on,
+				'config_action': None
+			}
 
-			# Set the result of planning for downstream dependencies
-			output_session.set_data(node, output_partial)
+			if previous_state:
+				resource = config_session.ns.registry.get_resource(previous_state.resource_name)
+				previous_resolved = state_dep_graph.nodes[node]['value']
 
-			resolution_graph.add_node(
-				node,
-				expected_data=output_partial,
-				previous_data=previous_resolved,
-				task_session=task_session,
-				input_key='input',
-				output_ref=output_ref,
-				config_state=config_state,
-				previous_state=previous_state,
-				resource=resource,
-				input_symbol=config_session.ns.ref(node),
-				state_only=False
-			)
+				previous_bound = BoundState(data=previous_resolved, resource_state=previous_state)
+				config_bound = BoundState(data={}, resource_state=resource.null_state)
 
-		for node, dependent_node in edges:
-			if (dependent_node, node) not in resolution_graph.edges:
-				resolution_graph.add_edge(node, dependent_node)
+				task_session = self.create_task_session()
+				input_ref = task_session.ns.new('input', previous_state.state.type)
+				task_session.set_data('input', previous_resolved)
 
-		if not is_directed_acyclic_graph(resolution_graph):
-			raise ValueError(f'{repr(resolution_graph)} is not a DAG!')
+				output_ref = resource.plan(previous_bound, config_bound, task_session, input_ref)
 
-		return resolution_graph
+				# In theory this should _not_ allow unknowns, but keeping it less strict for now.
+				output_partial_resolved = task_session.resolve(output_ref, allow_unknowns=True, decode=False)
 
-	def plan(self, config_session: ResourceSession, state_session: Optional[ResourceSession] = None) -> Plan:
-		return Plan(
-			nested_task_graph=self.nested_task_graph(config_session, state_session),
-			config_session=config_session,
-			state_session=state_session
-		)
+				action = ExecuteTaskSession(
+					task_session=task_session,
+					task_input_key='input',
+					output_key=node,
+					output_ref=output_ref,
+					config_state=resource.null_state,
+					previous_state=previous_state,
+					resource=resource,
+					input_symbol=symbols.Literal(
+						value=previous_resolved,
+						type=previous_state.state.type,
+						registry=config_session.ns.registry
+					)
+				)
+
+				args.update({
+					'current_data': previous_resolved,
+					'current_type': previous_state.state.type,
+					'current_state': previous_state,
+					'current_action': action
+				})
+			elif previous_exists:
+				args.update({
+					'current_data': state_dep_graph.nodes[node]['value'],
+					'current_type': state_dep_graph.nodes[node]['type'],
+					'current_state': None,
+					'current_action': DeleteValue(node),
+					# If the old value is not stateful, there are no dependencies to deleting it.
+					'current_depends_on': []
+				})
+
+			if config_state:
+				resource = config_session.ns.registry.get_resource(config_state.resource_name)
+				config_partial_resolved = config_session.resolve(config_session.ns.ref(node), decode=False, allow_unknowns=True)
+
+				previous_bound = BoundState(data={}, resource_state=resource.null_state)
+				config_bound = BoundState(data=config_partial_resolved, resource_state=config_state)
+
+				task_session = self.create_task_session()
+				input_ref = task_session.ns.new('input', config_state.state.type)
+				task_session.set_data('input', config_partial_resolved)
+
+				output_ref = resource.plan(previous_bound, config_bound, task_session, input_ref)
+
+				# In theory this should _not_ allow unknowns, but keeping it less strict for now.
+				output_partial_resolved = task_session.resolve(output_ref, allow_unknowns=True, decode=False)
+
+				action = ExecuteTaskSession(
+					task_session=task_session,
+					task_input_key='input',
+					output_key=node,
+					output_ref=output_ref,
+					config_state=config_state,
+					previous_state=resource.null_state,
+					resource=resource,
+					input_symbol=config_session.ns.ref(node)
+				)
+
+				args.update({
+					'config_data': output_partial_resolved,
+					'config_type': config_state.state.type,
+					'config_state': config_state,
+					'config_action': action
+				})
+			elif config_exists:
+				ref = config_session.ns.ref(node)
+				action = SetValue(node, ref)
+
+				args.update({
+					'config_data': config_session.resolve(ref, decode=False, allow_unknowns=True),
+					'config_type': config_session.ns.resolve(node),
+					'config_state': None,
+					'config_action': action
+				})
+
+			plan_node = PlanNode(**args)
+			plan_nodes.append(plan_node)
+
+		return Plan(tuple(plan_nodes), config_session, state_graph)

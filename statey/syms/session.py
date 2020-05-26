@@ -21,14 +21,20 @@ class Namespace(abc.ABC):
 		self.registry = registry
 
 	@abc.abstractmethod
-	def new(self, key: str, type: types.Type, overwrite: bool = False) -> symbols.Symbol:
+	def new(self, key: str, type: types.Type) -> symbols.Symbol:
 		"""
 		Create a new symbol for the given key and schema and add it to the current namespace.
 		Will raise an error if the key already exists.
+		"""
+		raise NotImplementedError
 
-		The overwrite argument can be used to force an overwrite of an existing type if the
-		key already exists in this namespace. Note this should be used with EXTREME CAUTION
-		because it can leave dependent sessions with invalid references.
+	@abc.abstractmethod
+	def delete(self, key: str) -> None:
+		"""
+		Delete the type at the given key.
+
+		Note this should be used with EXTREME CAUTION because it can leave dependent sessions
+		with invalid references.
 		"""
 		raise NotImplementedError
 
@@ -94,9 +100,8 @@ class Session(abc.ABC):
 	"""
 	A session contains a namespace and associated data and symbols
 	"""
-	def __init__(self, ns: Namespace, unsafe: bool = False) -> None:
+	def __init__(self, ns: Namespace) -> None:
 		self.ns = ns
-		self.unsafe = unsafe
 		self.pm = st.create_plugin_manager()
 		self.pm.add_hookspecs(SessionHooks)
 
@@ -117,11 +122,18 @@ class Session(abc.ABC):
 			else:
 				typ = self.ns.registry.get_type(annotation)
 
-		ref = self.ns.new(key, typ, overwrite=self.unsafe)
+		ref = self.ns.new(key, typ)
 		self.set_data(key, value)
 
 		other_result = self.pm.hook.after_set(key=key, value=value, type=typ)
 		return ref if other_result is None else other_result
+
+	def delete(self, key: str) -> None:
+		"""
+		Convenience method to delete the key from the namespace, then delete the data
+		"""
+		self.ns.delete(key)
+		self.delete_data(key)
 
 	def __setitem__(self, key: Union[slice, str], value: Any) -> None:
 		"""
@@ -153,7 +165,14 @@ class Session(abc.ABC):
 	def set_data(self, key: str, data: Any) -> None:
 		"""
 		Set the given data at the given key. Data can be or contain symbols provided they
-		are correctly typed
+		are correctly typed. `key` must be a ROOT key, not an attribute
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
+	def delete_data(self, key: str) -> None:
+		"""
+		Delete the data at the given key
 		"""
 		raise NotImplementedError
 

@@ -51,6 +51,30 @@ class NoResourceFound(SymsError):
 		super().__init__(f'No resource registered for name: {resource_name}.')
 
 
+class NoTypeSerializerFound(SymsError):
+	"""
+	Base class for NoTypeSerializerFound errors
+	"""
+
+
+class NoTypeSerializerFoundForType(NoTypeSerializerFound):
+	"""
+	Error to indicate no type serializer could be found for a given name
+	"""
+	def __init__(self, type: 'Type') -> None:
+		self.type = type
+		super().__init__(f'No resource registered for type: {type}.')
+
+
+class NoTypeSerializerFoundForData(NoTypeSerializerFound):
+	"""
+	Error to indicate no type serializer could be found for a given name
+	"""
+	def __init__(self, data: Any) -> None:
+		self.data = data
+		super().__init__(f'No resource registered for data: {data}.')
+
+
 class NamespaceError(SymsError):
 	"""
 	Error raised from a namespace

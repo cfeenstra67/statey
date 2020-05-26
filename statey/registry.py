@@ -43,6 +43,21 @@ class Registry(abc.ABC):
 		raise NotImplementedError
 
 	@abc.abstractmethod
+	def get_type_serializer(self, type: types.Type) -> 'TypeSerializer':
+		"""
+		Given a type, get the type serializer to turn it into a JSON-serializable value.
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
+	def get_type_serializer_from_data(self, data: Any) -> 'TypeSerializer':
+		"""
+		Given serialized data, get a type serializer that can decode a serialized type of
+		that name into a native Type
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
 	def register_resource(self, resource: 'Resource') -> None:
 		"""
 		Register the given resource
@@ -83,6 +98,18 @@ class RegistryHooks:
 	def get_semantics(self, type: types.Type, registry: Registry) -> 'Semantics':
 		"""
 		Handle the given type and produce a Semantics instance for symbols of that type
+		"""
+
+	@hookspec(firstresult=True)
+	def get_type_serializer(self, type: types.Type, registry: Registry) -> 'TypeSerializer':
+		"""
+		Handle the given type and produce an TypeSerializer instance that can encode values of that type
+		"""
+
+	@hookspec(firstresult=True)
+	def get_type_serializer_from_data(self, data: Any, registry: Registry) -> 'TypeSerializer':
+		"""
+		Handle the given type and produce a TypeSerializer instance for symbols of that type
 		"""
 
 
@@ -138,6 +165,24 @@ class DefaultRegistry(Registry):
 		)
 		if handled is None:
 			raise exc.NoSemanticsFound(type)
+		return handled
+
+	def get_type_serializer(self, type: types.Type) -> 'TypeSerializer':
+		handled = self.pm.hook.get_type_serializer(
+			type=type,
+			registry=self
+		)
+		if handled is None:
+			raise exc.NoTypeSerializerFoundForType(type)
+		return handled
+
+	def get_type_serializer_from_data(self, data: Any) -> 'TypeSerializer':
+		handled = self.pm.hook.get_type_serializer_from_data(
+			data=data,
+			registry=self
+		)
+		if handled is None:
+			raise exc.NoTypeSerializerFoundForData(data)
 		return handled
 
 	def _get_registered_resource_name(self, resource_name: str) -> str:
