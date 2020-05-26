@@ -342,7 +342,7 @@ class ResourceGraph:
 		"""
 		Return a JSON-serializable dictionary representation of this resource graph.
 		"""
-		nodes = []
+		nodes = {}
 
 		for node in self.graph.nodes:
 			data = self.graph.nodes[node]
@@ -350,24 +350,22 @@ class ResourceGraph:
 			if data['state']:
 				state_dict = data['state'].to_dict(registry)
 				state_type = state_dict['state'].pop('type')
-				nodes.append({
-					'key': node,
-					'value': data['value'],
+				nodes[node] = {
+					'data': data['value'],
 					'type': state_type,
 					'state': state_dict,
 					'depends_on': list(self.graph.pred[node])
-				})
+				}
 			else:
 				type_serializer = registry.get_type_serializer(data['type'])
-				nodes.append({
-					'key': node,
-					'value': data['value'],
+				nodes[node] = {
+					'data': data['value'],
 					'type': type_serializer.serialize(data['type']),
 					'state': None,
 					'depends_on': list(self.graph.pred[node])
-				})
+				}
 
-		return {'nodes': nodes}
+		return nodes
 
 	@classmethod
 	def from_dict(cls, data: Any, registry: 'Registry') -> 'ResourceGraph':
@@ -377,20 +375,21 @@ class ResourceGraph:
 		deps = {}
 		instance = cls()
 
-		for node in data['nodes']:
+		for key, node in data.items():
 			if node['state'] is not None:
 				type_dict = node['type']
 				state_dict_copy = node['state'].copy()
+				state_dict_copy['state'] = state_dict_copy['state'].copy()
 				state_dict_copy['state']['type'] = type_dict
-				state = ResourceState.from_dict(node['state'], registry)
+				state = ResourceState.from_dict(state_dict_copy, registry)
 				typ = state.state.type
-				instance.set(node['key'], node['value'], typ, state)
+				instance.set(key, node['data'], typ, state)
 			else:
 				type_serializer = registry.get_type_serializer_from_data(node['type'])
 				typ = type_serializer.deserialize(node['type'])
-				instance.set(node['key'], node['value'], typ)
+				instance.set(key, node['data'], typ)
 
-			deps[node['key']] = node['depends_on']
+			deps[key] = node['depends_on']
 
 		for to_node, from_nodes in deps.items():
 			instance.add_dependencies(to_node, from_nodes)
