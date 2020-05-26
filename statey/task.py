@@ -131,12 +131,9 @@ class SessionSwitch(Task):
 	output_session: session.Session
 	output_key: str
 	allow_unknowns: bool = True
-	overwrite_output_type: Optional[types.Type] = None
 
 	async def run(self) -> None:
 		resolved_input = self.input_session.resolve(self.input_symbol, allow_unknowns=self.allow_unknowns, decode=False)
-		if self.overwrite_output_type is not None:
-			self.output_session.ns.new(self.output_key, self.overwrite_output_type, overwrite=True)
 		self.output_session.set_data(self.output_key, resolved_input)
 
 

@@ -3,6 +3,7 @@ import asyncio
 import dataclasses as dc
 import enum
 import logging
+from datetime import datetime
 from typing import Sequence, Coroutine, Dict, Optional, Any
 
 import networkx as nx
@@ -77,54 +78,6 @@ class TaskGraph:
 			out.append(task_key)
 		return out
 
-	# def finalize_output_sessions(self) -> None:
-	# 	"""
-	# 	Clean up the state of any output sessions, adding unknowns where
-	# 	relevant.
-	# 	"""
-	# 	# Collect sources with at least one non-completed task
-	# 	non_completed = {
-	# 		self.task_graph.nodes[node]['source'] for node in self.task_graph.nodes
-	# 		# This includes NOT_STARTED, PENDING, and SKIPPED
-	# 		if self.get_info(node).status < TaskStatus.FAILED
-	# 	}
-
-	# 	# for each one of these, set the state in the output session based on
-	# 	# a checkpoint, the previous state, or a null state as a backup
-	# 	for node in non_completed:
-	# 		try:
-	# 			checkpoint = self.checkpoint_session.resource_state(node)
-	# 		except exc.SymbolKeyError:
-	# 			pass
-	# 		else:
-	# 			self.output_session.ns.new(node, checkpoint.resource_state.state.type, overwrite=True)
-	# 			self.output_session.set_data(node, checkpoint.data)
-	# 			continue
-
-
-
-
-
-	# 		else:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 class ExecutionStrategy(enum.Enum):
 	"""
@@ -147,6 +100,8 @@ class ExecutionInfo(utils.Cloneable):
 	tasks: Dict[str, asyncio.Task] = dc.field(default_factory=dict)
 	cancelled_by: Optional[str] = None
 	cancelled_by_errors: Sequence[BaseException] = dc.field(default_factory=list)
+	start_timestamp: datetime = dc.field(default_factory=datetime.utcnow)
+	end_timestamp: datetime = dc.field(default=None)
 
 
 class TaskGraphExecutor(abc.ABC):
@@ -294,6 +249,7 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 
 		await self.task_loop(asyncio.wait(ready_wrappers), max_signals, exec_info)
 
+		exec_info.end_timestamp = datetime.utcnow()
 		return exec_info
 
 	def execute(

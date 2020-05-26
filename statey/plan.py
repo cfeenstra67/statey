@@ -623,4 +623,8 @@ class DefaultMigrator(Migrator):
 			plan_node = PlanNode(**args)
 			plan_nodes.append(plan_node)
 
-		return Plan(tuple(plan_nodes), config_session, state_graph)
+		plan = Plan(tuple(plan_nodes), config_session, state_graph)
+		# This will ensure that the task graph is a valid DAG, not perfect but it will
+		# do for now
+		plan.task_graph()
+		return plan

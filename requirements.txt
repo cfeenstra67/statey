@@ -2,3 +2,5 @@ dataclasses==0.7
 marshmallow==3.5.2
 pluggy==0.13.1
 networkx==2.4
+# Only required for the CLI
+click==7.1.2
