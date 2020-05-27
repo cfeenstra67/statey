@@ -1,8 +1,9 @@
 import abc
+import asyncio
 import dataclasses as dc
 from collections import Counter
 from functools import partial
-from typing import Optional, Dict, Any, Sequence, Type as PyType, Callable, Tuple
+from typing import Optional, Dict, Any, Sequence, Type as PyType, Callable, Tuple, Iterator
 
 import marshmallow as ma
 import networkx as nx
@@ -125,7 +126,7 @@ class BoundState:
 	resource_state: ResourceState
 	data: Any
 
-	def to_literal(self, registry: 'Registry') -> symbols.Literal:
+	def literal(self, registry: 'Registry') -> symbols.Literal:
 		"""
 		Convenience method to convert a bound state to a literal with some registry.
 		"""
@@ -136,7 +137,49 @@ class BoundState:
 		)
 
 
-class ResourceMeta(abc.ABCMeta):
+class Resource(abc.ABC):
+	"""
+	A resource represents a stateful object of some kind, and it can have one
+	or more "states" that that object can exist in.
+	"""
+	@property
+	@abc.abstractmethod
+	def name(self) -> str:
+		raise NotImplementedError
+
+	@property
+	@abc.abstractmethod
+	def null_state(self) -> ResourceState:
+		"""
+		Return the null state of this resource, at which point it will removed from
+		a resource graph
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
+	def plan(
+		self,
+		current: BoundState,
+		config: BoundState,
+		session: TaskSession,
+		input: symbols.Symbol
+	) -> symbols.Symbol:
+		"""
+		Given a task session, the current state of a resource, and a task session with
+		corresponding input reference, return an output reference that can be fully
+		resolved when all the tasks in the task session have been complete successfully.
+		"""
+		raise NotImplementedError
+
+	async def refresh(self, current: BoundState) -> BoundState:
+		"""
+		Given the current bound state, return a new bound state that represents that actual
+		current state of the object
+		"""
+		raise NotImplementedError
+
+
+class SimpleResourceMeta(abc.ABCMeta):
 	"""
 	Metaclass for resources
 	"""
@@ -164,10 +207,9 @@ class ResourceMeta(abc.ABCMeta):
 		return super_cls
 
 
-class Resource(abc.ABC, metaclass=ResourceMeta):
+class SimpleResource(Resource, metaclass=SimpleResourceMeta):
 	"""
-	A resource represents a stateful object of some kind, and it can have one
-	or more "states" that that object can exist in.
+	Simple API on top of resource for the common case of having a set list of possible states.
 	"""
 	def __init__(self) -> None:
 		# This is temporary, should clean this up
@@ -178,29 +220,9 @@ class Resource(abc.ABC, metaclass=ResourceMeta):
 		setattr(self, state.state.name, state)
 
 	@property
-	@abc.abstractmethod
-	def name(self) -> str:
-		raise NotImplementedError
-
-	@property
 	def null_state(self) -> ResourceState:
 		state = next((s for s in self.__states__ if s.null))
 		return ResourceState(state, self.name)
-
-	@abc.abstractmethod
-	def plan(
-		self,
-		current: BoundState,
-		config: BoundState,
-		session: TaskSession,
-		input: symbols.Symbol
-	) -> symbols.Symbol:
-		"""
-		Given a task session, the current state of a resource, and a task session with
-		corresponding input reference, return an output reference that can be fully
-		resolved when all the tasks in the task session have been complete successfully.
-		"""
-		raise NotImplementedError
 
 
 class ResourceSession(session.Session):
@@ -334,6 +356,33 @@ class ResourceGraph:
 				raise KeyError(dep)
 
 		self.graph.add_edges_from([(dep, key) for dep in dependencies])
+
+	async def refresh(self, registry: st.Registry) -> Iterator[str]:
+		"""
+		Refresh the current state of all resources in the graph. Returns an asynchronous
+		generator that yields keys as they finish refreshing successfully.
+		"""
+		async def handle_node(key):
+			data = self.graph.nodes[key]
+			if data['state'] is None:
+				return
+			state = data['state']
+			resource = registry.get_resource(state.resource_name)
+			result = await resource.refresh(BoundState(state, data['value']))
+			self.set(
+				key=key,
+				value=result.data,
+				type=type,
+				state=result.resource_state,
+				remove_dependencies=False
+			)
+
+		node_list = list(self.graph.nodes)
+		coros = list(map(handle_node, node_list))
+
+		for key, coro in zip(node_list, asyncio.as_completed(coros)):
+			await coro
+			yield key
 
 	def clone(self) -> 'ResourceGraph':
 		return type(self)(self.graph.copy())

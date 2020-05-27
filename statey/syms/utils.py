@@ -126,7 +126,7 @@ class PossiblySymbolicField(ma.fields.Field):
 			return self.field._deserialize(value, attr, data, **kwargs)
 
 		if self.type != value.type:
-			raise ma.ValidationError(f'Invalid symbol type (expected {self.type}, got {typ}).')
+			raise ma.ValidationError(f'Invalid symbol type (expected {self.type}, got {value.type}).')
 		return value
 
 	def __repr__(self) -> str:
@@ -221,9 +221,9 @@ def wrap_function_call(registry: 'TypeRegistry', func: Callable[[Any], Any], *ar
 			# VAR_POSITIONAL
 			if param.kind == 1:
 				typ = registry.get_type(param.annotation)
-				args.extend(symbols.Literal(a, typ) for a in arg)
+				args.extend(symbols.Literal(a, typ, registry) for a in arg)
 			else:
-				args.append(symbols.Literal(arg, registry.get_type(param.annotation)))
+				args.append(symbols.Literal(arg, registry.get_type(param.annotation), registry))
 		consumed += 1
 
 	kwargs = {}

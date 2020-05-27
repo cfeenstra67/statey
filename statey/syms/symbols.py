@@ -194,6 +194,8 @@ class Future(ValueSemantics):
 	refs: Sequence[Reference] = ()
 	result: Any = dc.field(init=False, default=utils.MISSING)
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+	# Expected output, potentially containing unknowns
+	expected: Any = dc.field(default=utils.MISSING, compare=False)
 
 	def get_result(self) -> Any:
 		"""

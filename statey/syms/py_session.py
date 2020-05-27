@@ -161,6 +161,8 @@ class PythonSession(session.Session):
 			except exc.FutureResultNotSet:
 				if not allow_unknowns:
 					raise
+				if future.expected is not utils.MISSING:
+					return future.expected
 				return symbols.Unknown(sym, refs=future.refs)
 
 		def resolve_unknown(unknown):
@@ -197,6 +199,7 @@ class PythonSession(session.Session):
 						unknown_refs.extend(arg.refs)
 						continue
 					kwargs[key] = arg
+
 				if is_unknown:
 					value = symbols.Unknown(sym, refs=tuple(unknown_refs))
 				else:

@@ -201,7 +201,7 @@ class ExecutionSummary:
 
 		if task_dict:
 			task_lines = [f'Tasks completed by status:']
-			for status in sorted(task_dict):
+			for status in sorted(task_dict, key=lambda x: x.value):
 				status_name = click.style(status.name, bold=True, fg=self.color_for_status(status))
 				task_lines.append(
 					f'- {status_name}: {len(task_dict[status])} task(s)'

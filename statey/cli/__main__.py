@@ -1,3 +1,4 @@
+import asyncio
 import click
 import importlib
 
@@ -7,6 +8,9 @@ from statey.hooks import register_default_plugins
 from statey.plan import DefaultMigrator
 from statey.cli.graph_utils import Inspector
 from statey.cli.state_manager import FileStateManager
+
+
+inspector = Inspector()
 
 
 @click.group('statey')
@@ -19,15 +23,23 @@ def cli(ctx, state):
 	register_default_plugins()
 
 
-@cli.command()
-@click.option('--session-name', help='Set a module attribute other than `session` to use for planning.', default='session')
-@click.argument('module')
-@click.pass_context
-def plan(ctx, module, session_name):
+async def refresh_graph(graph):
+	with click.progressbar(
+		length=len(graph.graph.nodes),
+		label=click.style('Refreshing state...', fg='yellow')
+	) as bar:
+		async for key in graph.refresh(st.registry):
+			bar.update(1)
+
+
+def _plan(ctx, module, session_name):
 	module_obj = importlib.import_module(module)
 
 	session = getattr(module_obj, session_name)
 	resource_graph = ctx.obj['state_manager'].load(st.registry)
+
+	loop = asyncio.get_event_loop()
+	loop.run_until_complete(refresh_graph(resource_graph))
 
 	click.echo(
 		f'Loaded {click.style(session_name, fg="green", bold=True)} from '
@@ -39,8 +51,6 @@ def plan(ctx, module, session_name):
 
 	click.secho(f'Planning completed successfully.', fg='green')
 
-	inspector = Inspector()
-
 	plan_summary = inspector.plan_summary(plan)
 
 	# Arbitrary
@@ -48,6 +58,16 @@ def plan(ctx, module, session_name):
 	summary_string = plan_summary.to_string(column_width)
 
 	click.echo(summary_string)
+
+	return plan
+
+
+@cli.command()
+@click.option('--session-name', help='Set a module attribute other than `session` to use for planning.', default='session')
+@click.argument('module')
+@click.pass_context
+def plan(ctx, module, session_name):
+	_plan(ctx, module, session_name)
 
 
 @cli.command()
@@ -55,45 +75,24 @@ def plan(ctx, module, session_name):
 @click.argument('module')
 @click.pass_context
 def apply(ctx, module, session_name):
-	module_obj = importlib.import_module(module)
+	plan = _plan(ctx, module, session_name)
 
-	session = getattr(module_obj, session_name)
-	resource_graph = ctx.obj['state_manager'].load(st.registry)
-
-	click.echo(
-		f'Loaded {click.style(session_name, fg="green", bold=True)} from '
-		f'{click.style(module, fg="green", bold=True)} successfully.'
-	)
-
-	migrator = DefaultMigrator()
-	plan = migrator.plan(session, resource_graph)
-
-	click.secho(f'Planning completed successfully.', fg='green')
-
-	inspector = Inspector()
-
-	plan_summary = inspector.plan_summary(plan)
-
-	# Arbitrary
-	column_width = 40
-	summary_string = plan_summary.to_string(column_width)
-
-	click.echo(summary_string)
-
-	if not click.confirm('Do you want to confinue?'):
+	if not click.confirm(f'Do you want to {click.style("apply", bold=True)} these changes?'):
 		raise click.Abort
 
 	executor = AsyncIOGraphExecutor()
 	task_graph = plan.task_graph()
-	exec_info = executor.execute(task_graph)
 
-	exec_summary = inspector.execution_summary(exec_info)
+	try:
+		exec_info = executor.execute(task_graph)
 
-	exec_summary_string = exec_summary.to_string()
+		exec_summary = inspector.execution_summary(exec_info)
 
-	click.echo(exec_summary_string)
+		exec_summary_string = exec_summary.to_string()
 
-	ctx.obj['state_manager'].dump(task_graph.resource_graph, st.registry)
+		click.echo(exec_summary_string)
+	finally:
+		ctx.obj['state_manager'].dump(task_graph.resource_graph, st.registry)
 
 
 if __name__ == '__main__':

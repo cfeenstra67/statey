@@ -38,6 +38,15 @@ class Task(abc.ABC):
 	Base class for tasks. A task is a unit of computation
 	"""
 	@abc.abstractmethod
+	def always_eager(self) -> bool:
+		"""
+		Indicate that this task should always be executed eagerly, meaning even if
+		we are interrupted in the middle of execution if all of its dependencies get
+		executed, we will still execute this task as long as we exit cleanly
+		"""
+		raise NotImplementedError
+
+	@abc.abstractmethod
 	async def run(self) -> None:
 		"""
 		This should be overridden to implement actual task logic.
@@ -52,6 +61,17 @@ class SessionTaskSpec(abc.ABC):
 	"""
 	input_type: types.Type
 	output_type: types.Type
+
+	def always_eager(self) -> bool:
+		return False
+
+	@property
+	@abc.abstractmethod
+	def expected(self) -> Any:
+		"""
+		Return the expected value for this task, returning utils.MISSING if none is known
+		"""
+		raise NotImplementedError
 
 	@abc.abstractmethod
 	async def run(self, data: Any) -> Any:
@@ -70,6 +90,7 @@ class FunctionTaskSpec(SessionTaskSpec):
 	This is essentially a factory that allows us to implement tasks for a session
 	"""
 	func: Callable[[Any], Any]
+	expected: Any = utils.MISSING
 
 	async def run(self, data: Any) -> Any:
 		"""
@@ -90,7 +111,11 @@ class BoundTaskSpec:
 	data: Any
 
 	def bind(self, session: session.Session) -> 'SessionTask':
-		new_future = symbols.Future(self.spec.output_type, session.ns.registry)
+		new_future = symbols.Future(
+			self.spec.output_type,
+			session.ns.registry,
+			expected=self.spec.expected
+		)
 		return SessionTask(
 			session=session,
 			spec=self.spec,
@@ -108,6 +133,9 @@ class SessionTask(Task):
 	spec: SessionTaskSpec
 	data: Any
 	output_future: symbols.Future
+
+	def always_eager(self) -> bool:
+		return False
 
 	async def run(self) -> None:
 		resolved_input = self.session.resolve(self.data, decode=False)
@@ -132,6 +160,9 @@ class SessionSwitch(Task):
 	output_key: str
 	allow_unknowns: bool = True
 
+	def always_eager(self) -> bool:
+		return False
+
 	async def run(self) -> None:
 		resolved_input = self.input_session.resolve(self.input_symbol, allow_unknowns=self.allow_unknowns, decode=False)
 		self.output_session.set_data(self.output_key, resolved_input)
@@ -144,6 +175,9 @@ class ResourceGraphOperation(Task):
 	"""
 	key: str
 	resource_graph: 'ResourceGraph'
+
+	def always_eager(self) -> bool:
+		return True
 
 
 @dc.dataclass(frozen=True)

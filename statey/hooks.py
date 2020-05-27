@@ -27,7 +27,8 @@ def register_default_plugins(
 	encoders: bool = True,
 	type_plugins: bool = True,
 	semantics: bool = True,
-	type_serializers: bool = True
+	type_serializers: bool = True,
+	resources: bool = True
 ) -> None:
 	"""
 	Convenience method to register all of the default provided hooks for the given
@@ -45,3 +46,6 @@ def register_default_plugins(
 	if type_serializers:
 		from statey.syms.type_serializers import register as register_serializers
 		register_serializers()
+	if resources:
+		from statey.lib import register as register_resources
+		register_resources()

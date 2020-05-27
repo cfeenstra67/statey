@@ -131,28 +131,39 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 		"""
 		exec_info.task_graph.set_status(key, TaskStatus.SUCCESS)
 
-		# If the run has been cancelled and we're doing tentative execution, stop here.
+		ready_tasks = exec_info.task_graph.get_ready_tasks()
+		always_eager_coros = []
+		other_coros = []
+		for task in ready_tasks:
+			coro = self.task_wrapper(task, exec_info.task_graph.get_task(task), exec_info)
+			if exec_info.task_graph.get_task(task).always_eager():
+				always_eager_coros.append(coro)
+			else:
+				other_coros.append(coro)
+
+		# If there are any ready always eager tasks, we'll execute them right away no matter what
+		if always_eager_coros:
+			await asyncio.wait(always_eager_coros)
+
+		# If the run has been cancelled and we're doing tentative execution, skip any unrun descendent
+		# tasks
 		if exec_info.cancelled_by is not None and exec_info.strategy == ExecutionStrategy.TENTATIVE:
 			for child_key in exec_info.task_graph.get_descendants(key):
-				if exec_info.task_graph.get_info(child_key).status != TaskStatus.SKIPPED:
+				if exec_info.task_graph.get_info(child_key).status == TaskStatus.NOT_STARTED:
 					exec_info.task_graph.set_status(child_key, TaskStatus.SKIPPED, skipped_by=exec_info.cancelled_by)
 			return
 
 		# If we get a signal to cancel, we'll stop creating new tasks regardless of the execution
-		# strategy.
+		# strategy other than always eager tasks.
 		if exec_info.cancelled_by_errors:
 			for child_key in exec_info.task_graph.get_descendants(key):
-				if exec_info.task_graph.get_info(child_key).status != TaskStatus.SKIPPED:
+				if exec_info.task_graph.get_info(child_key).status == TaskStatus.NOT_STARTED:
 					exec_info.task_graph.set_status(child_key, TaskStatus.SKIPPED, skipped_by='ERROR')
 			return
 
-		# Otherwise, schehdule any ready tasks
-		coros = [
-			self.task_wrapper(child_key, exec_info.task_graph.get_task(child_key), exec_info)
-			for child_key in exec_info.task_graph.get_ready_tasks()
-		]
-		if coros:
-			await asyncio.wait(coros)
+		# Otherwise, schehdule any non-always-eager tasks
+		if other_coros:
+			await asyncio.wait(other_coros)
 
 	async def after_task_failure(self, key: str, exec_info: ExecutionInfo, error: Exception) -> None:
 		"""
@@ -191,16 +202,17 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 			if not task.done():
 				task.cancel()
 
-	async def task_loop(self, coro: Coroutine, max_signals: int, exec_info: ExecutionInfo) -> None:
+	def task_loop(self, coro: Coroutine, max_signals: int, exec_info: ExecutionInfo) -> Any:
 		"""
 		Handle signals like KeyboardInterrupt and SystemExit properly, only cancelling running
 		tasks when we reach max_signals.
 		"""
 		signals = 0
+		loop = asyncio.get_event_loop()
 
 		while True:
 			try:
-				return await coro
+				return loop.run_until_complete(coro)
 			except Exception:
 				raise
 			# Catch anything else (e.g. SystemExit, KeyboardInterrupt) and handle it
@@ -230,7 +242,7 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 					max_signals,
 				)
 
-	async def execute_async(
+	def execute(
 		self,
 		task_graph: TaskGraph,
 		strategy: ExecutionStrategy = ExecutionStrategy.TENTATIVE,
@@ -247,18 +259,7 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 		if not ready_wrappers:
 			return exec_info
 
-		await self.task_loop(asyncio.wait(ready_wrappers), max_signals, exec_info)
+		self.task_loop(asyncio.wait(ready_wrappers), max_signals, exec_info)
 
 		exec_info.end_timestamp = datetime.utcnow()
 		return exec_info
-
-	def execute(
-		self,
-		task_graph: TaskGraph,
-		strategy: ExecutionStrategy = ExecutionStrategy.TENTATIVE,
-		max_signals: int = 2
-	) -> ExecutionInfo:
-
-		coro = self.execute_async(task_graph, strategy, max_signals)
-		loop = asyncio.get_event_loop()
-		return loop.run_until_complete(coro)
