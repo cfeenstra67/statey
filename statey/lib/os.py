@@ -111,8 +111,7 @@ class FileResource(Resource):
 			return symbols.Function(
 				func=lambda x, *args: x,
 				args=(x, *args),
-				type=x.type,
-				registry=session.ns.registry
+				semantics=x.semantics
 			)
 
 		# UP -> DOWN

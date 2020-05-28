@@ -113,9 +113,9 @@ class Symbol(abc.ABC, utils.Cloneable):
 				else:
 					return_type = st.registry.get_type(sig.return_annotation)
 
+		return_semantics = st.registry.get_semantics(return_type)
 		return Function(
-			type=return_type,
-			registry=self.registry,
+			semantics=return_semantics,
 			func=func,
 			args=(self,)
 		)

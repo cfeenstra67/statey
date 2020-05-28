@@ -1,8 +1,10 @@
 import abc
 import dataclasses as dc
 import enum
+import sys
+import traceback
 from datetime import datetime
-from typing import Tuple, Any, Optional, Callable, Sequence
+from typing import Tuple, Any, Optional, Callable, Sequence, Type as PyType
 
 import networkx as nx
 import pluggy
@@ -23,13 +25,36 @@ class TaskStatus(enum.Enum):
 
 
 @dc.dataclass(frozen=True)
+class ErrorInfo:
+	"""
+	Container for the for all error information
+	"""
+	exc_type: Optional[PyType[Exception]] = None
+	exc_value: Optional[Exception] = None
+	exc_tb: Optional['traceback'] = None
+
+	@classmethod
+	def exc_info(cls) -> 'ErrorInfo':
+		"""
+		Mimics the sys.exc_info() method
+		"""
+		return cls(*sys.exc_info())
+
+	def format_exception(self) -> str:
+		"""
+		Return a formatted version of this exception.
+		"""
+		return '\n'.join(traceback.format_exception(self.exc_type, self.exc_value, self.exc_tb))
+
+
+@dc.dataclass(frozen=True)
 class TaskInfo:
 	"""
 	Contains information about the state of a task
 	"""
 	status: TaskStatus
 	timestamp: datetime = dc.field(default_factory=datetime.utcnow)
-	error: Optional[Exception] = None
+	error: Optional[ErrorInfo] = None
 	skipped_by: Optional[str] = None
 
 
@@ -111,9 +136,9 @@ class BoundTaskSpec:
 	data: Any
 
 	def bind(self, session: session.Session) -> 'SessionTask':
+		semantics = session.ns.registry.get_semantics(self.spec.output_type)
 		new_future = symbols.Future(
-			self.spec.output_type,
-			session.ns.registry,
+			semantics=semantics,
 			expected=self.spec.expected
 		)
 		return SessionTask(
@@ -142,8 +167,7 @@ class SessionTask(Task):
 		output = await self.spec.run(resolved_input)
 		output_symbol = symbols.Literal(
 			value=output,
-			type=self.output_future.type,
-			registry=self.session.ns.registry
+			semantics=self.output_future.semantics
 		)
 		resolved_output = self.session.resolve(output_symbol, decode=False)
 		self.output_future.set_result(resolved_output)

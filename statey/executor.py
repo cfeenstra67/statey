@@ -2,19 +2,17 @@ import abc
 import asyncio
 import dataclasses as dc
 import enum
-import logging
 from datetime import datetime
 from typing import Sequence, Coroutine, Dict, Optional, Any
 
 import networkx as nx
+import pluggy
 from networkx.algorithms.dag import descendants
 
+from statey.hooks import hookspec, create_plugin_manager
 from statey.resource import ResourceSession, ResourceGraph
 from statey.syms import utils, session, exc
-from statey.task import Task, TaskStatus, TaskInfo, SessionSwitch
-
-
-logger = logging.getLogger(__name__)
+from statey.task import Task, TaskStatus, TaskInfo, SessionSwitch, ErrorInfo
 
 
 @dc.dataclass(frozen=True)
@@ -34,7 +32,7 @@ class TaskGraph:
 		for node in self.task_graph:
 			self.task_graph.nodes[node]['info'] = TaskInfo(TaskStatus.NOT_STARTED)
 
-	def set_status(self, key: str, status: TaskStatus, error: Optional[Exception] = None, skipped_by: Optional[str] = None) -> None:
+	def set_status(self, key: str, status: TaskStatus, error: Optional[ErrorInfo] = None, skipped_by: Optional[str] = None) -> None:
 		"""
 		Set the status of a given task
 		"""
@@ -104,10 +102,45 @@ class ExecutionInfo(utils.Cloneable):
 	end_timestamp: datetime = dc.field(default=None)
 
 
+class TaskGraphHooks:
+	"""
+	Specifies hooks to call during task graph execution
+	"""
+	@hookspec
+	def before_run(self, key: str, task: Task, executor: 'TaskGraphExecutor') -> None:
+		"""
+		Register side effects before a given task is run
+		"""
+
+	@hookspec
+	def after_run(self, key: str, task: Task, status: TaskStatus, executor: 'TaskGraphExecutor') -> None:
+		"""
+		Register side effects after a given task is run
+		"""
+
+	@hookspec
+	def caught_signal(self, signals: int, max_signals: int, executor: 'TaskGraphExecutor') -> None:
+		"""
+		Register side effects when a signal is caught, indicating whether the program
+		is going to exit
+		"""
+
+
+def create_executor_plugin_manager() -> pluggy.PluginManager:
+	"""
+	Factory function for a plugin manager for a GraphExecutor
+	"""
+	pm = create_plugin_manager()
+	pm.add_hookspecs(TaskGraphHooks)
+	return pm
+
+
 class TaskGraphExecutor(abc.ABC):
 	"""
 	Executes all the tasks in a given graph
 	"""
+	pm: pluggy.PluginManager
+
 	@abc.abstractmethod
 	def execute(
 		self,
@@ -116,7 +149,7 @@ class TaskGraphExecutor(abc.ABC):
 		max_signals: int = 2
 	) -> ExecutionInfo:
 		"""
-
+		Execute the tasks in the given graph, returning information about the run.
 		"""
 		raise NotImplementedError
 
@@ -125,6 +158,11 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 	"""
 	Graph executors that uses python asyncio couroutines for concurrency
 	"""
+	def __init__(self, pm: Optional[pluggy.PluginManager] = None) -> None:
+		if pm is None:
+			pm = create_executor_plugin_manager()
+		self.pm = pm
+
 	async def after_task_success(self, key: str, exec_info: ExecutionInfo) -> None:
 		"""
 		Callback after a task completes _successfully_
@@ -165,7 +203,7 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 		if other_coros:
 			await asyncio.wait(other_coros)
 
-	async def after_task_failure(self, key: str, exec_info: ExecutionInfo, error: Exception) -> None:
+	async def after_task_failure(self, key: str, exec_info: ExecutionInfo, error: ErrorInfo) -> None:
 		"""
 		Callback after a task fails
 		"""
@@ -184,14 +222,18 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 		if exec_info.task_graph.get_info(key).status != TaskStatus.NOT_STARTED:
 			return
 
+		self.pm.hook.before_run(key=key, task=task, executor=self)
+
 		asyncio_task = asyncio.ensure_future(task.run())
 		exec_info.tasks[key] = asyncio_task
 		exec_info.task_graph.set_status(key, TaskStatus.PENDING)
 		try:
 			await asyncio_task
-		except Exception as err:
-			await self.after_task_failure(key, exec_info, err)
+		except Exception:
+			self.pm.hook.after_run(key=key, task=task, status=TaskStatus.FAILED, executor=self)
+			await self.after_task_failure(key, exec_info, ErrorInfo.exc_info())
 		else:
+			self.pm.hook.after_run(key=key, task=task, status=TaskStatus.SUCCESS, executor=self)
 			await self.after_task_success(key, exec_info)
 
 	def hard_cancel(self, exec_info: ExecutionInfo) -> None:
@@ -222,25 +264,13 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 				signals += 1
 				exec_info.cancelled_by_errors.append(err)
 
-				if signals >= max_signals:
-					logger.info(
-						"Caught %s. Cancelling tasks and reraising as signals >= "
-						"max_signals (%s >= %s)",
-						err,
-						signals,
-						max_signals,
-					)
+				will_cancel = signals >= max_signals
+
+				self.pm.hook.caught_signal(signals=signals, max_signals=max_signals, executor=self)
+
+				if will_cancel:
 					self.hard_cancel(exec_info)
 					raise
-
-				logger.info(
-					"Caught %s. Continuing as signals < max_signals (%s < %s)."
-					" Please wait for the program to exit normally, as data loss may"
-					"occur otherwise",
-					err,
-					signals,
-					max_signals,
-				)
 
 	def execute(
 		self,

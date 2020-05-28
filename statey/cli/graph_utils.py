@@ -1,14 +1,60 @@
 import dataclasses as dc
 import textwrap as tw
+import traceback
+import time
 from typing import Sequence, Dict, Any, Optional, Tuple
 
 import click
 import networkx as nx
 
+import statey as st
 from statey.executor import ExecutionInfo
 from statey.plan import Plan, PlanNode
 from statey.syms import utils, symbols, types
 from statey.task import Task, SessionSwitch, ResourceGraphOperation, TaskStatus
+
+
+class ExecutorLoggingPlugin:
+	"""
+	Plugin to log signals when caught
+	"""
+	def __init__(self) -> None:
+		self.task_starts = {}
+
+	@st.hookimpl
+	def caught_signal(self, signals: int, max_signals: int, executor: 'TaskGraphExecutor') -> None:
+		if signals >= max_signals:
+			click.secho(
+				f'Caught {signals} signals(s) >= max_signals = {max_signals}. '
+				f'Exiting forcefully, this may cause data loss.', fg='red'
+			)
+		else:
+			color = 'yellow' if signals == 1 else 'red'
+			click.secho(f'Caught {signals} signal(s), exiting gracefully. Additional signals may cause data loss.', fg=color)
+
+	@st.hookimpl
+	def before_run(self, key: str, task: Task, executor: 'TaskGraphExecutor') -> None:
+		self.task_starts[key] = time.time()
+
+	@st.hookimpl
+	def after_run(self, key: str, task: Task, status: TaskStatus, executor: 'TaskGraphExecutor') -> None:
+		duration = time.time() - self.task_starts[key]
+		color = color_for_status(status)
+		styled_status = click.style(status.name, fg=color, bold=True)
+		if not is_metatask(task):
+			click.echo(f'Task {click.style(key, fg="yellow")} finished after {duration:.2f}s with status {styled_status}.')
+
+
+def color_for_status(status: TaskStatus) -> Optional[str]:
+	"""
+	Return the color (as a string) that we want to use to print this related to this status
+	"""
+	color_dict = {
+		TaskStatus.SUCCESS: 'green',
+		TaskStatus.FAILED: 'red',
+		TaskStatus.SKIPPED: 'yellow'
+	}
+	return color_dict.get(status)
 
 
 def truncate_string(value: str, length: int) -> str:
@@ -27,8 +73,6 @@ class ColoredTypeRenderer(types.TypeStringRenderer):
 		types.TypeStringToken.COLON: lambda x: click.style(x, fg='yellow'),
 		types.TypeStringToken.COMMA: lambda x: click.style(x, fg='yellow'),
 		types.TypeStringToken.TYPE_NAME: lambda x: click.style(x, fg='cyan')
-		# types.TypeStringToken.TYPE_NAME: 'magenta'
-		# types.TypeStringToken.ATTR_NAME: 'magenta'
 	}
 
 	def render(self, value: str, token: types.TypeStringToken) -> str:
@@ -227,17 +271,6 @@ class ExecutionSummary:
 			out.setdefault(status, []).append(node)
 		return out
 
-	def color_for_status(self, status: TaskStatus) -> Optional[str]:
-		"""
-		Return the color (as a string) that we want to use to print this related to this status
-		"""
-		color_dict = {
-			TaskStatus.SUCCESS: 'green',
-			TaskStatus.FAILED: 'red',
-			TaskStatus.SKIPPED: 'yellow'
-		}
-		return color_dict.get(status)
-
 	def to_string(self, indent: int = 2) -> str:
 		"""
 		Render a human-readable view describing what occurred in this
@@ -255,7 +288,7 @@ class ExecutionSummary:
 		if task_dict:
 			task_lines = [f'Tasks completed by status:']
 			for status in sorted(task_dict, key=lambda x: x.value):
-				status_name = click.style(status.name, bold=True, fg=self.color_for_status(status))
+				status_name = click.style(status.name, bold=True, fg=color_for_status(status))
 				task_lines.append(
 					f'- {status_name}: {len(task_dict[status])} task(s)'
 				)
@@ -282,8 +315,8 @@ class ExecutionSummary:
 			]
 			for task_name in failed_tasks:
 				error = self.exec_info.task_graph.get_info(task_name).error
-				name = click.style(task_name, bold=True, fg=self.color_for_status(TaskStatus.FAILED))
-				lines.append(f'- {name}: {type(error).__name__}: {error}')
+				name = click.style(task_name, bold=True, fg=color_for_status(TaskStatus.FAILED))
+				lines.append(f'- {name}:\n{error.format_exception()}\n')
 			return '\n'.join(lines)
 
 		lines = [
