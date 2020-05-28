@@ -1,5 +1,5 @@
 import dataclasses as dc
-from typing import Type, Dict, Any, Union, Callable, Sequence
+from typing import Type as PyType, Dict, Any, Union, Callable, Sequence
 
 import statey as st
 from statey.syms import types, utils
