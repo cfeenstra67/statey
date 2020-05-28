@@ -7,8 +7,8 @@ test:
 	@py.test -vv tests
 
 check:
-	@black statey tests --line-length=88
-	@pylint statey
+	@black statey --line-length=88
+# 	@pylint statey
 
 
 part:=patch
