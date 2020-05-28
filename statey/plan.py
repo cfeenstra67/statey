@@ -93,7 +93,7 @@ class ExecuteTaskSession(PlanAction):
 		graph.add_node(input_key, task=input_switch_task, source=prefix)
 
 		# If output state is null, our graph operation is a deletion. Otherwise, it's a "set"
-		if self.config_state == self.resource.null_state:
+		if self.config_state == self.resource.s.null_state:
 			output_key = self.output_task(prefix)
 			output_graph_task = GraphDeleteKey(
 				key=self.output_key,
@@ -473,9 +473,9 @@ class DefaultMigrator(Migrator):
 				and previous_state is not None
 				and config_state.resource_name == previous_state.resource_name
 			):
-				resource = config_session.ns.registry.get_resource(config_state.resource_name)
+				resource = output_session.ns.registry.get_resource(config_state.resource_name)
 				previous_resolved = state_dep_graph.nodes[node]['value']
-				config_partial_resolved = config_session.resolve(config_session.ns.ref(node), decode=False, allow_unknowns=True)
+				config_partial_resolved = output_session.resolve(output_session.ns.ref(node), decode=False, allow_unknowns=True)
 
 				previous_bound = BoundState(data=previous_resolved, resource_state=previous_state)
 				config_bound = BoundState(data=config_partial_resolved, resource_state=config_state)
@@ -487,6 +487,8 @@ class DefaultMigrator(Migrator):
 				output_ref = resource.plan(previous_bound, config_bound, task_session, input_ref)
 
 				output_partial_resolved = task_session.resolve(output_ref, allow_unknowns=True, decode=False)
+
+				output_session.set_data(node, output_partial_resolved)
 
 				action = ExecuteTaskSession(
 					task_session=task_session,
@@ -534,7 +536,7 @@ class DefaultMigrator(Migrator):
 				previous_resolved = state_dep_graph.nodes[node]['value']
 
 				previous_bound = BoundState(data=previous_resolved, resource_state=previous_state)
-				config_bound = BoundState(data={}, resource_state=resource.null_state)
+				config_bound = BoundState(data={}, resource_state=resource.s.null_state)
 
 				task_session = self.create_task_session()
 				input_ref = task_session.ns.new('input', previous_state.state.type)
@@ -550,7 +552,7 @@ class DefaultMigrator(Migrator):
 					task_input_key='input',
 					output_key=node,
 					output_ref=output_ref,
-					config_state=resource.null_state,
+					config_state=resource.s.null_state,
 					previous_state=previous_state,
 					resource=resource,
 					input_symbol=symbols.Literal(
@@ -578,9 +580,9 @@ class DefaultMigrator(Migrator):
 
 			if config_state:
 				resource = config_session.ns.registry.get_resource(config_state.resource_name)
-				config_partial_resolved = config_session.resolve(config_session.ns.ref(node), decode=False, allow_unknowns=True)
+				config_partial_resolved = output_session.resolve(output_session.ns.ref(node), decode=False, allow_unknowns=True)
 
-				previous_bound = BoundState(data={}, resource_state=resource.null_state)
+				previous_bound = BoundState(data={}, resource_state=resource.s.null_state)
 				config_bound = BoundState(data=config_partial_resolved, resource_state=config_state)
 
 				task_session = self.create_task_session()
@@ -589,8 +591,9 @@ class DefaultMigrator(Migrator):
 
 				output_ref = resource.plan(previous_bound, config_bound, task_session, input_ref)
 
-				# In theory this should _not_ allow unknowns, but keeping it less strict for now.
 				output_partial_resolved = task_session.resolve(output_ref, allow_unknowns=True, decode=False)
+
+				output_session.set_data(node, output_partial_resolved)
 
 				action = ExecuteTaskSession(
 					task_session=task_session,
@@ -598,7 +601,7 @@ class DefaultMigrator(Migrator):
 					output_key=node,
 					output_ref=output_ref,
 					config_state=config_state,
-					previous_state=resource.null_state,
+					previous_state=resource.s.null_state,
 					resource=resource,
 					input_symbol=config_session.ns.ref(node)
 				)

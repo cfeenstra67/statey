@@ -51,7 +51,8 @@ class Namespace(abc.ABC):
 		SymbolKeyError is none exists
 		"""
 		typ = self.resolve(key)
-		return symbols.Reference(key, typ, self)
+		semantics = self.registry.get_semantics(typ)
+		return symbols.Reference(key, semantics, self)
 
 	@abc.abstractmethod
 	def resolve(self, key: str) -> types.Type:
@@ -72,7 +73,7 @@ class NamedSessionSetter:
 	annotation: Any
 	session: 'Session'
 
-	def __lshift__(self, other: Any):
+	def __lshift__(self, other: Any) -> symbols.Symbol:
 		return self.session.set(self.key, other, self.annotation)
 
 
@@ -134,6 +135,29 @@ class Session(abc.ABC):
 		"""
 		self.ns.delete(key)
 		self.delete_data(key)
+
+	def symbolify(self, data: Any, type: types.Type = utils.MISSING) -> symbols.Symbol:
+		"""
+		Convert the input data into a symbol, optionally with the given type.
+		If it is already a symbol, it will be returned unchanged.
+		"""
+		if isinstance(data, symbols.Symbol):
+			return data
+
+		if type is utils.MISSING:
+			type = self.ns.registry.infer_type(data)
+		semantics = self.ns.registry.get_semantics(type)
+		return symbols.Literal(
+			value=data,
+			semantics=semantics
+		)
+
+	def __lshift__(self, other: Any) -> symbols.Symbol:
+		"""
+		lshift on the top level of a session will simply convert the input to a symbol
+		using symbolify()
+		"""
+		return self.symbolify(other)
 
 	def __setitem__(self, key: Union[slice, str], value: Any) -> None:
 		"""

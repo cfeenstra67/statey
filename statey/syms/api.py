@@ -54,7 +54,8 @@ class _FunctionFactoryWithFunction(utils.Cloneable):
 			wrapped_args, wrapped_kwargs, wrapped_return = utils.wrap_function_call(st.registry, self.func, *args, **kwargs)
 			if self.factory.annotation is not utils.MISSING:
 				wrapped_return = st.registry.get_type(self.factory.annotation)
-		return symbols.Function(type=wrapped_return, func=self.func, args=wrapped_args, kwargs=wrapped_kwargs, registry=st.registry)
+		semantics = st.registry.get_semantics(wrapped_return)
+		return symbols.Function(semantics=semantics, func=self.func, args=wrapped_args, kwargs=wrapped_kwargs)
 
 
 F = _FunctionFactory()

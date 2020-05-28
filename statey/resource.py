@@ -130,23 +130,18 @@ class BoundState:
 		"""
 		Convenience method to convert a bound state to a literal with some registry.
 		"""
+		semantics = registry.get_semantics(self.resource_state.state.type)
 		return symbols.Literal(
 			value=self.data,
-			type=self.resource_state.state.type,
-			registry=registry
+			semantics=semantics
 		)
 
 
-class Resource(abc.ABC):
+class States(abc.ABC):
 	"""
-	A resource represents a stateful object of some kind, and it can have one
-	or more "states" that that object can exist in.
+	An interface for accessing states of a resource. While only a `null_state` implementation
+	is required, additional methods can be exposed here to simplify resource state creation.
 	"""
-	@property
-	@abc.abstractmethod
-	def name(self) -> str:
-		raise NotImplementedError
-
 	@property
 	@abc.abstractmethod
 	def null_state(self) -> ResourceState:
@@ -156,30 +151,8 @@ class Resource(abc.ABC):
 		"""
 		raise NotImplementedError
 
-	@abc.abstractmethod
-	def plan(
-		self,
-		current: BoundState,
-		config: BoundState,
-		session: TaskSession,
-		input: symbols.Symbol
-	) -> symbols.Symbol:
-		"""
-		Given a task session, the current state of a resource, and a task session with
-		corresponding input reference, return an output reference that can be fully
-		resolved when all the tasks in the task session have been complete successfully.
-		"""
-		raise NotImplementedError
 
-	async def refresh(self, current: BoundState) -> BoundState:
-		"""
-		Given the current bound state, return a new bound state that represents that actual
-		current state of the object
-		"""
-		raise NotImplementedError
-
-
-class SimpleResourceMeta(abc.ABCMeta):
+class KnownStatesMeta(abc.ABCMeta):
 	"""
 	Metaclass for resources
 	"""
@@ -207,14 +180,15 @@ class SimpleResourceMeta(abc.ABCMeta):
 		return super_cls
 
 
-class SimpleResource(Resource, metaclass=SimpleResourceMeta):
+class KnownStates(States, metaclass=KnownStatesMeta):
 	"""
-	Simple API on top of resource for the common case of having a set list of possible states.
+	Define a fixed set of known states
 	"""
-	def __init__(self) -> None:
+	def __init__(self, resource_name: str) -> None:
+		self.resource_name = resource_name
 		# This is temporary, should clean this up
 		for state in self.__states__:
-			self.set_resource_state(ResourceState(state, self.name))
+			self.set_resource_state(ResourceState(state, resource_name))
 
 	def set_resource_state(self, state: ResourceState) -> None:
 		setattr(self, state.state.name, state)
@@ -222,7 +196,58 @@ class SimpleResource(Resource, metaclass=SimpleResourceMeta):
 	@property
 	def null_state(self) -> ResourceState:
 		state = next((s for s in self.__states__ if s.null))
-		return ResourceState(state, self.name)
+		return ResourceState(state, self.resource_name)
+
+	def __call__(self, *args, **kwargs) -> ResourceState:
+		states = [state for state in self.__states__ if state != self.null_state.state]
+		if len(states) > 1:
+			raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
+		return ResourceState(states[0], self.resource_name)(*args, **kwargs)
+
+
+class Resource(abc.ABC):
+	"""
+	A resource represents a stateful object of some kind, and it can have one
+	or more "states" that that object can exist in.
+	"""
+	States: PyType[States]
+
+	def __init__(self) -> None:
+		self._s = self.States(self.name)
+
+	@property
+	def s(self) -> States:
+		"""
+		Returns information about the possible states of this resource
+		"""
+		return self._s
+
+	@property
+	@abc.abstractmethod
+	def name(self) -> str:
+		raise NotImplementedError
+
+	@abc.abstractmethod
+	def plan(
+		self,
+		current: BoundState,
+		config: BoundState,
+		session: TaskSession,
+		input: symbols.Symbol
+	) -> symbols.Symbol:
+		"""
+		Given a task session, the current state of a resource, and a task session with
+		corresponding input reference, return an output reference that can be fully
+		resolved when all the tasks in the task session have been complete successfully.
+		"""
+		raise NotImplementedError
+
+	async def refresh(self, current: BoundState) -> BoundState:
+		"""
+		Given the current bound state, return a new bound state that represents that actual
+		current state of the object
+		"""
+		raise NotImplementedError
 
 
 class ResourceSession(session.Session):

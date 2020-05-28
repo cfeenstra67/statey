@@ -1,4 +1,5 @@
 import abc
+import enum
 import dataclasses as dc
 import textwrap as tw
 from functools import lru_cache
@@ -21,6 +22,27 @@ def create_type_plugin_manager():
 	return pm
 
 
+class TypeStringToken(enum.Enum):
+	"""
+	Different possible tokens in a type string
+	"""
+	QUESTION_MARK = '?'
+	LEFT_BRACE = '['
+	RIGHT_BRACE = ']'
+	COLON = ':'
+	ATTR_NAME = 'attr'
+	TYPE_NAME = 'type'
+	COMMA = ','
+
+
+class TypeStringRenderer:
+	"""
+	Allow customization of how type strings are rendered
+	"""
+	def render(self, value: str, token: TypeStringToken) -> str:
+		return value
+
+
 class Type(abc.ABC):
 	"""
 	A type encapsulates information about 
@@ -29,8 +51,18 @@ class Type(abc.ABC):
 	nullable: bool
 	pm: pluggy.PluginManager
 
+	def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
+		"""
+		Render a nice human-readable representation of this type.
+		"""
+		if renderer is None:
+			renderer = TypeStringRenderer()
+		name_rendered = renderer.render(self.name, TypeStringToken.TYPE_NAME)
+		suffix = renderer.render('?', TypeStringToken.QUESTION_MARK) if self.nullable else ""
+		return f'{name_rendered}{suffix}'
+
 	def __repr__(self) -> str:
-		return f'{self.name}{"?" if self.nullable else ""}'
+		return self.render_type_string()
 
 
 class ValueType(Type):
@@ -116,8 +148,15 @@ class ArrayType(AnyType):
 	def name(self) -> str:
 		return 'array'
 	
-	def __repr__(self) -> str:
-		return f'{self.name}[{repr(self.element_type)}]{"?" if self.nullable else ""}'
+	def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
+		if renderer is None:
+			renderer = TypeStringRenderer()
+		type_name = renderer.render(self.name, TypeStringToken.TYPE_NAME)
+		element_string = self.element_type.render_type_string(renderer)
+		suffix = renderer.render('?', TypeStringToken.QUESTION_MARK) if self.nullable else ''
+		lbrace = renderer.render('[', TypeStringToken.LEFT_BRACE)
+		rbrace = renderer.render(']', TypeStringToken.RIGHT_BRACE)
+		return ''.join([type_name, lbrace, element_string, rbrace, suffix])
 
 
 @dc.dataclass(frozen=True)
@@ -129,7 +168,7 @@ class StructField:
 	type: Type
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, repr=False)
 class StructType(AnyType):
 	"""
 	A struct contains an ordered sequence of named fields, any of which
@@ -142,12 +181,21 @@ class StructType(AnyType):
 	def name(self) -> str:
 		return 'struct'
 
-	def __repr__(self) -> str:
+	def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
+		if renderer is None:
+			renderer = TypeStringRenderer()
+		type_name = renderer.render(self.name, TypeStringToken.TYPE_NAME)
+		suffix = renderer.render('?', TypeStringToken.QUESTION_MARK) if self.nullable else ''
+		colon = renderer.render(':', TypeStringToken.COLON)
 		field_strings = [
-			f'{field.name}:{repr(field.type)}'
+			f'{renderer.render(field.name, TypeStringToken.ATTR_NAME)}'
+			f'{colon}{field.type.render_type_string(renderer)}'
 			for field in self.fields
 		]
-		return f'{self.name}[{", ".join(field_strings)}]{"?" if self.nullable else ""}'
+		comma_and_space = renderer.render(',', TypeStringToken.COMMA) + ' '
+		lbrace = renderer.render('[', TypeStringToken.LEFT_BRACE)
+		rbrace = renderer.render(']', TypeStringToken.RIGHT_BRACE)
+		return ''.join([type_name, lbrace, comma_and_space.join(field_strings), rbrace, suffix])
 
 	def __getitem__(self, name: str) -> StructField:
 		"""

@@ -1,17 +1,43 @@
 import dataclasses as dc
 import textwrap as tw
-from typing import Sequence, Dict, Any, Optional
+from typing import Sequence, Dict, Any, Optional, Tuple
 
 import click
 import networkx as nx
 
 from statey.executor import ExecutionInfo
 from statey.plan import Plan, PlanNode
-from statey.syms import utils, symbols
+from statey.syms import utils, symbols, types
 from statey.task import Task, SessionSwitch, ResourceGraphOperation, TaskStatus
 
 
-def data_to_lines(data: Any) -> Sequence[str]:
+def truncate_string(value: str, length: int) -> str:
+	if len(value) <= length:
+		return value
+	return value[:length - 3] + '...'
+
+
+class ColoredTypeRenderer(types.TypeStringRenderer):
+	"""
+	Type string renderer that will add coloration
+	"""
+	style_map = {
+		types.TypeStringToken.RIGHT_BRACE: lambda x: click.style(x, fg='yellow'),
+		types.TypeStringToken.LEFT_BRACE: lambda x: click.style(x, fg='yellow'),
+		types.TypeStringToken.COLON: lambda x: click.style(x, fg='yellow'),
+		types.TypeStringToken.COMMA: lambda x: click.style(x, fg='yellow'),
+		types.TypeStringToken.TYPE_NAME: lambda x: click.style(x, fg='cyan')
+		# types.TypeStringToken.TYPE_NAME: 'magenta'
+		# types.TypeStringToken.ATTR_NAME: 'magenta'
+	}
+
+	def render(self, value: str, token: types.TypeStringToken) -> str:
+		if token in self.style_map:
+			return self.style_map[token](value)
+		return value
+
+
+def data_to_lines(data: Any, name_func=lambda x: x) -> Sequence[str]:
 	"""
 	Render the data to a readable, yaml-like structure
 	"""
@@ -32,20 +58,20 @@ def data_to_lines(data: Any) -> Sequence[str]:
 			val = data[key]
 			lines = data_to_lines(val)
 			if len(lines) <= 1:
-				out_lines.append(f'{key}: {"".join(lines)}')
+				out_lines.append(f'{name_func(key)}: {"".join(lines)}')
 			else:
-				out_lines.append(f'{key}:')
+				out_lines.append(f'{name_func(key)}:')
 				out_lines.extend(tw.indent(line, '  ') for line in lines)
 		return out_lines
 
-	return [str(data)]
+	return [repr(data)]
 
 
-def data_to_string(data: Any) -> str:
+def data_to_string(data: Any, name_func=lambda x: x) -> str:
 	"""
 	Give a nice human-readable representaiton of the data using YAML
 	"""
-	return '\n'.join(data_to_lines(data))
+	return '\n'.join(data_to_lines(data, name_func=name_func))
 
 
 def is_metatask(task: Task) -> bool:
@@ -64,13 +90,23 @@ class PlanNodeSummary:
 	show_tasks: nx.DiGraph
 	plan_node: PlanNode
 
+	def _style_config_name(self, name: str) -> str:
+		return click.style(name, bold=True)
+
+	def _style_current_name(self, name: str) -> str:
+		return click.style(name, bold=True)
+
 	def _config_summary(self) -> str:
-		return data_to_string(self.plan_node.config_data) if self.plan_node.config_type else '<none>'
+		if not self.plan_node.config_type:
+			return '<none>'
+		return data_to_string(self.plan_node.config_data, name_func=self._style_config_name)
 
 	def _current_summary(self) -> str:
-		return data_to_string(self.plan_node.current_data) if self.plan_node.current_type else '<none>'
+		if not self.plan_node.current_type:
+			return '<none>'
+		return data_to_string(self.plan_node.current_data, name_func=self._style_current_name)
 
-	def data_to_string(self, column_split: int) -> str:
+	def data_to_string(self, max_width: int) -> str:
 		current_lines = self._current_summary().split('\n')
 		config_lines = self._config_summary().split('\n')
 
@@ -80,8 +116,14 @@ class PlanNodeSummary:
 			while len(lines) < max_n_lines:
 				lines.append('')
 
+		max_line_length = max(map(len, current_lines))
+		column_split = min((max_width - 6) // 2, max_line_length)
+
+		current_lines = [truncate_string(line, column_split) for line in current_lines]
+		config_lines = [truncate_string(line, max_width - column_split) for line in config_lines]
+
 		def sep(idx):
-			return ' => '
+			return click.style('  =>  ', fg='yellow', bold=True)
 			# return ' => ' if idx % 2 == 0 else '    '
 
 		out_lines = [
@@ -90,42 +132,50 @@ class PlanNodeSummary:
 		]
 		return '\n'.join(out_lines)
 
-	def to_string(self, column_split: int, indent: int = 2) -> str:
+	def to_string(self, max_width: int, indent: int = 2) -> str:
 		if len(self.show_tasks.nodes) == 0:
 			return ''
 
-		indent_str = ' ' * indent
-		data_string = self.data_to_string(column_split - indent)
+		style_key = lambda x: click.style(x, fg='green', bold=True)
 
-		tasks_lines = [f'- {click.style("%s task(s):" % len(self.show_tasks.nodes), bold=True)}']
+		indent_str = ' ' * indent
+		data_string = self.data_to_string(max_width)
+
+		tasks_lines = [f'- {style_key("%s task(s):" % len(self.show_tasks.nodes))}']
 		for node in nx.topological_sort(self.show_tasks):
 			task = self.show_tasks.nodes[node]['task']
-			line = f'- {click.style(node, bold=True)}: {type(task).__name__}'
+			line = f'- {click.style(node, fg="yellow")}: {type(task).__name__}'
 			line = tw.indent(line, indent_str)
 			tasks_lines.append(line)
 
 		tasks_string = '\n'.join(tasks_lines)
 
 		type_lines = []
-		if self.plan_node.current_type is not None:
-			type_string = f'- {click.style("type (current)", bold=True)}: {self.plan_node.current_type}'
+		renderer = ColoredTypeRenderer()
+		if (
+			self.plan_node.current_type is not None
+			and self.plan_node.current_type != self.plan_node.config_type
+		):
+			rendered = self.plan_node.current_type.render_type_string(renderer)
+			type_string = f'- {style_key("type (current)")}: {rendered}'
 			type_lines.append(type_string)
 
 		if self.plan_node.config_type is not None:
-			type_string = f'- {click.style("type", bold=True)}: {self.plan_node.config_type}'
+			rendered = self.plan_node.config_type.render_type_string(renderer)
+			type_string = f'- {style_key("type")}: {rendered}'
 			type_lines.append(type_string)
 
 		type_string = '\n'.join(type_lines)
 
 
 		data_string_with_title = '\n'.join([
-			f'- {click.style("data", bold=True)}:',
-			tw.indent(data_string, indent_str)
+			f'- {style_key("data")}:',
+			tw.indent(data_string, indent_str * 2)
 		])
 
 		data_string = tw.indent(data_string, indent_str * 2)
 		lines = [
-			f'- {click.style(self.plan_node.key, bold=True)}:',
+			f'- {style_key(self.plan_node.key)}:',
 			tw.indent(tasks_string, indent_str),
 			tw.indent(type_string, indent_str),
 			tw.indent(data_string_with_title, indent_str)
@@ -141,13 +191,16 @@ class PlanSummary:
 	plan: Plan
 	node_summaries: Sequence[PlanNodeSummary]
 
-	def to_string(self, column_split: int, indent: int = 2) -> str:
+	def non_empty_summaries(self, max_width: int, indent: int = 2) -> Sequence[PlanNodeSummary]:
 		summaries = []
 		for node in self.node_summaries:
-			summary = node.to_string(column_split, indent)
+			summary = node.to_string(max_width, indent)
 			if summary:
 				summaries.append(summary)
+		return summaries
 
+	def to_string(self, max_width: int, indent: int = 2) -> str:
+		summaries = self.non_empty_summaries(max_width, indent)
 		if not summaries:
 			return click.style('This plan is empty :)', fg='green', bold=True)
 		return '\n\n'.join(summaries)

@@ -6,7 +6,7 @@ from functools import partial
 from typing import Dict, Any
 
 import statey as st
-from statey.resource import SimpleResource, State, NullState, BoundState
+from statey.resource import Resource, KnownStates, State, NullState, BoundState
 from statey.syms import symbols, types, utils
 from statey.syms.api import struct
 from statey.task import TaskSession, FunctionTaskSpec
@@ -22,16 +22,17 @@ class FileSpec(utils.Cloneable):
 	data: str
 
 
-class File(SimpleResource):
+class FileResource(Resource):
 	"""
 	Represents a file on the file system.
 	"""
+	class States(KnownStates):
+		UP = State('UP', st.registry.get_type(FileSpec))
+		DOWN = NullState('DOWN')
+
 	def __init__(self, name: str) -> None:
 		self._name = name
 		super().__init__()
-
-	UP = State('UP', st.registry.get_type(FileSpec))
-	DOWN = NullState('DOWN')
 
 	@property
 	def name(self) -> str:
@@ -48,18 +49,20 @@ class File(SimpleResource):
 		"""
 		Delete the given file
 		"""
-		with open(data['location'], 'w+') as f:
+		path = os.path.realpath(data['location'])
+		with open(path, 'w+') as f:
 			f.write(data['data'])
-		return data
+		return dict(data, location=path)
 
 	async def refresh(self, current: BoundState) -> BoundState:
 		state = current.resource_state.state
-		if state == self.null_state.state:
+		if state == self.s.null_state.state:
 			return current
-		if not os.path.isfile(current.data['location']):
-			return BoundState(self.null_state, {})
 		out = current.data.copy()
-		with open(current.data['location']) as f:
+		if not os.path.isfile(current.data['location']):
+			return BoundState(self.s.null_state, {})
+		out['location'] = os.path.realpath(out['location'])
+		with open(out['location']) as f:
 			out['data'] = f.read()
 		return BoundState(current.resource_state, out)
 
@@ -78,6 +81,10 @@ class File(SimpleResource):
 		config_state = config.resource_state.state
 		config_data = config.data
 		config_literal = current.literal(session.ns.registry)
+
+		if config_state.name == 'UP' and not isinstance(config_data['location'], symbols.Unknown):
+			config_data['location'] = os.path.realpath(config_data['location'])
+
 		# No change, just return the input ref (which will be of the correct type).
 		# Also, because `current` will always be fully resolved we don't have to
 		# worry too much about a very deep '==' comparison
@@ -85,7 +92,7 @@ class File(SimpleResource):
 			current_state == config_state
 			and current_data == config_data
 		):
-			return input
+			return current_literal
 
 		delete_file = lambda **kwargs: FunctionTaskSpec(
 			input_type=types.StringType(False),
@@ -94,8 +101,8 @@ class File(SimpleResource):
 			**kwargs
 		)
 		set_file = lambda **kwargs: FunctionTaskSpec(
-			input_type=self.UP.state.type,
-			output_type=self.UP.state.type,
+			input_type=self.s.UP.state.type,
+			output_type=self.s.UP.state.type,
 			func=self.set_file,
 			**kwargs
 		)
@@ -105,15 +112,15 @@ class File(SimpleResource):
 				func=lambda x, *args: x,
 				args=(x, *args),
 				type=x.type,
-				registry=session.registry
+				registry=session.ns.registry
 			)
 
 		# UP -> DOWN
-		if config_state == self.null_state.state:
+		if config_state == self.s.null_state.state:
 			return session['delete_file'] << delete_file(expected=config_data)(current_literal.location)
 
 		# DOWN -> UP
-		if current_state == self.null_state.state:
+		if current_state == self.s.null_state.state:
 			return session['create_file'] << set_file(expected=config_data)(input)
 
 		# UP -> UP if data different
@@ -126,11 +133,14 @@ class File(SimpleResource):
 
 # Declaring global resources
 
-file = File('file')
+file_resource = FileResource('file')
+
+# Resource state factory
+File = file_resource.s
 
 
 RESOURCES = [
-	file
+	file_resource
 ]
 
 

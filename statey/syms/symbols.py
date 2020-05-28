@@ -9,6 +9,7 @@ from typing import Any, Callable, Sequence, Dict, Union, Optional, Hashable
 
 import statey as st
 from statey.syms import utils, types, exc
+from statey.syms.semantics import Semantics
 
 
 # TODO: Theoretically this is unbounded and could fill up memory eventually, figure out something
@@ -20,10 +21,16 @@ class Symbol(abc.ABC, utils.Cloneable):
 	"""
 	A symbol represents some value within a session
 	"""
-	type: types.Type
-	registry: 'Registry'
+	semantics: Semantics
 	# Must be globally unique among all symbols that exist in a namespace
 	symbol_id: int
+
+	@property
+	def type(self) -> types.Type:
+		"""
+		Shortcut for self.semenatics.type
+		"""
+		return self.semantics.type
 
 	@abc.abstractmethod
 	def get_attr(self, attr: Any) -> 'Symbol':
@@ -37,8 +44,10 @@ class Symbol(abc.ABC, utils.Cloneable):
 			ret_typ = self.type if typ is utils.MISSING else typ
 			if not isinstance(other, Symbol):
 				other_type = st.registry.infer_type(other)
-				other = Literal(other, other_type, self.registry)
-			return Function(ret_typ, self.registry, op_func, (self, other))
+				other_semantics = st.registry.get_semantics(other_type)
+				other = Literal(other, other_semantics)
+			ret_semantics = st.registry.get_semantics(ret_typ)
+			return Function(ret_semantics, op_func, (self, other))
 		return method
 
 	__eq__ = _binary_operator_method(operator.eq, types.BooleanType(False))
@@ -102,7 +111,7 @@ class Symbol(abc.ABC, utils.Cloneable):
 				if sig.return_annotation is inspect._empty:
 					return_type = self.type
 				else:
-					return_type = self.registry.get_type(sig.return_annotation)
+					return_type = st.registry.get_type(sig.return_annotation)
 
 		return Function(
 			type=return_type,
@@ -120,25 +129,23 @@ class Reference(Symbol):
 	A reference references some value within a session
 	"""
 	path: str
-	type: types.Type
-	ns: 'Namespace' = dc.field(repr=False, hash=False)
+	semantics: Semantics = dc.field(repr=False, compare=False, hash=False)
+	ns: 'Namespace' = dc.field(repr=False, hash=False, compare=False)
 	symbol_id: int = dc.field(init=False, default=None, repr=False)
+	# So this will comparisons and hashes, and included in the repr
+	type: types.Type = dc.field(init=False, default=None)
 
 	def __post_init__(self) -> None:
 		self.__dict__['symbol_id'] = f'{type(self).__name__}:{self.path}'
-
-	@property
-	def registry(self) -> 'Registry':
-		return self.ns.registry
+		self.__dict__['type'] = self.semantics.type
 
 	def get_attr(self, attr: Any) -> 'Symbol':
+		semantics = self.semantics.attr_semantics(attr)
 		ns = self.__dict__['ns']
-		semantics = ns.registry.get_semantics(self.type)
-		typ = semantics.attr_type(attr)
 		path = ns.path_parser.join([self.__dict__['path'], attr])
-		if typ is None:
+		if semantics is None:
 			raise exc.SymbolKeyError(path, ns)
-		return type(self)(path, typ, ns)
+		return type(self)(path, semantics, ns)
 
 
 class ValueSemantics(Symbol):
@@ -147,15 +154,12 @@ class ValueSemantics(Symbol):
 	the underlying semantics.get_attr method in a Function.
 	"""
 	def get_attr(self, attr: Any) -> 'Symbol':
-		registry = self.__dict__['registry']
-		semantics = registry.get_semantics(self.type)
-		typ = semantics.attr_type(attr)
-		if typ is None:
+		semantics = self.semantics.attr_semantics(attr)
+		if semantics is None:
 			raise exc.SymbolAttributeError(self, attr)
 		return Function(
-			type=typ,
-			registry=registry,
-			func=lambda x: semantics.get_attr(x, attr),
+			semantics=semantics,
+			func=lambda x: self.semantics.get_attr(x, attr),
 			args=(self,)
 		)
 
@@ -166,9 +170,13 @@ class Literal(ValueSemantics):
 	A literal is a symbol that represents a concrete value
 	"""
 	value: Any
-	type: types.Type
-	registry: 'Registry'  = dc.field(repr=False, hash=False)
+	semantics: Semantics = dc.field(repr=False, compare=False, hash=False)
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+	# So this will comparisons and hashes, and included in the repr
+	type: types.Type = dc.field(init=False, default=None)
+
+	def __post_init__(self) -> None:
+		self.__dict__['type'] = self.semantics.type
 
 
 @dc.dataclass(frozen=True)
@@ -176,12 +184,16 @@ class Function(ValueSemantics):
 	"""
 	A symbol that is the result of applying `func` to the given args
 	"""
-	type: types.Type
-	registry: 'Registry'  = dc.field(repr=False, hash=False)
+	semantics: Semantics = dc.field(repr=False, compare=False, hash=False)
 	func: Callable[[Any], Any]
 	args: Sequence[Symbol] = dc.field(default_factory=tuple)
 	kwargs: Dict[Hashable, Symbol] = dc.field(default_factory=dict)
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+	# So this will comparisons and hashes, and included in the repr
+	type: types.Type = dc.field(init=False, default=None)
+
+	def __post_init__(self) -> None:
+		self.__dict__['type'] = self.semantics.type
 
 
 @dc.dataclass(frozen=True)
@@ -189,13 +201,17 @@ class Future(ValueSemantics):
 	"""
 	A future is a symbol that may or may not yet be set
 	"""
-	type: types.Type
-	registry: 'Registry' = dc.field(repr=False, hash=False)
+	semantics: Semantics = dc.field(repr=False, compare=False, hash=False)
 	refs: Sequence[Reference] = ()
 	result: Any = dc.field(init=False, default=utils.MISSING)
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
 	# Expected output, potentially containing unknowns
 	expected: Any = dc.field(default=utils.MISSING, compare=False)
+	# So this will comparisons and hashes, and included in the repr
+	type: types.Type = dc.field(init=False, default=None)
+
+	def __post_init__(self) -> None:
+		self.__dict__['type'] = self.semantics.type
 
 	def get_result(self) -> Any:
 		"""
@@ -227,12 +243,8 @@ class Unknown(Symbol):
 	symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
 
 	@property
-	def registry(self) -> 'Registry':
-		return self.symbol.registry
-
-	@property
-	def type(self) -> types.Type:
-		return self.symbol.type
+	def semantics(self) -> Semantics:
+		return self.symbol.semantics
 
 	def clone(self, **kwargs) -> 'Unknown':
 		kws = {'symbol': self.symbol.clone()}

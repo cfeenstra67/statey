@@ -15,9 +15,9 @@ class Semantics(abc.ABC):
 	type: types.Type
 
 	@abc.abstractmethod
-	def attr_type(self, attr: Any) -> Optional[types.Type]:
+	def attr_semantics(self, attr: Any) -> Optional['Semantics']:
 		"""
-		Return the type of the given attribute of this object, if any. A return
+		Return the semantics of the given attribute of this object, if any. A return
 		value of None indicates that `attr` is not an attribute of this object.
 		"""
 		raise NotImplementedError
@@ -53,7 +53,7 @@ class ValueSemantics(Semantics):
 	"""
 	type: types.Type
 
-	def attr_type(self, attr: Any) -> Optional[types.Type]:
+	def attr_semantics(self, attr: Any) -> Optional[Semantics]:
 		return None
 
 	def get_attr(self, value: Any, attr: Any) -> Any:
@@ -81,14 +81,15 @@ class ArraySemantics(Semantics):
 	type: types.Type
 	element_semantics: Semantics
 
-	def attr_type(self, attr: Any) -> Optional[types.Type]:
+	def attr_semantics(self, attr: Any) -> Optional[Semantics]:
 		if isinstance(attr, int):
-			return self.type.element_type
+			return self.element_semantics
 		if isinstance(attr, slice):
-			return self.type
-		el_type = self.element_semantics.attr_type(attr)
-		if el_type is not None:
-			return types.ArrayType(el_type, self.type.nullable)
+			return self
+		el_semantics = self.element_semantics.attr_semantics(attr)
+		if el_semantics is not None:
+			typ = ArrayType(el_semantics.type, self.type.nullable)
+			return ArraySemantics(typ, el_semantics)
 		return None
 
 	def get_attr(self, value: Any, attr: Any) -> Any:
@@ -144,9 +145,9 @@ class StructSemantics(Semantics):
 	type: types.Type
 	field_semantics: Dict[str, Semantics]
 
-	def attr_type(self, attr: Any) -> Optional[types.Type]:
-		if attr in self.type:
-			return self.type[attr].type
+	def attr_semantics(self, attr: Any) -> Optional[Semantics]:
+		if attr in self.field_semantics:
+			return self.field_semantics[attr]
 		return None
 
 	def get_attr(self, value: Any, attr: Any) -> Any:

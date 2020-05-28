@@ -45,14 +45,13 @@ class PythonNamespace(session.Namespace):
 		if base not in self.types:
 			raise exc.SymbolKeyError(key, self)
 
-		base_type = self.types[base]
+		base_semantics = self.registry.get_semantics(self.types[base])
 		for attr in rel_path:
-			semantics = self.registry.get_semantics(base_type)
-			base_type = semantics.attr_type(attr)
-			if base_type is None:
+			base_semantics = base_semantics.attr_semantics(attr)
+			if base_semantics is None:
 				raise exc.SymbolKeyError(key, self)
 
-		return base_type
+		return base_semantics.type
 
 
 class PythonSession(session.Session):
@@ -94,17 +93,17 @@ class PythonSession(session.Session):
 			raise exc.MissingDataError(key, typ, self)
 		
 		base_type = self.ns.resolve(base)
+		base_semantics = self.ns.registry.get_semantics(base_type)
 		value = self.data[base]
 		for idx, attr in enumerate(rel_path):
-			semantics = self.ns.registry.get_semantics(base_type)
-			# Type is already resolved, so this will never be none
-			base_type = semantics.attr_type(attr)
 			try:
-				value = semantics.get_attr(value, attr)
+				value = base_semantics.get_attr(value, attr)
 			except (KeyError, AttributeError) as err:
 				sub_path = [base] + list(rel_path)[:idx + 1]
 				sub_key = self.ns.path_parser.join(sub_path)
 				raise exc.MissingDataError(key, base_type, self) from err
+			finally:
+				base_semantics = base_semantics.attr_semantics(attr)
 
 		return value
 

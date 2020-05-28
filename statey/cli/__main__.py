@@ -1,6 +1,7 @@
 import asyncio
 import click
 import importlib
+import shutil
 
 import statey as st
 from statey.executor import AsyncIOGraphExecutor
@@ -19,6 +20,7 @@ inspector = Inspector()
 def cli(ctx, state):
 	ctx.ensure_object(dict)
 	ctx.obj['state_manager'] = FileStateManager(state)
+	ctx.obj['terminal_size'] = shutil.get_terminal_size((80, 20))
 	# Set up all default plugins
 	register_default_plugins()
 
@@ -50,12 +52,11 @@ def _plan(ctx, module, session_name):
 	plan = migrator.plan(session, resource_graph)
 
 	click.secho(f'Planning completed successfully.', fg='green')
+	click.echo()
 
 	plan_summary = inspector.plan_summary(plan)
 
-	# Arbitrary
-	column_width = 40
-	summary_string = plan_summary.to_string(column_width)
+	summary_string = plan_summary.to_string(ctx.obj['terminal_size'].columns)
 
 	click.echo(summary_string)
 
@@ -77,6 +78,11 @@ def plan(ctx, module, session_name):
 def apply(ctx, module, session_name):
 	plan = _plan(ctx, module, session_name)
 
+	# Sort of hacky way to check if the plan is empty--executing would only update the state.
+	if not inspector.plan_summary(plan).non_empty_summaries(ctx.obj['terminal_size'].columns):
+		return
+
+	click.echo()
 	if not click.confirm(f'Do you want to {click.style("apply", bold=True)} these changes?'):
 		raise click.Abort
 
