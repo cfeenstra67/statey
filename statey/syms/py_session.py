@@ -1,5 +1,5 @@
 import copy
-from itertools import chain
+from itertools import chain, product
 from typing import Any, Union, Iterator
 
 import networkx as nx
@@ -166,10 +166,11 @@ class PythonSession(session.Session):
                         return x
 
                     self._build_symbol_dag(x, dag)
+                    dag.add_edge(x.symbol_id, symbol_id)
 
                     ancestors = set(nx.ancestors(dag, x.symbol_id))
-                    for symbol_id in topological_sort(dag.subgraph(ancestors)):
-                        handle_symbol_id(symbol_id)
+                    for sym_id in topological_sort(dag.subgraph(ancestors)):
+                        handle_symbol_id(sym_id)
 
                     return handle_symbol_id(x.symbol_id)
 
@@ -178,7 +179,7 @@ class PythonSession(session.Session):
             dag.nodes[symbol_id]['result'] = result
             return result
 
-        for symbol_id in topological_sort(dag):
+        for symbol_id in list(topological_sort(dag)):
             handle_symbol_id(symbol_id)
 
     def resolve(
@@ -199,43 +200,33 @@ class PythonSession(session.Session):
 
         dependent_symbols = []
 
-        def add_deps(path):
-            def handle(x):
-                if isinstance(x, symbols.Symbol):
-                    dependent_symbols.append((x, path))
-                return x
-
-            return handle
+        dag = nx.DiGraph()
 
         for key in self.ns.keys():
-            try:
-                data = self.get_encoded_data(key)
-            except exc.SymbolKeyError:
-                continue
+            ref = self.ns.ref(key)
+            self._build_symbol_dag(ref, dag)
 
-            typ = self.ns.resolve(key)
-            semantics = self.ns.registry.get_semantics(typ)
+        self._process_symbol_dag(dag, allow_unknowns=True)
 
-            semantics.map(add_deps(key), data)
-            graph.add_node(key)
+        ref_symbol_ids = set()
 
-        while dependent_symbols:
-            symbol, dependent_path = dependent_symbols.pop(0)
+        for node in dag.nodes:
+            if isinstance(dag.nodes[node]['symbol'], symbols.Reference):
+                ref_symbol_ids.add(node)
 
-            if isinstance(symbol, symbols.Literal):
-                semantics = self.ns.registry.get_semantics(symbol.type)
-                semantics.map(add_deps(dependent_path), symbol.value)
-            elif isinstance(symbol, symbols.Reference):
-                base, *rel_path = self.ns.path_parser.split(symbol.path)
-                graph.add_edge(base, dependent_path, path=rel_path)
-            elif isinstance(symbol, symbols.Function):
-                for sub_sym in chain(symbol.args, symbol.kwargs.values()):
-                    dependent_symbols.append((sub_sym, dependent_path))
-            elif isinstance(symbol, (symbols.Unknown, symbols.Future)):
-                for sub_sym in symbol.refs:
-                    dependent_symbols.append((sub_sym, dependent_path))
-            else:
-                raise TypeError(f"Invalid symbol {symbol}")
+        utils.subgraph_retaining_dependencies(dag, ref_symbol_ids)
+
+        for node in list(nx.topological_sort(dag)):
+            ref = dag.nodes[node]['symbol']
+
+            base, *rel_path = self.ns.path_parser.split(ref.path)
+            graph.add_node(base)
+
+            for pred in dag.pred[node]:
+                pref_ref = dag.nodes[pred]['symbol']
+                pred_base, *pred_rel_path = self.ns.path_parser.split(pref_ref.path)
+
+                graph.add_edge(pred_base, base, from_path=pred_rel_path, to_path=rel_path)
 
         return graph
 

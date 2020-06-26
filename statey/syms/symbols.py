@@ -354,7 +354,7 @@ class Future(ValueSemantics):
         try:
             return self.get_result()
         except exc.FutureResultNotSet as err:
-            raise errors.UnknownError(self.refs, expected=self.expected) from err
+            raise exc.UnknownError(self.refs, expected=self.expected) from err
 
 
 @dc.dataclass(frozen=True)

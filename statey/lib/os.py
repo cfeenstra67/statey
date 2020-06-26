@@ -43,7 +43,6 @@ class FileMachine(Machine):
         return BoundState(current.resource_state, out)
 
     async def finalize(self, current: BoundState) -> BoundState:
-        print("DATA", current.data)
         return current.clone(data=dict(current.data, data=""))
 
     @staticmethod
