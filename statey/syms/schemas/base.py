@@ -11,6 +11,7 @@ class Mapper(abc.ABC):
     A mapper is a "protected" execution of a function. The input and output
     values are encoded based on the types of input_type() and output_type()
     """
+
     input_type: types.Type
     output_type: types.Type
 
@@ -41,6 +42,7 @@ class Validator(abc.ABC):
     """
     A validator validates some input data
     """
+
     @abc.abstractmethod
     def validate(self, data: Any) -> None:
         """
@@ -54,6 +56,7 @@ class ValidatorSet(Validator, utils.Cloneable):
     """
 
     """
+
     validators: Sequence[Callable[[Any], None]] = ()
 
     def validate(self, data: Any) -> None:
@@ -69,22 +72,25 @@ class Schema(Mapper):
     A schema is a structured object that provides easy data validation and computed
     properties
     """
+
     metadata: Dict[str, Any]
     validator: Validator
 
-    def __call__(self, arg: Any = utils.MISSING, **kwargs: Dict[str, Any]) -> symbols.Symbol:
+    def __call__(
+        self, arg: Any = utils.MISSING, **kwargs: Dict[str, Any]
+    ) -> symbols.Symbol:
         if arg is utils.MISSING:
             arg = kwargs
         return self.map(arg, st.registry)
 
     @abc.abstractmethod
-    def attr_schema(self, attr: Any) -> Optional['Schema']:
+    def attr_schema(self, attr: Any) -> Optional["Schema"]:
         """
         Retrieve the schema at the given attribute from this one
         """
         raise NotImplementedError
 
-    def path_schema(self, path: Sequence[Any]) -> Optional['Schema']:
+    def path_schema(self, path: Sequence[Any]) -> Optional["Schema"]:
         """
 
         """
@@ -101,6 +107,7 @@ class StructSchemaField:
     """
     Contains information about a single field in a StructSchema
     """
+
     name: str
     schema: Schema
     attr: bool = True
@@ -111,6 +118,7 @@ class StructSchema(Schema):
     """
 
     """
+
     fields: Sequence[StructSchemaField]
     validator: Validator = dc.field(default=NullValidator)
     metadata: Dict[str, Any] = dc.field(default_factory=dict)
@@ -119,10 +127,9 @@ class StructSchema(Schema):
     def output_type(self) -> types.Type:
         out_fields = []
         for field in self.fields:
-            out_fields.append(types.StructField(
-                name=field.name,
-                type=field.schema.output_type
-            ))
+            out_fields.append(
+                types.StructField(name=field.name, type=field.schema.output_type)
+            )
         nullable = all(field.type.nullable for field in out_fields)
         return types.StructType(tuple(out_fields), nullable)
 
@@ -131,15 +138,13 @@ class StructSchema(Schema):
         in_fields = []
         for field in self.fields:
             if field.attr:
-                in_fields.append(types.StructField(
-                    name=field.name,
-                    type=field.schema.input_type
-                ))
+                in_fields.append(
+                    types.StructField(name=field.name, type=field.schema.input_type)
+                )
         nullable = all(field.type.nullable for field in in_fields)
         return types.StructType(tuple(in_fields), nullable)
 
     def transform(self, symbol: symbols.Symbol, registry: st.Registry) -> Any:
-
         def wrapped_validate(x):
             self.validator.validate(x)
             return x
@@ -169,6 +174,7 @@ class ArraySchema(Schema):
     """
 
     """
+
     element_schema: Schema
     validator: Validator = dc.field(default=NullValidator)
     metadata: Dict[str, Any] = dc.field(default_factory=dict)
@@ -184,7 +190,6 @@ class ArraySchema(Schema):
         return types.ArrayType(element_type, element_type.nullable)
 
     def transform(self, symbol: symbols.Symbol, registry: st.Registry) -> Any:
-
         def validate_and_transform(data):
             self.validator.validate(data)
             if data is None:
@@ -213,6 +218,7 @@ class ValueSchema(Schema):
     """
 
     """
+
     input_type: types.Type
     output_type: types.Type = dc.field(default=utils.MISSING)
     mapper: Callable[[Any], Any] = lambda x: x
@@ -221,10 +227,9 @@ class ValueSchema(Schema):
 
     def __post_init__(self) -> None:
         if self.output_type is utils.MISSING:
-            self.__dict__['output_type'] = self.input_type
+            self.__dict__["output_type"] = self.input_type
 
     def transform(self, symbol: symbols.Symbol, registry: st.Registry) -> Any:
-
         def validate(data):
             self.validator.validate(data)
             return data
@@ -240,11 +245,12 @@ class SchemaFactory(abc.ABC, utils.Cloneable):
     """
     Schema factories provide an easy, expressive API for creating complex schemas
     """
+
     metadata: Dict[str, Any]
     validator: Validator
     nullable: bool
 
-    def __invert__(self) -> 'SchemaFactory':
+    def __invert__(self) -> "SchemaFactory":
         return self.clone(nullable=True)
 
     @abc.abstractmethod
@@ -271,10 +277,10 @@ class SchemaFactory(abc.ABC, utils.Cloneable):
         """
         return self.type()
 
-    def __call__(self, **kwargs: Dict[str, Any]) -> 'ComputedSchemaFactory':
+    def __call__(self, **kwargs: Dict[str, Any]) -> "ComputedSchemaFactory":
         meta = self.metadata.copy()
-        validator = kwargs.pop('validator', self.validator)
-        nullable = kwargs.pop('nullable', self.nullable)
+        validator = kwargs.pop("validator", self.validator)
+        nullable = kwargs.pop("nullable", self.nullable)
         meta.update(kwargs)
         return self.clone(metadata=meta, validator=validator, nullable=nullable)
 
@@ -284,6 +290,7 @@ class ValueSchemaFactory(SchemaFactory, utils.Cloneable):
     """
 
     """
+
     type_cls: PyType[types.Type]
     nullable: bool = False
     validator: Validator = dc.field(default=NullValidator)
@@ -297,27 +304,30 @@ class ValueSchemaFactory(SchemaFactory, utils.Cloneable):
             output_type=typ,
             validator=self.validator,
             metadata=self.metadata,
-            mapper=lambda x: x.map(self.mapper)
+            mapper=lambda x: x.map(self.mapper),
         )
 
-    def __call__(self, *, compute: Callable[[Any], Any] = utils.MISSING, **kwargs: Dict[str, Any]) -> 'ValueSchemaFactory':
+    def __call__(
+        self, *, compute: Callable[[Any], Any] = utils.MISSING, **kwargs: Dict[str, Any]
+    ) -> "ValueSchemaFactory":
         """
 
         """
         meta = self.metadata.copy()
-        validator = kwargs.pop('validator', self.validator)
-        nullable = kwargs.pop('nullable', self.nullable)
-        mapper = kwargs.pop('mapper', self.mapper)
+        validator = kwargs.pop("validator", self.validator)
+        nullable = kwargs.pop("nullable", self.nullable)
+        mapper = kwargs.pop("mapper", self.mapper)
         meta.update(kwargs)
 
-        kws = {'validator': validator, 'metadata': meta, 'nullable': nullable, 'mapper': mapper}
+        kws = {
+            "validator": validator,
+            "metadata": meta,
+            "nullable": nullable,
+            "mapper": mapper,
+        }
 
         if compute is not utils.MISSING:
-            return ComputedSchemaFactory(
-                type_cls=self.type_cls,
-                mapper=compute,
-                **kws
-            )
+            return ComputedSchemaFactory(type_cls=self.type_cls, mapper=compute, **kws)
 
         return self.clone(**kws)
 
@@ -329,6 +339,7 @@ class ComputedSchemaFactory(utils.Cloneable):
     """
 
     """
+
     type_cls: PyType[types.Type]
     nullable: bool = False
     mapper: Callable[[Any], Any] = lambda x: x
@@ -345,7 +356,7 @@ class ComputedSchemaFactory(utils.Cloneable):
             output_type=typ,
             validator=self.validator,
             metadata=self.metadata,
-            mapper=self.mapper
+            mapper=self.mapper,
         )
 
 
@@ -354,6 +365,7 @@ class ArraySchemaFactory(SchemaFactory, utils.Cloneable):
     """
 
     """
+
     # ignored
     nullable: bool = False
     element_schema: Schema = dc.field(default=utils.MISSING)
@@ -368,12 +380,12 @@ class ArraySchemaFactory(SchemaFactory, utils.Cloneable):
             schema = schema.schema()
 
         return ArraySchema(
-            element_schema=schema,
-            validator=self.validator,
-            metadata=self.metadata
+            element_schema=schema, validator=self.validator, metadata=self.metadata
         )
 
-    def __getitem__(self, element_schema: Union[Schema, 'SchemaFactory']) -> 'ArraySchemaFactory':
+    def __getitem__(
+        self, element_schema: Union[Schema, "SchemaFactory"]
+    ) -> "ArraySchemaFactory":
         if isinstance(element_schema, SchemaFactory):
             element_schema = element_schema.schema()
         return self.clone(element_schema=element_schema)
@@ -384,6 +396,7 @@ class StructSchemaFactory(SchemaFactory, utils.Cloneable):
     """
     Builder for struct schemas
     """
+
     # ignored
     nullable: bool = False
     fields: Sequence[StructSchemaField] = dc.field(default_factory=tuple)
@@ -392,12 +405,12 @@ class StructSchemaFactory(SchemaFactory, utils.Cloneable):
 
     def schema(self) -> Schema:
         return StructSchema(
-            fields=self.fields,
-            validator=self.validator,
-            metadata=self.metadata
+            fields=self.fields, validator=self.validator, metadata=self.metadata
         )
 
-    def add(self, name: str, schema: Union['SchemaFactory', Schema, ComputedSchemaFactory]) -> 'StructSchemaFactory':
+    def add(
+        self, name: str, schema: Union["SchemaFactory", Schema, ComputedSchemaFactory]
+    ) -> "StructSchemaFactory":
         """
         Add a field to this schema factory
         """
@@ -408,7 +421,7 @@ class StructSchemaFactory(SchemaFactory, utils.Cloneable):
             field = StructSchemaField(name, schema, attr=False)
         return self.clone(fields=tuple(self.fields) + (field,))
 
-    def __getitem__(self, fields: Sequence[slice]) -> 'ArraySchemaFactory':
+    def __getitem__(self, fields: Sequence[slice]) -> "ArraySchemaFactory":
         """
         struct['a': integer, 'b': array[integer]] - use slices to add fields
         """

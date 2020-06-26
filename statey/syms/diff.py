@@ -1,7 +1,17 @@
 import abc
 import dataclasses as dc
 import operator
-from typing import Sequence, Any, Iterator, Dict, Type as PyType, Tuple, Callable, Union, Optional
+from typing import (
+    Sequence,
+    Any,
+    Iterator,
+    Dict,
+    Type as PyType,
+    Tuple,
+    Callable,
+    Union,
+    Optional,
+)
 
 import statey as st
 from statey.syms import types, symbols, utils
@@ -16,7 +26,10 @@ class DiffConfig(utils.Cloneable):
     """
     Simple class to customize behavior when diffing
     """
-    path_comparisons: Dict[Sequence[Any], Callable[[Any, Any], bool]] = dc.field(default_factory=dict)
+
+    path_comparisons: Dict[Sequence[Any], Callable[[Any, Any], bool]] = dc.field(
+        default_factory=dict
+    )
     path_parser: PathParser = dc.field(default_factory=PathParser)
 
     def _get_path(self, path_like: PathLike) -> Sequence[Any]:
@@ -77,6 +90,7 @@ class Differ(abc.ABC):
     A differ provides a simple way to get a flat set of differences from a potentially
     complex nested object
     """
+
     def config(self) -> DiffConfig:
         """
         Helper function to grab a fresh
@@ -84,7 +98,9 @@ class Differ(abc.ABC):
         return DiffConfig()
 
     @abc.abstractmethod
-    def flatten(self, diff: Diff, config: Optional[DiffConfig] = None) -> Iterator[Diff]:
+    def flatten(
+        self, diff: Diff, config: Optional[DiffConfig] = None
+    ) -> Iterator[Diff]:
         """
         Flatten this diff into any non-empty sub-diffs
         """
@@ -109,7 +125,9 @@ class ValueDiffer(Differ):
         comp = config.get_comparison(diff.path)
         return comp(diff.left, diff.right)
 
-    def flatten(self, diff: Diff, config: Optional[DiffConfig] = None) -> Iterator[Diff]:
+    def flatten(
+        self, diff: Diff, config: Optional[DiffConfig] = None
+    ) -> Iterator[Diff]:
         if config is None:
             config = self.config()
 
@@ -172,7 +190,9 @@ class ArrayDiffer(Differ):
 
         return out
 
-    def flatten(self, diff: Diff, config: Optional[DiffConfig] = None) -> Iterator[Diff]:
+    def flatten(
+        self, diff: Diff, config: Optional[DiffConfig] = None
+    ) -> Iterator[Diff]:
         """
         Yield the diffs for each element in left and right. This assumes these arrays are of the
         same length
@@ -228,7 +248,9 @@ class StructDiffer(Differ):
 
         return out
 
-    def flatten(self, diff: "Diff", config: Optional[DiffConfig] = None) -> Iterator[Diff]:
+    def flatten(
+        self, diff: "Diff", config: Optional[DiffConfig] = None
+    ) -> Iterator[Diff]:
         if config is None:
             config = self.config()
 

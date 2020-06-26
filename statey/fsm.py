@@ -79,6 +79,7 @@ class Transition(abc.ABC):
     A transition defines the procedure from migration a machine
     from one state to another (they may also be the same state)
     """
+
     from_name: str
     to_name: str
     name: str
@@ -89,7 +90,7 @@ class Transition(abc.ABC):
         current: resource.BoundState,
         config: resource.BoundState,
         session: task.TaskSession,
-        input: symbols.Symbol
+        input: symbols.Symbol,
     ) -> symbols.Symbol:
         """
         Same as Resource.plan(), except for planning
@@ -103,6 +104,7 @@ class FunctionTransition(Transition):
     """
     Transition class that simply wraps a function
     """
+
     from_name: str
     to_name: str
     name: str
@@ -115,31 +117,30 @@ class FunctionTransition(Transition):
         session: task.TaskSession,
         input: symbols.Symbol,
     ) -> symbols.Symbol:
-        return self.func(
-            current=current,
-            config=config,
-            session=session,
-            input=input
-        )
+        return self.func(current=current, config=config, session=session, input=input)
 
 
 def transition(from_name: str, to_name: str, name: str = utils.MISSING) -> Any:
     """
     Generate a decorate to wrap a function as a transition
     """
+
     def dec(func):
         nonlocal name
         if name is utils.MISSING:
-            name = getattr(func, '__name__', '<unknown>')
+            name = getattr(func, "__name__", "<unknown>")
 
         @wraps(func)
         def get_transition(*args, **kwargs):
-            new_func = lambda *args2, **kwargs2: func(*args, *args2, **kwargs, **kwargs2)
+            new_func = lambda *args2, **kwargs2: func(
+                *args, *args2, **kwargs, **kwargs2
+            )
             return FunctionTransition(from_name, to_name, name, new_func)
 
         get_transition.transition_factory = True
 
         return get_transition
+
     return dec
 
 
@@ -147,6 +148,7 @@ class MachineMeta(type(resource.States)):
     """
     Special behavior for state machines
     """
+
     @classmethod
     def _validate_states(
         cls, old_states: Sequence[MachineState], new_states: Sequence[MachineState]
@@ -169,10 +171,15 @@ class MachineMeta(type(resource.States)):
         states = cls._validate_states(states, new_states)
         super_cls.__states__ = tuple(states)
 
-        transitions = super_cls.__transitions__ if hasattr(super_cls, "__transitions__") else set()
+        transitions = (
+            super_cls.__transitions__
+            if hasattr(super_cls, "__transitions__")
+            else set()
+        )
         new_transitions = {
-            name for name, val in attrs.items()
-            if hasattr(val, 'transition_factory') and val.transition_factory
+            name
+            for name, val in attrs.items()
+            if hasattr(val, "transition_factory") and val.transition_factory
         }
         super_cls.__transitions__ = transitions | new_transitions
 
@@ -183,6 +190,7 @@ class Machine(resource.States, metaclass=MachineMeta):
     """
     Class with a metaclass to automatically collect states and transitions into class variables.
     """
+
     def __init__(self, resource_name: str) -> None:
         self.resource_name = resource_name
         # This is temporary, should clean this up
@@ -212,16 +220,20 @@ class Machine(resource.States, metaclass=MachineMeta):
         from_name = current.resource_state.state.name
         to_name = config.resource_state.state.name
 
-        transitions = (
-            getattr(self, tran)() for tran in self.__transitions__
+        transitions = (getattr(self, tran)() for tran in self.__transitions__)
+        transition = next(
+            (
+                tran
+                for tran in transitions
+                if tran.from_name == from_name
+                if tran.to_name == to_name
+            ),
+            None,
         )
-        transition = next((
-            tran for tran in transitions
-            if tran.from_name == from_name
-            if tran.to_name == to_name
-        ), None)
         if transition is None:
-            raise exc.PlanError(f'Unable to find transition from {from_name} to {to_name}.')
+            raise exc.PlanError(
+                f"Unable to find transition from {from_name} to {to_name}."
+            )
 
         return transition.plan(current, config, session, input)
 
@@ -250,6 +262,7 @@ class MachineResource(resource.Resource):
     Example:
     rs = MachineResource(MyMachine('new_resource'))
     """
+
     # This will be set in the constructor
     States = None
 

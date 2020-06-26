@@ -6,12 +6,14 @@ import operator
 import os
 from functools import partial
 from itertools import count, chain
-from typing import Any, Callable, Sequence, Dict, Union, Optional, Hashable
+from typing import Any, Callable, Sequence, Dict, Union, Optional, Hashable, Iterable
+
+import networkx as nx
 
 import statey as st
 from statey import exc
 from statey.syms import utils, types
-from statey.syms.semantics import Semantics
+from statey.syms.semantics import Semantics, StructSemantics
 
 
 # TODO: Theoretically this is unbounded and could fill up memory eventually, figure out something
@@ -40,6 +42,22 @@ class Symbol(abc.ABC, utils.Cloneable):
         """
 		Get the given attribute on the value of this symbol.
 		"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def _upstreams(self, session: "Session") -> Iterable['Symbol']:
+        """
+        Return any symbols that this one directly depends on
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def _apply(self, dag: nx.DiGraph, session: "Session") -> Any:
+        """
+        Apply the resolution logic that this symbol implies, optionally utilizing
+        the current dag to fetch results as needed. Note that this method can return
+        a symbol
+        """
         raise NotImplementedError
 
     def _binary_operator_method(op_func, typ=utils.MISSING):
@@ -151,6 +169,22 @@ class Reference(Symbol):
             raise exc.SymbolKeyError(path, ns)
         return type(self)(path, semantics, ns)
 
+    def _upstreams(self, session: "Session") -> Iterable['Symbol']:
+        data = session.get_encoded_data(self.path)
+        expanded = self.semantics.expand(data)
+
+        syms = []
+
+        def collect_symbols(x):
+            if isinstance(x, Symbol):
+                syms.append(x)
+
+        self.semantics.map(collect_symbols, expanded)
+        return syms
+
+    def _apply(self, dag: nx.DiGraph, session: "Session") -> Any:
+        return session.get_encoded_data(self.path)
+
 
 class ValueSemantics(Symbol):
     """
@@ -184,6 +218,22 @@ class Literal(ValueSemantics):
     def __post_init__(self) -> None:
         self.__dict__["type"] = self.semantics.type
 
+    def _upstreams(self, session: "Session") -> Iterable['Symbol']:
+        data = self.value
+        expanded = self.semantics.expand(data)
+
+        syms = []
+
+        def collect_symbols(x):
+            if isinstance(x, Symbol):
+                syms.append(x)
+
+        self.semantics.map(collect_symbols, expanded)
+        return syms
+
+    def _apply(self, dag: nx.DiGraph, session: "Session") -> Any:
+        return self.value
+
 
 @dc.dataclass(frozen=True)
 class Function(ValueSemantics):
@@ -201,6 +251,32 @@ class Function(ValueSemantics):
 
     def __post_init__(self) -> None:
         self.__dict__["type"] = self.semantics.type
+
+    def _upstreams(self, session: "Session") -> Iterable['Symbol']:
+       yield from self.args
+       yield from self.kwargs.values()
+
+    def _apply(self, dag: nx.DiGraph, session: "Session") -> Any:
+        args = []
+        unknowns = []
+
+        for sym in self.args:
+            arg = dag.nodes[sym.symbol_id]['result']
+            if isinstance(arg, Unknown):
+                unknowns.append(arg)
+            args.append(arg)
+
+        kwargs = {}
+        for key, sym in self.kwargs.items():
+            arg = dag.nodes[sym.symbol_id]['result']
+            if isinstance(arg, Unknown):
+                unknowns.append(arg)
+            kwargs[key] = arg
+
+        if unknowns:
+            raise exc.UnknownError(unknowns)
+
+        return self.func(*args, **kwargs)
 
 
 @dc.dataclass(frozen=True)
@@ -271,6 +347,15 @@ class Future(ValueSemantics):
 		"""
         self.result.set(result)
 
+    def _upstreams(self, session: "Session") -> Iterable['Symbol']:
+       return self.refs
+
+    def _apply(self, dag: nx.DiGraph, session: "Session") -> Any:
+        try:
+            return self.get_result()
+        except exc.FutureResultNotSet as err:
+            raise errors.UnknownError(self.refs, expected=self.expected) from err
+
 
 @dc.dataclass(frozen=True)
 class Unknown(Symbol):
@@ -298,27 +383,53 @@ class Unknown(Symbol):
     def get_attr(self, attr: str) -> Any:
         return self.clone(symbol=self.__dict__["symbol"].get_attr(attr))
 
+    def _upstreams(self, session: "Session") -> Iterable['Symbol']:
+       return self.refs
 
-# @dc.dataclass(frozen=True)
-# class Overlay(Symbol):
-#     """
-#     An overlay takes one or two symbols and resolves to the first if exists,
-#     otherwise the second
-#     """
+    def _apply(self, dag: nx.DiGraph, session: "Session") -> Any:
+        raise exc.UnknownError(self.refs)
 
-#     left: Symbol
-#     right: Optional[Symbol] = None
-#     symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
 
-#     @property
-#     def semantics(self) -> Semantics:
-#         return self.left.semantics
+@dc.dataclass(frozen=True)
+class StructSymbolField:
+    """
+    Single field in a StructSymbol
+    """
+    name: str
+    symbol: Symbol
 
-#     def get_attr(self, attr: str) -> Any:
-#         left_attr = self.left.get_attr(attr)
-#         try:
-#             right_attr = self.right.get_attr(attr)
-#         except SymbolKeyError:
-#             right_attr = None
 
-#         return Overlay(left_attr, right_attr)
+@dc.dataclass(frozen=True)
+class StructSymbol(ValueSemantics):
+    """
+    Combines multiple symbols into a struct
+    """
+    fields: Sequence[StructSymbolField]
+    symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+
+    @property
+    def semantics(self) -> Semantics:
+        struct_fields = []
+        for field in self.fields:
+            struct_fields.append(types.StructField(field.name, field.symbol.semantics.type))
+        struct_type = types.StructType(struct_fields)
+
+        field_semantics = {}
+        for field in self.fields:
+            field_semantics[field.name] = field.symbol.semantics
+
+        return StructSemantics(struct_type, field_semantics)
+
+    def get_attr(self, attr: str) -> Any:
+        field_map = {field.name: field for field in self.fields}
+        return field_map[attr].symbol
+
+    def _upstreams(self, session: "Session") -> Iterable['Symbol']:
+        for field in self.fields:
+            yield from field.symbol._upstreams(session)
+
+    def _apply(self, dag: nx.DiGraph, session: "Session") -> Any:
+        out = {}
+        for field in self.fields:
+            out[field.name] = field.symbol._apply(dag, session)
+        return out

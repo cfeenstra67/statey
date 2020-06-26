@@ -35,6 +35,7 @@ class AbstractState(abc.ABC):
     """
     Abstract base class defining required attributes for states
     """
+
     name: str
     type: types.Type
     null: bool
@@ -156,6 +157,7 @@ class States(abc.ABC):
 	An interface for accessing states of a resource. While only a `null_state` implementation
 	is required, additional methods can be exposed here to simplify resource state creation.
 	"""
+    resource_name: str
 
     @property
     @abc.abstractmethod

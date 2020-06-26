@@ -6,7 +6,16 @@ import textwrap as tw
 import traceback
 from datetime import datetime
 from functools import wraps
-from typing import Tuple, Any, Optional, Callable, Sequence, Type as PyType, Dict, Coroutine
+from typing import (
+    Tuple,
+    Any,
+    Optional,
+    Callable,
+    Sequence,
+    Type as PyType,
+    Dict,
+    Coroutine,
+)
 
 import networkx as nx
 
@@ -170,8 +179,7 @@ class SessionTaskSpec(utils.Cloneable):
         )
         semantics = session.ns.registry.get_semantics(wrapped_return)
         new_future = symbols.Future(
-            semantics,
-            refs=list(wrapped_args) + list(wrapped_kwargs.values())
+            semantics, refs=list(wrapped_args) + list(wrapped_kwargs.values())
         ).expecting(self.expected)
         return SessionTask(
             session=session,
@@ -350,7 +358,9 @@ class TaskSession(session.Session):
             else:
                 # Construct checkpoint task
                 state = self.checkpoints[node]
-                resource = self.ns.registry.get_resource(state.resource_state.resource_name)
+                resource = self.ns.registry.get_resource(
+                    state.resource_state.resource_name
+                )
                 task = GraphSetKey(
                     input_session=self,
                     input_symbol=self.symbolify(state.data, state.resource_state.type),
@@ -358,7 +368,7 @@ class TaskSession(session.Session):
                     state=state.resource_state,
                     key=checkpoint_key,
                     resource_graph=resource_graph,
-                    finalize=resource.finalize
+                    finalize=resource.finalize,
                 )
                 task_subgraph.nodes[node]["task"] = task
 

@@ -6,4 +6,4 @@ from statey.registry import DefaultRegistry, Registry
 
 registry = DefaultRegistry()
 
-from statey.syms.api import F, join
+from statey.syms.api import F, join, struct

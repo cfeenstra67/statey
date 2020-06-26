@@ -56,6 +56,15 @@ class Semantics(abc.ABC):
 		"""
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def expand(self, value: Any) -> Any:
+        """
+        Given a possibly symbolic, expand it to be a dictionary (possibly containing
+        symbols)
+        """
+        raise NotImplementedError
+
+
 
 @dc.dataclass(frozen=True)
 class ValueSemantics(Semantics):
@@ -74,6 +83,9 @@ class ValueSemantics(Semantics):
 
     def map(self, func: Callable[[Any], Any], value: Any) -> Any:
         return func(value)
+
+    def expand(self, value: Any) -> Any:
+        return value
 
     @classmethod
     @st.hookimpl
@@ -139,6 +151,11 @@ class ArraySemantics(Semantics):
             return value.clone()
         return [self.element_semantics.clone(item) for item in value]
 
+    def expand(self, value: Any) -> Any:
+        def func(x):
+            return [self.element_semantics.expand(val) for val in x]
+        return self.map(func, value)
+
     @classmethod
     @st.hookimpl
     def get_semantics(cls, type: types.Type, registry: st.Registry) -> Semantics:
@@ -193,6 +210,12 @@ class StructSemantics(Semantics):
         out = {}
         for key, semantics in self.field_semantics.items():
             out[key] = semantics.clone(value[key])
+        return out
+
+    def expand(self, value: Any) -> Any:
+        out = {}
+        for name, semantics in self.field_semantics.items():
+            out[name] = semantics.expand(value[name])
         return out
 
     @classmethod

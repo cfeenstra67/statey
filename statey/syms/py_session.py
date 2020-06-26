@@ -110,10 +110,9 @@ class PythonSession(session.Session):
         return value
 
     def _build_symbol_dag(
-        self, symbol: symbols.Symbol, allow_unknowns: bool = False
+        self, symbol: symbols.Symbol, graph: nx.DiGraph
     ) -> nx.DiGraph:
 
-        graph = nx.DiGraph()
         syms = [(symbol, ())]
 
         while syms:
@@ -130,29 +129,8 @@ class PythonSession(session.Session):
             if processed:
                 continue
 
-            def collect_symbols(value):
-                if isinstance(value, symbols.Symbol):
-                    syms.append((value, (sym.symbol_id,)))
-                return value
-
-            semantics = self.ns.registry.get_semantics(sym.type)
-
-            if isinstance(sym, symbols.Literal):
-                semantics.map(collect_symbols, sym.value)
-            elif isinstance(sym, symbols.Reference):
-                value = self.get_encoded_data(sym.path)
-                semantics.map(collect_symbols, value)
-            elif isinstance(sym, symbols.Function):
-                for sub_sym in chain(sym.args, sym.kwargs.values()):
-                    syms.append((sub_sym, (sym.symbol_id,)))
-            elif isinstance(sym, (symbols.Future, symbols.Unknown)):
-                continue
-            elif isinstance(sym, symbols.Overlay):
-                syms.append((sym.left, sym.symbol_id))
-                if sym.right:
-                    syms.append((sym.right, sym.symbol_id))
-            else:
-                raise TypeError(f"Invalid symbol {sym}")
+            for upstream in sym._upstreams(self):
+                syms.append((upstream, (sym.symbol_id,)))
 
         # Check that this is in fact a DAG and has no cycles
         if not is_directed_acyclic_graph(graph):
@@ -163,91 +141,52 @@ class PythonSession(session.Session):
     def _process_symbol_dag(
         self, dag: nx.DiGraph, allow_unknowns: bool = False
     ) -> None:
-        def resolve_future(future):
-            try:
-                return future.get_result()
-            except exc.FutureResultNotSet:
-                if not allow_unknowns:
-                    raise
-                if future.expected is not utils.MISSING:
-                    return future.expected
-                return symbols.Unknown(sym, refs=future.refs)
 
-        def resolve_unknown(unknown):
-            if not allow_unknowns:
-                raise exc.SessionError(f"Found an Unknown: {unknown} while resolving.")
-            return unknown
-
-        for symbol_id in topological_sort(dag):
+        def handle_symbol_id(symbol_id):
 
             sym = dag.nodes[symbol_id]["symbol"]
+            if 'result' in dag.nodes[symbol_id]:
+                return dag.nodes[symbol_id]['result']
 
-            if isinstance(sym, symbols.Literal):
-                value = sym.value
-
-            elif isinstance(sym, symbols.Reference):
-                value = self.get_encoded_data(sym.path)
-
-            elif isinstance(sym, symbols.Function):
-                args = []
-                is_unknown = False
-                unknown_refs = []
-                for sub_sym in sym.args:
-                    arg = dag.nodes[sub_sym.symbol_id]["result"]
-                    if isinstance(arg, symbols.Unknown):
-                        is_unknown = True
-                        unknown_refs.extend(arg.refs)
-                        continue
-                    args.append(arg)
-                kwargs = {}
-                for key, sub_sym in sym.kwargs.items():
-                    arg = dag.nodes[sub_sym.symbol_id]["result"]
-                    if isinstance(arg, symbols.Unknown):
-                        is_unknown = True
-                        unknown_refs.extend(arg.refs)
-                        continue
-                    kwargs[key] = arg
-
-                if is_unknown:
-                    value = symbols.Unknown(sym, refs=tuple(unknown_refs))
+            try:
+                result = sym._apply(dag, self)
+            except exc.UnknownError as err:
+                if not allow_unknowns:
+                    raise
+                if err.expected is not utils.MISSING:
+                    result = err.expected
                 else:
-                    value = sym.func(*args, **kwargs)
-                    value = (
-                        value
-                        if isinstance(value, symbols.Symbol)
-                        else symbols.Literal(value, sym.semantics)
-                    )
-                    # Resolve any potential symbols in output from a function
-                    value = self.resolve(
-                        value, decode=False, allow_unknowns=allow_unknowns
-                    )
-
-            elif isinstance(sym, symbols.Future):
-                value = resolve_future(sym)
-            elif isinstance(sym, symbols.Unknown):
-                value = resolve_unknown(sym)
-            elif isinstance(sym, symbols.Overlay):
-                value = dag.nodes[(sym.right or sym.left).symbol_id]["result"]
+                    result = symbols.Unknown(sym)
             else:
-                raise TypeError(f"Invalid symbol {sym}.")
+                semantics = self.ns.registry.get_semantics(sym.type)
+                expanded_result = semantics.expand(result)
 
-            def resolve_value(x):
-                if isinstance(x, symbols.Future):
-                    return resolve_future(x)
-                if isinstance(x, symbols.Unknown):
-                    return resolve_unknown(x)
-                if isinstance(x, symbols.Symbol):
-                    return dag.nodes[x.symbol_id]["result"]
-                return x
+                def resolve_child(x):
+                    if not isinstance(x, symbols.Symbol) or x is sym:
+                        return x
 
-            semantics = self.ns.registry.get_semantics(sym.type)
-            resolved = semantics.map(resolve_value, value)
-            dag.nodes[symbol_id]["result"] = resolved
+                    self._build_symbol_dag(x, dag)
+
+                    ancestors = set(nx.ancestors(dag, x.symbol_id))
+                    for symbol_id in topological_sort(dag.subgraph(ancestors)):
+                        handle_symbol_id(symbol_id)
+
+                    return handle_symbol_id(x.symbol_id)
+
+                result = semantics.map(resolve_child, expanded_result)
+
+            dag.nodes[symbol_id]['result'] = result
+            return result
+
+        for symbol_id in topological_sort(dag):
+            handle_symbol_id(symbol_id)
 
     def resolve(
         self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True
     ) -> Any:
-        dag = self._build_symbol_dag(symbol)
+
+        graph = nx.DiGraph()
+        dag = self._build_symbol_dag(symbol, graph)
         self._process_symbol_dag(dag, allow_unknowns)
         encoded = dag.nodes[symbol.symbol_id]["result"]
         if not decode:

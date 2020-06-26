@@ -5,11 +5,22 @@ contained in the the other modules in this package
 """
 import dataclasses as dc
 import inspect
-from typing import Any, Sequence, Dict, Callable, Type
+from typing import Any, Sequence, Dict, Callable, Type, Tuple
 
 import statey as st
 from statey.syms import utils, symbols, types
 from statey.syms.plugins import ParseDataClassPlugin, EncodeDataClassPlugin
+
+
+def symbol(value: Any, type: types.Type = utils.MISSING) -> symbols.Symbol:
+    """
+    Generic function to create literals from values
+    """
+    if isinstance(value, symbols.Symbol):
+        return value
+    if type is utils.MISSING:
+        type = st.registry.infer_type(value)
+    return symbols.Literal(arg, st.registry.get_semantics(type))
 
 
 @dc.dataclass(frozen=True)
@@ -40,18 +51,8 @@ class _FunctionFactoryWithFunction(utils.Cloneable):
         try:
             inspect.signature(self.func)
         except ValueError:
-            wrapped_args = [
-                symbols.Literal(arg, st.registry.infer_type(arg))
-                if not isinstance(arg, symbols.Symbol)
-                else arg
-                for arg in args
-            ]
-            wrapped_kwargs = {
-                key: symbols.Literal(arg, st.registry.infer_type(val))
-                if not isinstance(val, symbols.Symbol)
-                else val
-                for key, val in kwargs.items()
-            }
+            wrapped_args = list(map(symbol, args))
+            wrapped_kwargs = {key: symbol(val) for key, val in kwargs.items()}
             wrapped_return = st.registry.get_type(self.factory.annotation)
         else:
             wrapped_args, wrapped_kwargs, wrapped_return = utils.wrap_function_call(
@@ -71,7 +72,7 @@ class _FunctionFactoryWithFunction(utils.Cloneable):
 F = _FunctionFactory()
 
 
-def struct(cls: Type[Any]) -> Type[Any]:
+def autoencode(cls: Type[Any]) -> Type[Any]:
     """
 	This method attempts to wrap the given class with a proper base class so that
 	it will be deserialized properly when bieng added to the session
@@ -105,18 +106,40 @@ def join(head: symbols.Symbol, *tail: Sequence[Any]) -> symbols.Symbol:
     additional arguments symbolically as well
     """
     return symbols.Function(
-        func=lambda head, *tail: head,
-        args=(head, *tail),
-        semantics=head.semantics
+        func=lambda head, *tail: head, args=(head, *tail), semantics=head.semantics
     )
 
 
-# def overlay(sym: symbols.Symbol, data: Any) -> symbols.Overlay:
-#     """
-#     Simple constructor for an overlay, making use of the filtered_type()
-#     function to generate a literal symbol for `data`
-#     """
-#     typ = filtered_type(sym.semantics.type, data)
-#     semantics = st.registry.get_semantics(typ)
-#     right = symbols.Literal(data, semantics)
-#     return symbols.Overlay(sym, right)
+class _StructSymbolFactory:
+    """
+    Utility for simply create struct symbols
+    """
+    def new(self, fields: Sequence[Tuple[str, Any]]) -> symbols.StructSymbol:
+        out_fields = []
+        for name, value in fields:
+            out_fields.append(symbols.StructSymbolField(name, symbol(value)))
+        return symbols.StructSymbol(out_fields)
+
+    def dict(self, data: Dict[str, Any]) -> symbols.StructSymbol:
+        return self.new(data.items())
+
+    def __call__(self, *args: Sequence[Tuple[str, Any]], **kwargs: Dict[str, Any]) -> symbols.StructSymbol:
+        """
+        'call' factory method. Pass a dictionary with symbols or 
+        """
+        items = []
+        items.extend(args)
+        items.extend(kwargs.items())
+        return self.new(args)
+
+    def __getitem__(self, fields: Sequence[slice]) -> symbols.StructSymbol:
+        """
+        'getitem' interfce for creating structs using __getitem__ syntax
+        """
+        out_fields = []
+        for slc in fields:
+            out_fields.append((slc.start, slc.stop))
+        return self.new(out_fields)
+
+
+struct = _StructSymbolFactory()

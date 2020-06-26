@@ -1,6 +1,8 @@
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import marshmallow as ma
+
+from statey.syms import utils
 
 
 class StateyError(Exception):
@@ -178,6 +180,16 @@ class SessionError(SymsError):
     """
 	Error raised from a session
 	"""
+
+
+class UnknownError(SessionError):
+    """
+    Error to short-circuit resolution when an unknown value is encountered
+    """
+    def __init__(self, refs: Sequence['Symbol'], expected = utils.MISSING) -> None:
+        self.refs = refs
+        self.expected = expected
+        super().__init__(f'Unknowns, found, refs: {self.refs}')
 
 
 class MissingDataError(SessionError):

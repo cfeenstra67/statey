@@ -1,7 +1,14 @@
 import os
+from typing import Dict, Any
 
 import statey as st
-from statey.fsm import Machine, transition, MachineState, NullMachineState, MachineResource
+from statey.fsm import (
+    Machine,
+    transition,
+    MachineState,
+    NullMachineState,
+    MachineResource,
+)
 from statey.resource import BoundState
 from statey.syms import symbols, types
 from statey.syms.schemas import builder as S
@@ -9,8 +16,7 @@ from statey.task import TaskSession, task
 
 
 FileSchema = S.Struct[
-    "location" : S.String(mapper=os.path.realpath),
-    "data" : S.String
+    "location" : S.String, "data" : S.String
 ].s
 
 FileType = FileSchema.output_type
@@ -20,6 +26,7 @@ class FileMachine(Machine):
     """
     Simple file state machine
     """
+
     UP = MachineState("UP", FileSchema)
     DOWN = NullMachineState("DOWN")
 
@@ -36,6 +43,7 @@ class FileMachine(Machine):
         return BoundState(current.resource_state, out)
 
     async def finalize(self, current: BoundState) -> BoundState:
+        print("DATA", current.data)
         return current.clone(data=dict(current.data, data=""))
 
     @staticmethod
@@ -58,7 +66,14 @@ class FileMachine(Machine):
             f.write(data["data"])
         return dict(data, location=path)
 
-    @transition('UP', 'UP')
+    def get_expected(self, session: TaskSession, data: Dict[str, Any]) -> Dict[str, Any]:
+        string_semantics = session.ns.registry.get_semantics(S.String.t)
+        return {
+            'location': string_semantics.map(os.path.realpath, data['location']),
+            'data': data['data']
+        }
+
+    @transition("UP", "UP")
     def modify(
         self,
         current: BoundState,
@@ -69,28 +84,37 @@ class FileMachine(Machine):
 
         differ = session.ns.registry.get_differ(current.resource_state.state.type)
         diffconfig = differ.config()
+        expected = self.get_expected(session, config.data)
 
         def compare_realpaths(x, y):
             return os.path.realpath(x) == os.path.realpath(y)
 
-        diffconfig.set_comparison('location', compare_realpaths)
+        diffconfig.set_comparison("location", compare_realpaths)
 
         current_literal = current.literal(session.ns.registry)
 
         diff = differ.diff(current.data, config.data)
         flat = list(diff.flatten(diffconfig))
         if not flat:
-            return input
+            return st.struct[
+                'location': input['location'].map(os.path.realpath),
+                'data': input['data']
+            ]
 
         paths = {d.path for d in flat}
-        if ('location',) in paths:
-            rm_file = session["delete_file"] << self.remove_file(current_literal.location)
+        # If location changes we need to recreate
+        if ("location",) in paths:
+            rm_file = session["delete_file"] << self.remove_file(
+                current_literal.location
+            )
             joined_input = st.join(input, rm_file)
-            return session["create_file"] << (self.set_file(joined_input) >> config.data)
+            return session["create_file"] << (
+                self.set_file(joined_input) >> expected
+            )
 
-        return session["update_file"] << (self.set_file(input) >> config.data)
+        return session["update_file"] << (self.set_file(input) >> expected)
 
-    @transition('DOWN', 'UP')
+    @transition("DOWN", "UP")
     def create(
         self,
         current: BoundState,
@@ -99,9 +123,10 @@ class FileMachine(Machine):
         input: symbols.Symbol,
     ) -> symbols.Symbol:
 
-        return session["create_file"] << (self.set_file(input) >> config.data)
+        expected = self.get_expected(session, config.data)
+        return session["create_file"] << (self.set_file(input) >> expected)
 
-    @transition('UP', 'DOWN')
+    @transition("UP", "DOWN")
     def delete(
         self,
         current: BoundState,
@@ -113,9 +138,10 @@ class FileMachine(Machine):
         current_literal = current.literal(session.ns.registry)
         return session["delete_file"] << self.remove_file(current_literal.location)
 
+
 # Declaring global resources
 
-file_resource = MachineResource('file', FileMachine)
+file_resource = MachineResource("file", FileMachine)
 
 # Resource state factory
 File = file_resource.s

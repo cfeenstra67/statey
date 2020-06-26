@@ -120,7 +120,7 @@ class ExecuteTaskSession(PlanAction):
                 key=self.output_key,
                 resource_graph=resource_graph,
                 state=self.config_state,
-                finalize=self.resource.finalize
+                finalize=self.resource.finalize,
             )
             graph.add_node(output_key, task=output_graph_task, source=prefix)
 
