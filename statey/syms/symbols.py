@@ -9,7 +9,8 @@ from itertools import count, chain
 from typing import Any, Callable, Sequence, Dict, Union, Optional, Hashable
 
 import statey as st
-from statey.syms import utils, types, exc
+from statey import exc
+from statey.syms import utils, types
 from statey.syms.semantics import Semantics
 
 
@@ -236,7 +237,7 @@ class Future(ValueSemantics):
 	"""
 
     semantics: Semantics = dc.field(repr=False, compare=False, hash=False)
-    refs: Sequence[Reference] = ()
+    refs: Sequence[Symbol] = ()
     symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
     result: FutureResult = dc.field(default_factory=FutureResult)
     # Expected output, potentially containing unknowns
@@ -279,7 +280,7 @@ class Unknown(Symbol):
 	"""
 
     symbol: Symbol
-    refs: Sequence[Reference] = ()
+    refs: Sequence[Symbol] = ()
     symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
 
     @property
@@ -287,7 +288,7 @@ class Unknown(Symbol):
         return self.symbol.semantics
 
     def clone(self, **kwargs) -> "Unknown":
-        kws = {"symbol": self.symbol.clone()}
+        kws = {"symbol": self.symbol.clone(), "refs": tuple(self.refs)}
         kws.update(kwargs)
         return super().clone(**kws)
 
@@ -296,3 +297,28 @@ class Unknown(Symbol):
 
     def get_attr(self, attr: str) -> Any:
         return self.clone(symbol=self.__dict__["symbol"].get_attr(attr))
+
+
+# @dc.dataclass(frozen=True)
+# class Overlay(Symbol):
+#     """
+#     An overlay takes one or two symbols and resolves to the first if exists,
+#     otherwise the second
+#     """
+
+#     left: Symbol
+#     right: Optional[Symbol] = None
+#     symbol_id: int = dc.field(init=False, default_factory=NEXT_ID, repr=False)
+
+#     @property
+#     def semantics(self) -> Semantics:
+#         return self.left.semantics
+
+#     def get_attr(self, attr: str) -> Any:
+#         left_attr = self.left.get_attr(attr)
+#         try:
+#             right_attr = self.right.get_attr(attr)
+#         except SymbolKeyError:
+#             right_attr = None
+
+#         return Overlay(left_attr, right_attr)

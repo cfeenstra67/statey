@@ -6,7 +6,7 @@ import textwrap as tw
 import traceback
 from datetime import datetime
 from functools import wraps
-from typing import Tuple, Any, Optional, Callable, Sequence, Type as PyType, Dict
+from typing import Tuple, Any, Optional, Callable, Sequence, Type as PyType, Dict, Coroutine
 
 import networkx as nx
 
@@ -152,11 +152,14 @@ class SessionTaskSpec(utils.Cloneable):
     is_always_eager: bool = False
     expected: Any = utils.MISSING
 
-    def expecting(self, value: Any) -> "SessionTask":
+    def expecting(self, value: Any) -> "SessionTaskSpec":
         """
 		Set the expectation of the output future for tasks created from this spec.
 		"""
         return self.clone(expected=value)
+
+    def __rshift__(self, other: Any) -> "SessionTaskSpec":
+        return self.expecting(other)
 
     def bind(self, session: session.Session) -> "SessionTask":
         """
@@ -166,7 +169,10 @@ class SessionTaskSpec(utils.Cloneable):
             session.ns.registry, self.func, *self.args, **self.kwargs
         )
         semantics = session.ns.registry.get_semantics(wrapped_return)
-        new_future = symbols.Future(semantics).expecting(self.expected)
+        new_future = symbols.Future(
+            semantics,
+            refs=list(wrapped_args) + list(wrapped_kwargs.values())
+        ).expecting(self.expected)
         return SessionTask(
             session=session,
             func=self.func,
@@ -243,6 +249,13 @@ class ResourceGraphOperation(Task):
         return True
 
 
+async def async_identity(x):
+    """
+    Simple async identity function
+    """
+    return x
+
+
 @dc.dataclass(frozen=True)
 class GraphSetKey(ResourceGraphOperation):
     """
@@ -254,14 +267,21 @@ class GraphSetKey(ResourceGraphOperation):
     dependencies: Sequence[str] = ()
     remove_dependencies: bool = True
     state: Optional["ResourceState"] = None
+    finalize: Callable[[Any], Coroutine] = async_identity
 
     async def run(self) -> None:
+        from statey.resource import BoundState
+
+        data = self.input_session.resolve(self.input_symbol, decode=False)
+        state = BoundState(self.state, data)
+        final_state = await self.finalize(state)
+
         self.resource_graph.set(
             key=self.key,
-            value=self.input_session.resolve(self.input_symbol, decode=False),
+            value=final_state.data,
             type=self.input_symbol.type,
             remove_dependencies=self.remove_dependencies,
-            state=self.state,
+            state=final_state.resource_state,
         )
         if self.dependencies:
             self.resource_graph.add_dependencies(self.key, self.dependencies)
@@ -276,44 +296,26 @@ class GraphDeleteKey(ResourceGraphOperation):
         self.resource_graph.delete(self.key)
 
 
-@dc.dataclass(frozen=True)
-class Checkpointer:
-    """
-	A checkpointer can store partially migrates states of a resource
-	"""
-
-    output_session: "ResourceSession"
-    output_key: str
-    resource_name: str
-
-    def checkpoint(self, value: Any, state: "State") -> None:
-        """
-		Save a partially migrated state as a checkpoing in `output_session`.
-		"""
-        from statey.resource import ResourceState, BoundState
-
-        # This can change in different checkpoints, so overwrite to be safe.
-        self.output_session.ns.new(self.output_key, state.type, overwrite=True)
-        state = BoundState(
-            resource_state=ResourceState(state=state, resource_name=self.resource_name),
-            data=value,
-        )
-        self.output_session.set(sel.key, state)
-
-
 class TaskSession(session.Session):
     """
 	Session subclass that wraps a regular session but handles resources in a special manner.
 	"""
 
-    def __init__(
-        self, session: session.Session, checkpointer: Optional[Checkpointer] = None
-    ) -> None:
+    def __init__(self, session: session.Session) -> None:
         super().__init__(session.ns)
         self.session = session
-        self.checkpointer = checkpointer
+        self.checkpoints = {}
         self.tasks = {}
         self.pm.register(self)
+
+    @st.hookimpl
+    def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
+        from statey.resource import BoundState
+
+        if not isinstance(value, BoundState):
+            return None
+        self.checkpoints[key] = value
+        return value.data, value.resource_state.state.type
 
     @st.hookimpl
     def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
@@ -321,16 +323,6 @@ class TaskSession(session.Session):
             return None
         self.tasks[key] = bound = value.bind(self)
         return bound.output_future, bound.output_future.type
-
-    def checkpoint(self, symbol: symbols.Symbol, state: "State") -> SessionTaskSpec:
-        async def _checkpoint(value):
-            if self.checkpointer is not None:
-                self.checkpointer.checkpoint(value, state)
-            return {}
-
-        return FunctionTaskSpec(
-            input_type=symbol.type, output_type=types.EmptyType, func=_checkpoint
-        )(symbol)
 
     def resolve(
         self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True
@@ -346,11 +338,30 @@ class TaskSession(session.Session):
     def dependency_graph(self) -> nx.MultiDiGraph:
         return self.session.dependency_graph()
 
-    def task_graph(self) -> nx.DiGraph:
+    def task_graph(
+        self, resource_graph: "ResourceGraph", checkpoint_key: str
+    ) -> nx.DiGraph:
         task_subgraph = self.dependency_graph()
-        utils.subgraph_retaining_dependencies(task_subgraph, list(self.tasks))
+        keep = list(self.tasks) + list(self.checkpoints)
+        utils.subgraph_retaining_dependencies(task_subgraph, keep)
         for node in task_subgraph.nodes:
-            task_subgraph.nodes[node]["task"] = self.tasks[node]
+            if node in self.tasks:
+                task_subgraph.nodes[node]["task"] = self.tasks[node]
+            else:
+                # Construct checkpoint task
+                state = self.checkpoints[node]
+                resource = self.ns.registry.get_resource(state.resource_state.resource_name)
+                task = GraphSetKey(
+                    input_session=self,
+                    input_symbol=self.symbolify(state.data, state.resource_state.type),
+                    remove_dependencies=False,
+                    state=state.resource_state,
+                    key=checkpoint_key,
+                    resource_graph=resource_graph,
+                    finalize=resource.finalize
+                )
+                task_subgraph.nodes[node]["task"] = task
+
         return task_subgraph
 
     def clone(self) -> "TaskSession":

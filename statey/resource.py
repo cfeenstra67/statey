@@ -16,8 +16,9 @@ import marshmallow as ma
 import networkx as nx
 
 import statey as st
+from statey import exc
 from statey.task import TaskSession
-from statey.syms import types, utils, session, symbols, exc
+from statey.syms import types, utils, session, symbols
 
 
 class StateSchema(ma.Schema):
@@ -30,20 +31,18 @@ class StateSchema(ma.Schema):
     null = ma.fields.Bool(required=True, default=None)
 
 
-@dc.dataclass(frozen=True)
-class State:
+class AbstractState(abc.ABC):
     """
-	A state corresponds to some type for a resource.
-	"""
-
+    Abstract base class defining required attributes for states
+    """
     name: str
     type: types.Type
-    null: bool = dc.field(repr=False, default=False)
+    null: bool
 
     def to_dict(self, registry: "Registry") -> Dict[str, Any]:
         """
-		Render this state to a JSON-serializable dictionary
-		"""
+        Render this state to a JSON-serializable dictionary
+        """
         type_serializer = registry.get_type_serializer(self.type)
         out = {
             "name": self.name,
@@ -55,12 +54,23 @@ class State:
     @classmethod
     def from_dict(cls, data: Dict[str, Any], registry: "Registry") -> "State":
         """
-		Render a State from the output of to_dict()
-		"""
+        Render a State from the output of to_dict()
+        """
         data = StateSchema().load(data)
         type_serializer = registry.get_type_serializer_from_data(data["type"])
         typ = type_serializer.deserialize(data["type"])
         return cls(name=data["name"], type=typ, null=data["null"])
+
+
+@dc.dataclass(frozen=True)
+class State(AbstractState):
+    """
+	A state corresponds to some type for a resource.
+	"""
+
+    name: str
+    type: types.Type
+    null: bool = dc.field(repr=False, default=False)
 
 
 @dc.dataclass(frozen=True)
@@ -89,7 +99,7 @@ class ResourceState:
 	A resource state is a state that is bound to some resource.
 	"""
 
-    state: State
+    state: AbstractState
     resource_name: str
 
     def __call__(self, arg=utils.MISSING, **kwargs) -> "BoundState":
@@ -125,7 +135,7 @@ class ResourceState:
 
 
 @dc.dataclass(frozen=True)
-class BoundState:
+class BoundState(utils.Cloneable):
     """
 	A bound state binds a resource state to some date.
 	"""
@@ -157,59 +167,59 @@ class States(abc.ABC):
         raise NotImplementedError
 
 
-class KnownStatesMeta(abc.ABCMeta):
-    """
-	Metaclass for resources
-	"""
+# class KnownStatesMeta(abc.ABCMeta):
+#     """
+# 	Metaclass for resources
+# 	"""
 
-    @classmethod
-    def _validate_states(
-        cls, old_states: Sequence[State], new_states: Sequence[State]
-    ) -> Tuple[Sequence[State], State]:
+#     @classmethod
+#     def _validate_states(
+#         cls, old_states: Sequence[State], new_states: Sequence[State]
+#     ) -> Tuple[Sequence[State], State]:
 
-        new_names = Counter(state.name for state in new_states)
-        if new_names and max(new_names.values()) > 1:
-            multi = {k: v for k, v in new_names.items() if v > 1}
-            raise ValueError(f"Duplicate states found: {multi}")
+#         new_names = Counter(state.name for state in new_states)
+#         if new_names and max(new_names.values()) > 1:
+#             multi = {k: v for k, v in new_names.items() if v > 1}
+#             raise ValueError(f"Duplicate states found: {multi}")
 
-        old_states = [state for state in old_states if state.name not in new_names]
-        return old_states + list(new_states)
+#         old_states = [state for state in old_states if state.name not in new_names]
+#         return old_states + list(new_states)
 
-    def __new__(
-        cls, name: str, bases: Sequence[PyType], attrs: Dict[str, Any]
-    ) -> PyType:
-        super_cls = super().__new__(cls, name, bases, attrs)
-        states = super_cls.__states__ if hasattr(super_cls, "__states__") else ()
-        new_states = [val for val in attrs.values() if isinstance(val, State)]
-        states = cls._validate_states(states, new_states)
-        super_cls.__states__ = tuple(states)
-        return super_cls
+#     def __new__(
+#         cls, name: str, bases: Sequence[PyType], attrs: Dict[str, Any]
+#     ) -> PyType:
+#         super_cls = super().__new__(cls, name, bases, attrs)
+#         states = super_cls.__states__ if hasattr(super_cls, "__states__") else ()
+#         new_states = [val for val in attrs.values() if isinstance(val, State)]
+#         states = cls._validate_states(states, new_states)
+#         super_cls.__states__ = tuple(states)
+#         return super_cls
 
 
-class KnownStates(States, metaclass=KnownStatesMeta):
-    """
-	Define a fixed set of known states
-	"""
+# class KnownStates(States, metaclass=KnownStatesMeta):
+#     """
+# 	Define a fixed set of known states
+# 	"""
 
-    def __init__(self, resource_name: str) -> None:
-        self.resource_name = resource_name
-        # This is temporary, should clean this up
-        for state in self.__states__:
-            self.set_resource_state(ResourceState(state, resource_name))
+#     def __init__(self, resource_name: str) -> None:
+#         self.resource_name = resource_name
+#         # This is temporary, should clean this up
+#         for state in self.__states__:
+#             self.set_resource_state(ResourceState(state, resource_name))
 
-    def set_resource_state(self, state: ResourceState) -> None:
-        setattr(self, state.state.name, state)
+#     def set_resource_state(self, state: ResourceState) -> None:
+#         setattr(self, state.state.name, state)
 
-    @property
-    def null_state(self) -> ResourceState:
-        state = next((s for s in self.__states__ if s.null))
-        return ResourceState(state, self.resource_name)
+#     @property
+#     def null_state(self) -> ResourceState:
+#         state = next((s for s in self.__states__ if s.null))
+#         return ResourceState(state, self.resource_name)
 
-    def __call__(self, *args, **kwargs) -> ResourceState:
-        states = [state for state in self.__states__ if state != self.null_state.state]
-        if len(states) > 1:
-            raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
-        return ResourceState(states[0], self.resource_name)(*args, **kwargs)
+#     def __call__(self, *args, **kwargs) -> ResourceState:
+#         states = [state for state in self.__states__ if state != self.null_state.state]
+#         if len(states) > 1:
+#             raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
+#         return ResourceState(states[0], self.resource_name)(*args, **kwargs)
 
 
 class Resource(abc.ABC):
@@ -218,6 +228,7 @@ class Resource(abc.ABC):
 	or more "states" that that object can exist in.
 	"""
 
+    name: str
     States: PyType[States]
 
     def __init__(self) -> None:
@@ -229,11 +240,6 @@ class Resource(abc.ABC):
 		Returns information about the possible states of this resource
 		"""
         return self._s
-
-    @property
-    @abc.abstractmethod
-    def name(self) -> str:
-        raise NotImplementedError
 
     @abc.abstractmethod
     def plan(
@@ -250,12 +256,19 @@ class Resource(abc.ABC):
 		"""
         raise NotImplementedError
 
+    @abc.abstractmethod
     async def refresh(self, current: BoundState) -> BoundState:
         """
 		Given the current bound state, return a new bound state that represents that actual
 		current state of the object
 		"""
         raise NotImplementedError
+
+    async def finalize(self, data: BoundState) -> BoundState:
+        """
+        Called on states before they are committed to the resource graph. By default a nooop
+        """
+        return data
 
 
 class ResourceSession(session.Session):

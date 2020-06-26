@@ -7,7 +7,8 @@ import marshmallow as ma
 import networkx as nx
 
 import statey as st
-from statey.syms import types, symbols, exc, utils, path
+from statey import exc
+from statey.syms import types, symbols, utils, path
 
 
 class Namespace(abc.ABC):

@@ -29,6 +29,7 @@ def register_default_plugins(
     semantics: bool = True,
     type_serializers: bool = True,
     resources: bool = True,
+    differs: bool = True,
 ) -> None:
     """
 	Convenience method to register all of the default provided hooks for the given
@@ -38,19 +39,28 @@ def register_default_plugins(
         from statey.syms.encoders import register as register_encoders
 
         register_encoders()
+
     if type_plugins:
         from statey.syms.plugins import register as register_type_plugins
 
         register_type_plugins()
+
     if semantics:
         from statey.syms.semantics import register as register_semantics
 
         register_semantics()
+
     if type_serializers:
         from statey.syms.type_serializers import register as register_serializers
 
         register_serializers()
+
     if resources:
         from statey.lib import register as register_resources
 
         register_resources()
+
+    if differs:
+        from statey.syms.diff import register as register_differs
+
+        register_differs()

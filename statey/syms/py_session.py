@@ -8,7 +8,8 @@ from networkx.algorithms.dag import (
     topological_sort,
 )
 
-from statey.syms import types, symbols, exc, utils, session
+from statey import exc
+from statey.syms import types, symbols, utils, session
 
 
 class PythonNamespace(session.Namespace):
@@ -46,12 +47,12 @@ class PythonNamespace(session.Namespace):
             raise exc.SymbolKeyError(key, self)
 
         base_semantics = self.registry.get_semantics(self.types[base])
-        for attr in rel_path:
-            base_semantics = base_semantics.attr_semantics(attr)
-            if base_semantics is None:
-                raise exc.SymbolKeyError(key, self)
+        try:
+            semantics = base_semantics.path_semantics(rel_path)
+        except AttributeError as err:
+            raise exc.SymbolKeyError(key, self) from err
 
-        return base_semantics.type
+        return semantics.type
 
 
 class PythonSession(session.Session):
@@ -146,6 +147,10 @@ class PythonSession(session.Session):
                     syms.append((sub_sym, (sym.symbol_id,)))
             elif isinstance(sym, (symbols.Future, symbols.Unknown)):
                 continue
+            elif isinstance(sym, symbols.Overlay):
+                syms.append((sym.left, sym.symbol_id))
+                if sym.right:
+                    syms.append((sym.right, sym.symbol_id))
             else:
                 raise TypeError(f"Invalid symbol {sym}")
 
@@ -207,11 +212,22 @@ class PythonSession(session.Session):
                     value = symbols.Unknown(sym, refs=tuple(unknown_refs))
                 else:
                     value = sym.func(*args, **kwargs)
+                    value = (
+                        value
+                        if isinstance(value, symbols.Symbol)
+                        else symbols.Literal(value, sym.semantics)
+                    )
+                    # Resolve any potential symbols in output from a function
+                    value = self.resolve(
+                        value, decode=False, allow_unknowns=allow_unknowns
+                    )
 
             elif isinstance(sym, symbols.Future):
                 value = resolve_future(sym)
             elif isinstance(sym, symbols.Unknown):
                 value = resolve_unknown(sym)
+            elif isinstance(sym, symbols.Overlay):
+                value = dag.nodes[(sym.right or sym.left).symbol_id]["result"]
             else:
                 raise TypeError(f"Invalid symbol {sym}.")
 
@@ -280,7 +296,7 @@ class PythonSession(session.Session):
                 for sub_sym in symbol.refs:
                     dependent_symbols.append((sub_sym, dependent_path))
             else:
-                raise TypeError(f"Invalid symbol {sym}")
+                raise TypeError(f"Invalid symbol {symbol}")
 
         return graph
 

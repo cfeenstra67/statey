@@ -3,7 +3,19 @@ from typing import Any, Optional
 import marshmallow as ma
 
 
-class SymsError(Exception):
+class StateyError(Exception):
+    """
+    Base class for statey errors
+    """
+
+
+class PlanError(StateyError):
+    """
+    Statey error during planning
+    """
+
+
+class SymsError(StateyError):
     """
 	Base class for errors in the syms package
 	"""
@@ -53,6 +65,16 @@ class NoResourceFound(SymsError):
     def __init__(self, resource_name: str) -> None:
         self.resource_name = resource_name
         super().__init__(f"No resource registered for name: {resource_name}.")
+
+
+class NoDifferFound(SymsError):
+    """
+    Error to indicate we could not find a differ for some type
+    """
+
+    def __init__(self, type: "Type") -> None:
+        self.type = type
+        super().__init__(f"No differ found for type: {type}.")
 
 
 class NoTypeSerializerFound(SymsError):

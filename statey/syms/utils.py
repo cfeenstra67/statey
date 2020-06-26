@@ -8,8 +8,7 @@ from typing import Type, Optional, Union, Any, Dict, Hashable, Sequence, Callabl
 import marshmallow as ma
 import networkx as nx
 
-from statey import NS
-from statey.syms import exc
+from statey import NS, exc
 
 
 LRU_MAX_SIZE = 100
@@ -312,3 +311,16 @@ def subgraph_retaining_dependencies(dag: nx.DiGraph, keep_nodes: Sequence[str]) 
         for predecessor, successor in product(dag.pred[node], dag.succ[node]):
             dag.add_edge(predecessor, successor)
         dag.remove_node(node)
+
+
+@dc.dataclass(frozen=True)
+class Location(Cloneable):
+    """
+    Object that simply keeps track of where it is upon successive __getitem__
+    operations
+    """
+
+    path: Sequence[Any] = ()
+
+    def __getitem__(self, attr: Any) -> "Location":
+        return self.clone(path=tuple(self.path) + (attr,))

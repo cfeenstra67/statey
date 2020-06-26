@@ -7,6 +7,7 @@ from typing import Optional, Sequence, Dict, Tuple, Any
 import networkx as nx
 from networkx.algorithms.dag import topological_sort, is_directed_acyclic_graph
 
+from statey import exc
 from statey.resource import (
     ResourceSession,
     BoundState,
@@ -14,7 +15,7 @@ from statey.resource import (
     Resource,
     ResourceGraph,
 )
-from statey.syms import session, symbols, exc, types
+from statey.syms import session, symbols, types
 from statey.task import (
     TaskSession,
     SessionSwitch,
@@ -92,7 +93,6 @@ class ExecuteTaskSession(PlanAction):
         # Dependencies of the configuration
         dependencies: Sequence[str],
     ) -> None:
-        task_graph = self.task_session.task_graph()
 
         input_switch_task = SessionSwitch(
             input_session=output_session,
@@ -120,6 +120,7 @@ class ExecuteTaskSession(PlanAction):
                 key=self.output_key,
                 resource_graph=resource_graph,
                 state=self.config_state,
+                finalize=self.resource.finalize
             )
             graph.add_node(output_key, task=output_graph_task, source=prefix)
 
@@ -135,7 +136,7 @@ class ExecuteTaskSession(PlanAction):
             # We should always update the state before the session
             graph.add_edge(output_key, output_switch_key)
 
-        task_graph = self.task_session.task_graph()
+        task_graph = self.task_session.task_graph(resource_graph, self.output_key)
         if not task_graph.nodes:
             graph.add_edge(input_key, output_key)
 

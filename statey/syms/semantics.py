@@ -1,7 +1,7 @@
 import abc
 import copy
 import dataclasses as dc
-from typing import Any, Optional, Callable, Dict
+from typing import Any, Optional, Callable, Dict, Sequence
 
 import statey as st
 from statey.syms import types, utils, symbols
@@ -22,6 +22,17 @@ class Semantics(abc.ABC):
 		value of None indicates that `attr` is not an attribute of this object.
 		"""
         raise NotImplementedError
+
+    def path_semantics(self, path: Sequence[Any]) -> Any:
+        """
+        Apply attr_semantics() multiple times
+        """
+        base_semantics = self
+        for attr in path:
+            base_semantics = base_semantics.attr_semantics(attr)
+            if base_semantics is None:
+                raise AttributeError(path)
+        return base_semantics
 
     @abc.abstractmethod
     def get_attr(self, value: Any, attr: Any) -> Any:

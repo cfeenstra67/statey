@@ -81,3 +81,42 @@ def struct(cls: Type[Any]) -> Type[Any]:
         st.registry.pm.register(EncodeDataClassPlugin(cls))
         return cls
     raise NotImplementedError(f"No known encoding plugin implemented for {cls}.")
+
+
+def filtered_type(data: Any, type: types.Type) -> types.Type:
+    """
+    Get a sub-structure of `type` given a set of input data
+    """
+    if isinstance(type, types.ArrayType):
+        return [sub_structure(item, type.element_type) for item in data]
+    if isinstance(type, types.StructType):
+        fields = []
+        for field in type.fields:
+            if field.name in data:
+                fields.append(field)
+        return types.StructType(fields, type.nullable)
+    return type
+
+
+def join(head: symbols.Symbol, *tail: Sequence[Any]) -> symbols.Symbol:
+    """
+    Pass all of the given argument to a symbolic function that will just
+    return the first element, but the result will depend on all of the
+    additional arguments symbolically as well
+    """
+    return symbols.Function(
+        func=lambda head, *tail: head,
+        args=(head, *tail),
+        semantics=head.semantics
+    )
+
+
+# def overlay(sym: symbols.Symbol, data: Any) -> symbols.Overlay:
+#     """
+#     Simple constructor for an overlay, making use of the filtered_type()
+#     function to generate a literal symbol for `data`
+#     """
+#     typ = filtered_type(sym.semantics.type, data)
+#     semantics = st.registry.get_semantics(typ)
+#     right = symbols.Literal(data, semantics)
+#     return symbols.Overlay(sym, right)

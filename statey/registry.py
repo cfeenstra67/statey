@@ -4,8 +4,9 @@ from typing import Dict, Any, Optional
 
 import pluggy
 
+from statey import exc
 from statey.hooks import hookspec, create_plugin_manager
-from statey.syms import types, utils, exc
+from statey.syms import types, utils
 
 
 class Registry(abc.ABC):
@@ -58,6 +59,13 @@ class Registry(abc.ABC):
 		Given serialized data, get a type serializer that can decode a serialized type of
 		that name into a native Type
 		"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_differ(self, type: types.Type) -> "Differ":
+        """
+        Given a type, get a differ instance to diff the data
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -122,6 +130,12 @@ class RegistryHooks:
 		Handle the given type and produce a TypeSerializer instance for symbols of that type
 		"""
 
+    @hookspec(firstresult=True)
+    def get_differ(self, type: types.Type, registry: Registry) -> "Encoder":
+        """
+        Handle the given type and produce an Differ instance for diffing values of that type
+        """
+
 
 def create_registry_plugin_manager():
     """
@@ -183,6 +197,12 @@ class DefaultRegistry(Registry):
         handled = self.pm.hook.get_type_serializer_from_data(data=data, registry=self)
         if handled is None:
             raise exc.NoTypeSerializerFoundForData(data)
+        return handled
+
+    def get_differ(self, type: types.Type) -> "Differ":
+        handled = self.pm.hook.get_differ(type=type, registry=self)
+        if handled is None:
+            raise exc.NoDifferFound(type)
         return handled
 
     def _get_registered_resource_name(self, resource_name: str) -> str:
