@@ -8,25 +8,21 @@ import inspect
 from typing import Any, Sequence, Dict, Callable, Type, Tuple
 
 import statey as st
-from statey.syms import utils, symbols, types
+from statey.syms import utils, types, func, impl, Object
 from statey.syms.plugins import ParseDataClassPlugin, EncodeDataClassPlugin
 
 
-def symbol(value: Any, type: types.Type = utils.MISSING) -> symbols.Symbol:
+def function(func: Callable[[Any], Any], type: types.Type = utils.MISSING, registry: "Registry" = utils.MISSING) -> func.Function:
     """
-    Generic function to create literals from values
+    Construct a Function object for a regular python function
     """
-    if isinstance(value, symbols.Symbol):
-        return value
-    if type is utils.MISSING:
-        type = st.registry.infer_type(value)
-    return symbols.Literal(arg, st.registry.get_semantics(type))
+    return utils.native_function(func, type, registry)
 
 
 @dc.dataclass(frozen=True)
 class _FunctionFactory(utils.Cloneable):
     """
-	An interface for creating symbols.Function objects
+	An interface for creating function call objects
 	"""
 
     annotation: Any = utils.MISSING
@@ -47,25 +43,11 @@ class _FunctionFactoryWithFunction(utils.Cloneable):
     factory: _FunctionFactory
 
     def __call__(self, *args, **kwargs):
-        # If we can ge the function signature, we can use that to better infer the arg types
-        try:
-            inspect.signature(self.func)
-        except ValueError:
-            wrapped_args = list(map(symbol, args))
-            wrapped_kwargs = {key: symbol(val) for key, val in kwargs.items()}
-            wrapped_return = st.registry.get_type(self.factory.annotation)
-        else:
-            wrapped_args, wrapped_kwargs, wrapped_return = utils.wrap_function_call(
-                st.registry, self.func, *args, **kwargs
-            )
-            if self.factory.annotation is not utils.MISSING:
-                wrapped_return = st.registry.get_type(self.factory.annotation)
-        semantics = st.registry.get_semantics(wrapped_return)
-        return symbols.Function(
-            semantics=semantics,
+        return utils.wrap_function_call(
             func=self.func,
-            args=wrapped_args,
-            kwargs=wrapped_kwargs,
+            args=args,
+            kwargs=kwargs,
+            return_annotation=self.factory.annotation
         )
 
 
@@ -99,40 +81,47 @@ def filtered_type(data: Any, type: types.Type) -> types.Type:
     return type
 
 
-def join(head: symbols.Symbol, *tail: Sequence[Any]) -> symbols.Symbol:
+def join(head: Object, *tail: Sequence[Any]) -> Object:
     """
     Pass all of the given argument to a symbolic function that will just
     return the first element, but the result will depend on all of the
     additional arguments symbolically as well
     """
-    return symbols.Function(
-        func=lambda head, *tail: head, args=(head, *tail), semantics=head.semantics
-    )
+    def join_func(left: head.__type, right: Sequence[Any]) -> head.__type:
+        return left
+
+    new_func = function(join_func)
+    new_impl = impl.FunctionCall(new_func, (head, tail))
+
+    return Object(new_impl)
 
 
 class _StructSymbolFactory:
     """
-    Utility for simply create struct symbols
+    Utility for simply create struct objects
     """
-    def new(self, fields: Sequence[Tuple[str, Any]]) -> symbols.StructSymbol:
+
+    def new(self, fields: Sequence[Tuple[str, Any]]) -> Object:
         out_fields = []
         for name, value in fields:
-            out_fields.append(symbols.StructSymbolField(name, symbol(value)))
-        return symbols.StructSymbol(out_fields)
+            out_fields.append(impl.StructField(name, Object(value)))
+        return Object(impl.Struct(out_fields))
 
-    def dict(self, data: Dict[str, Any]) -> symbols.StructSymbol:
+    def dict(self, data: Dict[str, Any]) -> Object:
         return self.new(data.items())
 
-    def __call__(self, *args: Sequence[Tuple[str, Any]], **kwargs: Dict[str, Any]) -> symbols.StructSymbol:
+    def __call__(
+        self, *args: Sequence[Tuple[str, Any]], **kwargs: Dict[str, Any]
+    ) -> Object:
         """
-        'call' factory method. Pass a dictionary with symbols or 
+        'call' factory method.
         """
         items = []
         items.extend(args)
         items.extend(kwargs.items())
         return self.new(args)
 
-    def __getitem__(self, fields: Sequence[slice]) -> symbols.StructSymbol:
+    def __getitem__(self, fields: Sequence[slice]) -> Object:
         """
         'getitem' interfce for creating structs using __getitem__ syntax
         """

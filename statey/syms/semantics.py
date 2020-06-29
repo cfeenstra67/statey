@@ -4,7 +4,7 @@ import dataclasses as dc
 from typing import Any, Optional, Callable, Dict, Sequence
 
 import statey as st
-from statey.syms import types, utils, symbols
+from statey.syms import types, utils, Object
 
 
 class Semantics(abc.ABC):
@@ -60,10 +60,9 @@ class Semantics(abc.ABC):
     def expand(self, value: Any) -> Any:
         """
         Given a possibly symbolic, expand it to be a dictionary (possibly containing
-        symbols)
+        objects)
         """
         raise NotImplementedError
-
 
 
 @dc.dataclass(frozen=True)
@@ -93,7 +92,7 @@ class ValueSemantics(Semantics):
         return cls(type)
 
     def clone(self, value: Any) -> Any:
-        if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+        if isinstance(value, Object):
             return value.clone()
         return copy.copy(value)
 
@@ -121,8 +120,8 @@ class ArraySemantics(Semantics):
     def get_attr(self, value: Any, attr: Any) -> Any:
         if value is None:
             return None
-        if isinstance(value, symbols.Symbol):
-            return value.get_attr(attr)
+        if isinstance(value, Object):
+            return value[attr]
         if isinstance(attr, (int, slice)):
             return value[attr]
         # "exploding"
@@ -139,7 +138,7 @@ class ArraySemantics(Semantics):
         def process_value(x):
             return [self.element_semantics.map(func, item) for item in x]
 
-        if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+        if isinstance(value, Object):
             return value.map(process_value)
         return process_value(value)
 
@@ -147,13 +146,14 @@ class ArraySemantics(Semantics):
         if value is None:
             return None
 
-        if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+        if isinstance(value, Object):
             return value.clone()
         return [self.element_semantics.clone(item) for item in value]
 
     def expand(self, value: Any) -> Any:
         def func(x):
             return [self.element_semantics.expand(val) for val in x]
+
         return self.map(func, value)
 
     @classmethod
@@ -182,8 +182,8 @@ class StructSemantics(Semantics):
     def get_attr(self, value: Any, attr: Any) -> Any:
         if value is None:
             return None
-        if isinstance(value, symbols.Symbol):
-            return value.get_attr(attr)
+        if isinstance(value, Object):
+            return value[attr]
         return value[attr]
 
     def map(self, func: Callable[[Any], Any], value: Any) -> Any:
@@ -197,7 +197,7 @@ class StructSemantics(Semantics):
                 for key, semantics in self.field_semantics.items()
             }
 
-        if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+        if isinstance(value, Object):
             return value.map(process_value)
         return process_value(value)
 
@@ -205,7 +205,7 @@ class StructSemantics(Semantics):
         if value is None:
             return None
 
-        if isinstance(value, (symbols.Symbol, symbols.Unknown)):
+        if isinstance(value, Object):
             return value.clone()
         out = {}
         for key, semantics in self.field_semantics.items():

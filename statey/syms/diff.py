@@ -14,7 +14,7 @@ from typing import (
 )
 
 import statey as st
-from statey.syms import types, symbols, utils
+from statey.syms import types, utils, impl, Object
 from statey.syms.path import PathParser
 
 
@@ -57,7 +57,7 @@ class DiffConfig(utils.Cloneable):
 class Diff:
     """
     A diff represents the differences between two values. Either left or right can contain unknowns, 
-    however neither should contain symbols (i.e. they should be either fully resolve or the result of
+    however neither should contain objects (i.e. they should be either fully resolve or the result of
     Session.resolve() with allow_unknowns=True)
     """
 
@@ -66,17 +66,24 @@ class Diff:
     differ: "Differ"
     path: Sequence[Any] = ()
 
+    def __bool__(self) -> bool:
+        try:
+            next(self.flatten())
+        except StopIteration:
+            return True
+        return False
+
     def left_is_unknown(self) -> bool:
         """
         Indicate whether the left side of this diff is an `Unknown` instance
         """
-        return isinstance(self.left, symbols.Unknown)
+        return isinstance(self.left, Object) and isinstance(self.left.__impl, impl.Unknown)
 
     def right_is_unknown(self) -> bool:
         """
         Indicate whether the right side of this diff is an `Unknown` instance
         """
-        return isinstance(self.right, symbols.Unknown)
+        return isinstance(self.right, Object) and isinstance(self.right.__impl, impl.Unknown)
 
     def flatten(self, config: Optional[DiffConfig] = None) -> Iterator["Diff"]:
         """

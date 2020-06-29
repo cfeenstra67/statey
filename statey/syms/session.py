@@ -8,7 +8,7 @@ import networkx as nx
 
 import statey as st
 from statey import exc
-from statey.syms import types, symbols, utils, path
+from statey.syms import types, utils, path, impl, Object
 
 
 class Namespace(abc.ABC):
@@ -27,7 +27,7 @@ class Namespace(abc.ABC):
         self.registry = registry
 
     @abc.abstractmethod
-    def new(self, key: str, type: types.Type) -> symbols.Symbol:
+    def new(self, key: str, type: types.Type) -> Object:
         """
 		Create a new symbol for the given key and schema and add it to the current namespace.
 		Will raise an error if the key already exists.
@@ -51,14 +51,15 @@ class Namespace(abc.ABC):
 		"""
         raise NotImplementedError
 
-    def ref(self, key: str) -> symbols.Symbol:
+    def ref(self, key: str) -> Object:
         """
 		Get a reference to a key whose type is already registered in this namespace. Will raise
 		SymbolKeyError is none exists
 		"""
         typ = self.resolve(key)
         semantics = self.registry.get_semantics(typ)
-        return symbols.Reference(key, semantics, self)
+        new_impl = impl.Reference(key, self)
+        return Object(new_impl, semantics.type, self.registry)
 
     @abc.abstractmethod
     def resolve(self, key: str) -> types.Type:
@@ -80,7 +81,7 @@ class NamedSessionSetter:
     annotation: Any
     session: "Session"
 
-    def __lshift__(self, other: Any) -> symbols.Symbol:
+    def __lshift__(self, other: Any) -> Object:
         return self.session.set(self.key, other, self.annotation)
 
 
@@ -107,7 +108,7 @@ class SessionHooks:
 
 class Session(abc.ABC):
     """
-	A session contains a namespace and associated data and symbols
+	A session contains a namespace and associated data and objects
 	"""
 
     def __init__(self, ns: Namespace) -> None:
@@ -117,7 +118,7 @@ class Session(abc.ABC):
 
     def set(
         self, key: str, value: Any, annotation: Any = utils.MISSING
-    ) -> symbols.Symbol:
+    ) -> Object:
         """
 		Set the given data, using the given registry to determine a schema for value
 		"""
@@ -127,7 +128,7 @@ class Session(abc.ABC):
             value, typ = hook_resp
 
         if typ is utils.MISSING:
-            if isinstance(value, symbols.Symbol):
+            if isinstance(value, Object):
                 typ = value.type
             elif annotation is utils.MISSING:
                 typ = self.ns.registry.infer_type(value)
@@ -147,20 +148,20 @@ class Session(abc.ABC):
         self.ns.delete(key)
         self.delete_data(key)
 
-    def symbolify(self, data: Any, type: types.Type = utils.MISSING) -> symbols.Symbol:
+    def symbolify(self, data: Any, type: types.Type = utils.MISSING) -> Object:
         """
 		Convert the input data into a symbol, optionally with the given type.
 		If it is already a symbol, it will be returned unchanged.
 		"""
-        if isinstance(data, symbols.Symbol):
+        if isinstance(data, Object):
             return data
 
         if type is utils.MISSING:
             type = self.ns.registry.infer_type(data)
         semantics = self.ns.registry.get_semantics(type)
-        return symbols.Literal(value=data, semantics=semantics)
+        return Object(impl.Data(data), type, self.ns.registry)
 
-    def __lshift__(self, other: Any) -> symbols.Symbol:
+    def __lshift__(self, other: Any) -> Object:
         """
 		lshift on the top level of a session will simply convert the input to a symbol
 		using symbolify()
@@ -188,7 +189,7 @@ class Session(abc.ABC):
     # Abstract methods
     @abc.abstractmethod
     def resolve(
-        self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True
+        self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
     ) -> Any:
         """
 		Resolve the given symbol with the given input data.
@@ -198,7 +199,7 @@ class Session(abc.ABC):
     @abc.abstractmethod
     def set_data(self, key: str, data: Any) -> None:
         """
-		Set the given data at the given key. Data can be or contain symbols provided they
+		Set the given data at the given key. Data can be or contain objects provided they
 		are correctly typed. `key` must be a ROOT key, not an attribute
 		"""
         raise NotImplementedError

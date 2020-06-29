@@ -121,10 +121,10 @@ class PossiblySymbolicField(ma.fields.Field):
         self.type = type
 
     def _serialize(self, value: Any, attr: str, obj: str, **kwargs) -> Any:
-        from statey.syms import symbols
+        from statey.syms import Object
 
         # Just pass this through when serializing
-        if isinstance(value, symbols.Symbol):
+        if isinstance(value, Object):
             return value
         return self.field._serialize(value, attr, obj, **kwargs)
 
@@ -135,9 +135,9 @@ class PossiblySymbolicField(ma.fields.Field):
         data: Optional[Any] = None,
         **kwargs,
     ) -> Any:
-        from statey.syms import symbols, types
+        from statey.syms import types, Object
 
-        if not isinstance(value, symbols.Symbol):
+        if not isinstance(value, Object):
             return self.field._deserialize(value, attr, data, **kwargs)
 
         if self.type != value.type:
@@ -214,64 +214,88 @@ def infer_annotation(obj: Any) -> Any:
     return obj_type
 
 
-def wrap_function_call(
-    registry: "Registry", func: Callable[[Any], Any], *args, **kwargs
-) -> Any:
+def function_type(sig: inspect.Signature, registry: "Registry" = MISSING) -> "FunctionType":
     """
-	Given a callable, wrap its parameters and return annotation in types.Type objects from
-	the given registry
+    Convert a python function signature to a FunctionType object
+    """
+    from statey.syms import types
 
-	NOTE: func must have a signature i.e. must be a valid input to inspect.signature()
-	"""
-    from statey.syms import symbols, types
-
-    sig = inspect.signature(func)
-    bound = sig.bind(*args, **kwargs)
-
-    # Add defaults
-    for param in sig.parameters.values():
-        if param.name not in bound.arguments and param.default is not inspect._empty:
-            bound.arguments[param.name] = param.default
-
-    items = list(bound.arguments.items())
+    if registry is MISSING:
+        import statey
+        registry = statey.registry
 
     def get_type(annotation):
         if annotation is inspect._empty:
             return types.AnyType()
         return registry.get_type(annotation)
 
-    args = []
-    consumed = 0
-    for key, arg in items:
-        param = sig.parameters[key]
-        # Break at the first keyword-only argument, until then all args can be passed
-        # positionally
-        if param.kind > 2:
-            break
-        if isinstance(arg, symbols.Symbol):
-            args.append(arg)
-        else:
-            # VAR_POSITIONAL
-            if param.kind == 1:
-                typ = get_type(param.annotation)
-                semantics = registry.get_semantics(typ)
-                args.extend(symbols.Literal(a, semantics) for a in arg)
-            else:
-                typ = get_type(param.annotation)
-                args.append(symbols.Literal(arg, registry.get_semantics(typ)))
-        consumed += 1
+    out_fields = []
+    for name, param in sig.parameters.items():
+        out_fields.append(types.Field(name, get_type(param.annotation)))
 
-    kwargs = {}
-    # The rest of the params can be treated as kwargs
-    for key, arg in items[consumed:]:
-        param = sig.parameters[key]
-        if isinstance(arg, symbols.Symbol):
-            kwargs[key] = arg
-        else:
-            typ = get_type(param.annotation)
-            kwargs[key] = symbols.Literal(arg, registry.get_semantics(typ))
+    return_type = get_type(sig.return_annotation)
+    return types.NativeFunctionType(tuple(out_fields), return_type)
 
-    return args, kwargs, get_type(sig.return_annotation)
+
+def single_arg_function_type(from_type: "Type", to_type: "Type" = MISSING, arg_name: str = "x", **kwargs) -> "FunctionType":
+    """
+    Return a NativeFunctionType for a simple single-argument function
+    """
+    from statey.syms import types
+
+    if to_type is MISSING:
+        to_type = from_type
+    fields = (types.Field(arg_name, from_type),)
+    return types.NativeFunctionType(fields, to_type, **kwargs)
+
+
+def native_function(input: Callable[[Any], Any], type: "Type" = MISSING, registry: "Registry" = MISSING) -> "Function":
+    """
+    Construct a Function object for a regular python function
+    """
+    from statey.syms import func
+
+    if type is MISSING:
+        type = function_type(inspect.signature(input), registry)
+    return func.NativeFunction(type, input)
+
+
+def wrap_function_call(
+    func: Callable[[Any], Any],
+    args: Sequence[Any] = (),
+    kwargs: Optional[Dict[str, Any]] = None,
+    registry: Optional["Registry"] = None,
+    return_annotation: Any = MISSING
+) -> "Object":
+
+    from statey.syms import api, impl, types, func as func_module, Object
+
+    if registry is None:
+        from statey import registry
+
+    if kwargs is None:
+        kwargs = {}
+
+    args = tuple(map(lambda x: Object(x, registry=registry), args))
+    kwargs = {key: Object(val, registry=registry) for key, val in kwargs.items()}
+
+    try:
+        function_obj = native_function(func, registry=registry)
+    except ValueError:
+        return_annotation = func.return_annotation is return_annotation is MISSING else return_annotation
+        return_type = registry.get_type(return_annotation)
+
+        fields = []
+        for idx, arg in enumerate(args):
+            fields.append(types.Field(str(idx), arg.__type))
+
+        for name, val in kwargs.items():
+            fields.append(types.Field(name, val.__type))
+
+        func_type = types.NativeFunctionType(tuple(fields), return_type)
+        function_obj = func_module.NativeFunction(func_type, func)
+
+    return Object(impl.FunctionCall(function_obj, args, kwargs), registry=registry)
 
 
 def encodeable_dataclass_fields(data: Any) -> Sequence[dc.field]:

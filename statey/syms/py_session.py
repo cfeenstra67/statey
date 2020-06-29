@@ -9,7 +9,7 @@ from networkx.algorithms.dag import (
 )
 
 from statey import exc
-from statey.syms import types, symbols, utils, session
+from statey.syms import types, utils, session, impl, Object
 
 
 class PythonNamespace(session.Namespace):
@@ -21,7 +21,7 @@ class PythonNamespace(session.Namespace):
         super().__init__(*args, **kwargs)
         self.types = {}
 
-    def new(self, key: str, type: types.Type) -> symbols.Symbol:
+    def new(self, key: str, type: types.Type) -> Object:
         """
 		Create a new symbol for the given key and schema and add it to the current namespace
 		"""
@@ -110,7 +110,7 @@ class PythonSession(session.Session):
         return value
 
     def _build_symbol_dag(
-        self, symbol: symbols.Symbol, graph: nx.DiGraph
+        self, symbol: Object, graph: nx.DiGraph
     ) -> nx.DiGraph:
 
         syms = [(symbol, ())]
@@ -118,19 +118,19 @@ class PythonSession(session.Session):
         while syms:
             sym, downstreams = syms.pop(0)
             processed = False
-            if sym.symbol_id in graph.nodes:
+            if sym.__impl.id in graph.nodes:
                 processed = True
             else:
-                graph.add_node(sym.symbol_id, symbol=sym)
+                graph.add_node(sym.__impl.id, symbol=sym)
 
             for symbol_id in downstreams:
-                graph.add_edge(sym.symbol_id, symbol_id)
+                graph.add_edge(sym.__impl.id, symbol_id)
 
             if processed:
                 continue
 
-            for upstream in sym._upstreams(self):
-                syms.append((upstream, (sym.symbol_id,)))
+            for upstream in sym.__inst.depends_on(self):
+                syms.append((upstream, (sym.__impl.id,)))
 
         # Check that this is in fact a DAG and has no cycles
         if not is_directed_acyclic_graph(graph):
@@ -141,55 +141,54 @@ class PythonSession(session.Session):
     def _process_symbol_dag(
         self, dag: nx.DiGraph, allow_unknowns: bool = False
     ) -> None:
-
         def handle_symbol_id(symbol_id):
 
             sym = dag.nodes[symbol_id]["symbol"]
-            if 'result' in dag.nodes[symbol_id]:
-                return dag.nodes[symbol_id]['result']
+            if "result" in dag.nodes[symbol_id]:
+                return dag.nodes[symbol_id]["result"]
 
             try:
-                result = sym._apply(dag, self)
+                result = sym.__inst.apply(dag, self)
             except exc.UnknownError as err:
                 if not allow_unknowns:
                     raise
                 if err.expected is not utils.MISSING:
                     result = err.expected
                 else:
-                    result = symbols.Unknown(sym)
+                    result = Object(impl.Unknown(sym))
             else:
-                semantics = self.ns.registry.get_semantics(sym.type)
+                semantics = self.ns.registry.get_semantics(sym.__type)
                 expanded_result = semantics.expand(result)
 
                 def resolve_child(x):
-                    if not isinstance(x, symbols.Symbol) or x is sym:
+                    if not isinstance(x, Object) or x is sym:
                         return x
 
                     self._build_symbol_dag(x, dag)
-                    dag.add_edge(x.symbol_id, symbol_id)
+                    dag.add_edge(x.__impl.id, symbol_id)
 
-                    ancestors = set(nx.ancestors(dag, x.symbol_id))
-                    for sym_id in topological_sort(dag.subgraph(ancestors)):
+                    ancestors = set(nx.ancestors(dag, x.__impl.id))
+                    for sym_id in topological_sort(dag.subgraph(ancestors).copy()):
                         handle_symbol_id(sym_id)
 
-                    return handle_symbol_id(x.symbol_id)
+                    return handle_symbol_id(x.__impl.id)
 
                 result = semantics.map(resolve_child, expanded_result)
 
-            dag.nodes[symbol_id]['result'] = result
+            dag.nodes[symbol_id]["result"] = result
             return result
 
         for symbol_id in list(topological_sort(dag)):
             handle_symbol_id(symbol_id)
 
     def resolve(
-        self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True
+        self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
     ) -> Any:
 
         graph = nx.DiGraph()
         dag = self._build_symbol_dag(symbol, graph)
         self._process_symbol_dag(dag, allow_unknowns)
-        encoded = dag.nodes[symbol.symbol_id]["result"]
+        encoded = dag.nodes[symbol.__impl]["result"]
         if not decode:
             return encoded
         encoder = self.ns.registry.get_encoder(symbol.type)
@@ -197,8 +196,6 @@ class PythonSession(session.Session):
 
     def dependency_graph(self) -> nx.MultiDiGraph:
         graph = nx.MultiDiGraph()
-
-        dependent_symbols = []
 
         dag = nx.DiGraph()
 
@@ -211,22 +208,24 @@ class PythonSession(session.Session):
         ref_symbol_ids = set()
 
         for node in dag.nodes:
-            if isinstance(dag.nodes[node]['symbol'], symbols.Reference):
+            if isinstance(dag.nodes[node]["symbol"].__impl, impl.Reference):
                 ref_symbol_ids.add(node)
 
         utils.subgraph_retaining_dependencies(dag, ref_symbol_ids)
 
         for node in list(nx.topological_sort(dag)):
-            ref = dag.nodes[node]['symbol']
+            ref = dag.nodes[node]["symbol"]
 
             base, *rel_path = self.ns.path_parser.split(ref.path)
             graph.add_node(base)
 
             for pred in dag.pred[node]:
-                pref_ref = dag.nodes[pred]['symbol']
+                pref_ref = dag.nodes[pred]["symbol"]
                 pred_base, *pred_rel_path = self.ns.path_parser.split(pref_ref.path)
 
-                graph.add_edge(pred_base, base, from_path=pred_rel_path, to_path=rel_path)
+                graph.add_edge(
+                    pred_base, base, from_path=pred_rel_path, to_path=rel_path
+                )
 
         return graph
 

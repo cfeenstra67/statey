@@ -3,7 +3,7 @@ import dataclasses as dc
 from typing import Any, Callable, Optional, Type as PyType, Sequence, Dict, Union
 
 import statey as st
-from statey.syms import types, utils, symbols, encoders
+from statey.syms import types, utils, encoders, impl, Object
 
 
 class Mapper(abc.ABC):
@@ -16,7 +16,7 @@ class Mapper(abc.ABC):
     output_type: types.Type
 
     @abc.abstractmethod
-    def transform(self, symbol: symbols.Symbol, registry: st.Registry) -> Any:
+    def transform(self, symbol: Object, registry: st.Registry) -> Any:
         """
         Process encoded data, should produce an output that can be encoded by output_encoder().type
         """
@@ -28,8 +28,7 @@ class Mapper(abc.ABC):
         """
         input_encoder = registry.get_encoder(self.input_type)
         input_data = input_encoder.encode(data)
-        input_semantics = registry.get_semantics(self.input_type)
-        input_symbol = symbols.Literal(input_data, input_semantics)
+        input_symbol = Object(impl.Data(input_data), self.input_type, registry)
 
         output_symbol = self.transform(input_symbol, registry)
 
@@ -78,7 +77,7 @@ class Schema(Mapper):
 
     def __call__(
         self, arg: Any = utils.MISSING, **kwargs: Dict[str, Any]
-    ) -> symbols.Symbol:
+    ) -> Object:
         if arg is utils.MISSING:
             arg = kwargs
         return self.map(arg, st.registry)
@@ -144,20 +143,19 @@ class StructSchema(Schema):
         nullable = all(field.type.nullable for field in in_fields)
         return types.StructType(tuple(in_fields), nullable)
 
-    def transform(self, symbol: symbols.Symbol, registry: st.Registry) -> Any:
+    def transform(self, symbol: Object, registry: st.Registry) -> Any:
         def wrapped_validate(x):
             self.validator.validate(x)
             return x
 
-        symbol = symbol.map(wrapped_validate)
+        symbol = symbol.__inst.map(wrapped_validate)
 
         out = {}
         for field in self.fields:
             input = symbol[field.name] if field.attr else symbol
             out[field.name] = field.schema.transform(input, registry)
 
-        semantics = registry.get_semantics(self.output_type)
-        return symbols.Literal(out, semantics)
+        return Object(impl.Data(out), self.output_type, registry)
 
     def attr_schema(self, attr: Any) -> Optional[Schema]:
         field_map = {field.name: field.schema for field in self.fields}
@@ -189,7 +187,7 @@ class ArraySchema(Schema):
         element_type = self.element_schema.input_type
         return types.ArrayType(element_type, element_type.nullable)
 
-    def transform(self, symbol: symbols.Symbol, registry: st.Registry) -> Any:
+    def transform(self, symbol: Object, registry: st.Registry) -> Any:
         def validate_and_transform(data):
             self.validator.validate(data)
             if data is None:
@@ -198,12 +196,12 @@ class ArraySchema(Schema):
             out = []
             element_semantics = registry.get_semantics(self.element_schema.input_type)
             for item in data:
-                lit = symbols.Literal(item, element_semantics)
+                lit = Object(impl.Data(item), self.element_schema.input_type, registry)
                 out.append(self.element_schema.transform(lit, registry))
 
             return out
 
-        return symbol.map(validate_and_transform)
+        return symbol.__inst.map(validate_and_transform)
 
     def attr_schema(self, attr: Any) -> Optional[Schema]:
         if isinstance(attr, int):
@@ -229,12 +227,12 @@ class ValueSchema(Schema):
         if self.output_type is utils.MISSING:
             self.__dict__["output_type"] = self.input_type
 
-    def transform(self, symbol: symbols.Symbol, registry: st.Registry) -> Any:
+    def transform(self, symbol: Object, registry: st.Registry) -> Any:
         def validate(data):
             self.validator.validate(data)
             return data
 
-        symbol = symbol.map(validate)
+        symbol = symbol.__inst.map(validate)
         return self.mapper(symbol)
 
     def attr_schema(self, attr: Any) -> Optional[Schema]:
@@ -426,6 +424,8 @@ class StructSchemaFactory(SchemaFactory, utils.Cloneable):
         struct['a': integer, 'b': array[integer]] - use slices to add fields
         """
         inst = self
+        if not isinstance(fields, (list, tuple)):
+            fields = [fields]
         for tup in fields:
             inst = inst.add(tup.start, tup.stop)
         return inst

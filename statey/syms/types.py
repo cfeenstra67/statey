@@ -174,7 +174,7 @@ class ArrayType(AnyType):
 
 
 @dc.dataclass(frozen=True)
-class StructField:
+class Field:
     """
 	Contains information about a single field in a StructType
 	"""
@@ -190,7 +190,7 @@ class StructType(AnyType):
 	may or may not be null
 	"""
 
-    fields: Sequence[StructField]
+    fields: Sequence[Field]
     nullable: bool = True
 
     def __post_init__(self) -> None:
@@ -220,7 +220,7 @@ class StructType(AnyType):
             [type_name, lbrace, comma_and_space.join(field_strings), rbrace, suffix]
         )
 
-    def __getitem__(self, name: str) -> StructField:
+    def __getitem__(self, name: str) -> Field:
         """
 		Fetch schema fields by name
 		"""
@@ -237,3 +237,41 @@ class StructType(AnyType):
 
 
 EmptyType = StructType(())
+
+
+@dc.dataclass(frozen=True, repr=False)
+class FunctionType(StructType):
+    """
+    First class functions :)
+    """
+    args: Sequence[Field]
+    return_type: Type
+    # Functions can never be nullable
+    nullable: bool = dc.field(init=False, default=False)
+    fields: Sequence[Field] = dc.field(init=False, default=None)
+
+    def __post_init__(self) -> None:
+        self.__dict__['fields'] = (
+            Field("args", StructType(self.args, not self.args)),
+            Field("return", self.return_type),
+        )
+
+    @property
+    def name(self) -> str:
+        return "function"
+
+
+@dc.dataclass(frozen=True, repr=False)
+class NativeFunctionType(FunctionType):
+    """
+    Regular python implementation of FunctionType
+    """
+    def __post_init__(self) -> None:
+        self.__dict__['fields'] += (
+            # Serialized function object
+            Field("serialized_func", StringType(False)),
+        )
+
+    @property
+    def name(self) -> str:
+        return "native_function"
