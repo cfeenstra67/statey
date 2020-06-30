@@ -16,7 +16,7 @@ from statey.fsm import (
     MachineResource,
 )
 
-from statey.syms.api import F, join, struct, function
+from statey.syms.api import F, join, struct, function, map
 
 from statey.syms.func import Function
 

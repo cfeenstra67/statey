@@ -194,8 +194,6 @@ class DefaultRegistry(Registry):
     ) -> types.Type:
         if meta is None:
             meta = {}
-        if isinstance(annotation, types.Type):
-            return annotation
         handled = self.pm.hook.get_type(annotation=annotation, meta=meta, registry=self)
         if handled is None:
             raise exc.NoTypeFound(annotation)

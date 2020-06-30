@@ -19,6 +19,18 @@ def function(func: Callable[[Any], Any], type: types.Type = utils.MISSING, regis
     return utils.native_function(func, type, registry)
 
 
+def map(func: Callable[[Any], Any], value: Any, return_type: types.Type = utils.MISSING) -> Any:
+    """
+    Apply the function to the given object. If it is an object, convert `func` to a native
+    function and apply it to the object's underlying value
+    """
+    if not isinstance(value, Object):
+        return func(value)
+    func_type = utils.single_arg_function_type(value._type, return_type)
+    func_obj = function(func, func_type)
+    return value._inst.map(func_obj)
+
+
 @dc.dataclass(frozen=True)
 class _FunctionFactory(utils.Cloneable):
     """
@@ -87,13 +99,12 @@ def join(head: Object, *tail: Sequence[Any]) -> Object:
     return the first element, but the result will depend on all of the
     additional arguments symbolically as well
     """
-    def join_func(left: head._type, right: Sequence[Any]) -> head._type:
+    tail_type = st.registry.infer_type(tail)
+
+    def join_func(left: head._type, right: tail_type) -> head._type:
         return left
 
-    new_func = function(join_func)
-    new_impl = impl.FunctionCall(new_func, (head, tail))
-
-    return Object(new_impl)
+    return utils.wrap_function_call(join_func, (head, tail))
 
 
 class _StructSymbolFactory:

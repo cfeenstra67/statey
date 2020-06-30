@@ -9,18 +9,18 @@ from statey.syms import types, utils, Object
 
 class Semantics(abc.ABC):
     """
-	Semantics define how we should treat a type within our symbolic API e.g.
-	what type does an attribute of an instance of a certain type have?
-	"""
+    Semantics define how we should treat a type within our symbolic API e.g.
+    what type does an attribute of an instance of a certain type have?
+    """
 
     type: types.Type
 
     @abc.abstractmethod
     def attr_semantics(self, attr: Any) -> Optional["Semantics"]:
         """
-		Return the semantics of the given attribute of this object, if any. A return
-		value of None indicates that `attr` is not an attribute of this object.
-		"""
+        Return the semantics of the given attribute of this object, if any. A return
+        value of None indicates that `attr` is not an attribute of this object.
+        """
         raise NotImplementedError
 
     def path_semantics(self, path: Sequence[Any]) -> Any:
@@ -37,23 +37,23 @@ class Semantics(abc.ABC):
     @abc.abstractmethod
     def get_attr(self, value: Any, attr: Any) -> Any:
         """
-		Given a value, get the attribute value from an encoded value
-		"""
+        Given a value, get the attribute value from an encoded value
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def map(self, func: Callable[[Any], Any], value: Any) -> Any:
+    def map_objects(self, func: Callable[[Any], Any], value: Any) -> Any:
         """
-		Assuming that `value` is value or symbol of this type, return `value`
-		applied to this object and any attributes (in that order)
-		"""
+        Assuming that `value` is value or symbol of this type, apply `func` to it
+        (if it is an object) or any child objects otherwise
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def clone(self, value: Any) -> Any:
         """
-		Return a semantically-correct deep copy of the given value
-		"""
+        Return a semantically-correct deep copy of the given value
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -68,9 +68,9 @@ class Semantics(abc.ABC):
 @dc.dataclass(frozen=True)
 class ValueSemantics(Semantics):
     """
-	Semantics for regular values--these are the default semantics but structural types offer
-	additional functionality.
-	"""
+    Semantics for regular values--these are the default semantics but structural types offer
+    additional functionality.
+    """
 
     type: types.Type
 
@@ -80,8 +80,10 @@ class ValueSemantics(Semantics):
     def get_attr(self, value: Any, attr: Any) -> Any:
         raise AttributeError(attr)
 
-    def map(self, func: Callable[[Any], Any], value: Any) -> Any:
-        return func(value)
+    def map_objects(self, func: Callable[[Any], Any], value: Any) -> Any:
+        if isinstance(value, Object):
+            return func(value)
+        return value
 
     def expand(self, value: Any) -> Any:
         return value
@@ -100,8 +102,8 @@ class ValueSemantics(Semantics):
 @dc.dataclass(frozen=True)
 class ArraySemantics(Semantics):
     """
-	Semantics for ArrayTypes
-	"""
+    Semantics for ArrayTypes
+    """
 
     type: types.Type
     element_semantics: Semantics
@@ -130,17 +132,12 @@ class ArraySemantics(Semantics):
             out.append(self.element_semantics.get_attr(item, attr))
         return out
 
-    def map(self, func: Callable[[Any], Any], value: Any) -> Any:
-        value = func(value)
+    def map_objects(self, func: Callable[[Any], Any], value: Any) -> Any:
+        if isinstance(value, Object):
+            return func(value)
         if value is None:
             return None
-
-        def process_value(x):
-            return [self.element_semantics.map(func, item) for item in x]
-
-        if isinstance(value, Object):
-            return value.map(process_value)
-        return process_value(value)
+        return [self.element_semantics.map_objects(func, item) for item in value]
 
     def clone(self, value: Any) -> Any:
         if value is None:
@@ -151,10 +148,13 @@ class ArraySemantics(Semantics):
         return [self.element_semantics.clone(item) for item in value]
 
     def expand(self, value: Any) -> Any:
+
+        from statey.syms import api
+
         def func(x):
             return [self.element_semantics.expand(val) for val in x]
 
-        return self.map(func, value)
+        return api.map(func, value)
 
     @classmethod
     @st.hookimpl
@@ -168,8 +168,8 @@ class ArraySemantics(Semantics):
 @dc.dataclass(frozen=True)
 class StructSemantics(Semantics):
     """
-	Semantics for StructTypes
-	"""
+    Semantics for StructTypes
+    """
 
     type: types.Type
     field_semantics: Dict[str, Semantics]
@@ -186,20 +186,15 @@ class StructSemantics(Semantics):
             return value[attr]
         return value[attr]
 
-    def map(self, func: Callable[[Any], Any], value: Any) -> Any:
-        value = func(value)
+    def map_objects(self, func: Callable[[Any], Any], value: Any) -> Any:
+        if isinstance(value, Object):
+            return func(value)
         if value is None:
             return None
-
-        def process_value(x):
-            return {
-                key: semantics.map(func, x[key])
-                for key, semantics in self.field_semantics.items()
-            }
-
-        if isinstance(value, Object):
-            return value.map(process_value)
-        return process_value(value)
+        return {
+            key: semantics.map_objects(func, value[key])
+            for key, semantics in self.field_semantics.items()
+        }
 
     def clone(self, value: Any) -> Any:
         if value is None:
@@ -235,7 +230,7 @@ SEMANTICS_CLASSES = [ValueSemantics, ArraySemantics, StructSemantics]
 
 def register() -> None:
     """
-	Replace default encoder with encoders defined here
-	"""
+    Replace default encoder with encoders defined here
+    """
     for cls in SEMANTICS_CLASSES:
         st.registry.pm.register(cls)

@@ -84,9 +84,8 @@ class FileMachine(Machine):
     def get_expected(
         self, session: TaskSession, data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        string_semantics = session.ns.registry.get_semantics(S.String.t)
         return {
-            "location": string_semantics.map(os.path.realpath, data["location"]),
+            "location": st.map(os.path.realpath, data["location"]),
             "data": data["data"],
         }
 
@@ -233,8 +232,7 @@ class DirectoryMachine(Machine):
             return current_literal
 
         result_path = session["rename_dir"] << (self.rename_dir(current_literal.location, input.location))
-        string_semantics = session.ns.registry.get_semantics(S.String.t)
-        return st.struct["location": result_path] >> {"location": string_semantics.map(os.path.realpath, config.data["location"])}
+        return st.struct["location": result_path] >> {"location": st.map(os.path.realpath, config.data["location"])}
 
     @transition("DOWN", "UP")
     def create(
@@ -246,8 +244,7 @@ class DirectoryMachine(Machine):
     ) -> Object:
 
         result_path = session["create_dir"] << self.create_dir(input.location)
-        string_semantics = session.ns.registry.get_semantics(S.String.t)
-        return st.struct["location": result_path] >> {"location": string_semantics.map(os.path.realpath, config.data["location"])}
+        return st.struct["location": result_path] >> {"location": st.map(os.path.realpath, config.data["location"])}
 
     @transition("UP", "DOWN")
     def delete(

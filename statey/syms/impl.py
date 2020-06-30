@@ -139,10 +139,9 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
         syms = []
 
         def collect_objects(x):
-            if isinstance(x, Object):
-                syms.append(x)
+            syms.append(x)
 
-        semantics.map(collect_objects, expanded)
+        semantics.map_objects(collect_objects, expanded)
         return syms
 
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
@@ -190,16 +189,14 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         semantics = obj._registry.get_semantics(obj._type)
-        data = self.value
-        expanded = semantics.expand(data)
+        expanded = semantics.expand(self.value)
 
         syms = []
 
         def collect_objects(x):
-            if isinstance(x, Object):
-                syms.append(x)
+            syms.append(x)
 
-        semantics.map(collect_objects, expanded)
+        semantics.map_objects(collect_objects, expanded)
         return syms
 
     def apply_alone(self, obj: Object) -> Any:

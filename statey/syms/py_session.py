@@ -161,9 +161,6 @@ class PythonSession(session.Session):
                 expanded_result = semantics.expand(result)
 
                 def resolve_child(x):
-                    if not isinstance(x, Object) or x is sym:
-                        return x
-
                     self._build_symbol_dag(x, dag)
                     dag.add_edge(x._impl.id, symbol_id)
 
@@ -173,7 +170,7 @@ class PythonSession(session.Session):
 
                     return handle_symbol_id(x._impl.id)
 
-                result = semantics.map(resolve_child, expanded_result)
+                result = semantics.map_objects(resolve_child, expanded_result)
 
             dag.nodes[symbol_id]["result"] = result
             return result

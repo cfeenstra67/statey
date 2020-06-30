@@ -81,6 +81,15 @@ class ParseSequencePlugin:
         element_type = registry.get_type(inner) if inner else registry.any_type
         return self.array_type_cls(element_type, meta.get("nullable", False))
 
+    @st.hookimpl
+    def infer_type(self, obj: Any, registry: "Registry") -> types.Type:
+        if not isinstance(obj, (list, tuple)):
+            return None
+        element_types = {registry.infer_type(item) for item in obj}
+        if len(element_types) != 1 or element_types == {types.AnyType()}:
+            return None
+        return types.ArrayType(element_types.pop(), False)
+
 
 @dc.dataclass(frozen=True)
 class ParseDataClassPlugin:
@@ -141,11 +150,39 @@ class LiteralPlugin:
     """
     @st.hookimpl
     def get_object(self, value: Any, registry: st.Registry) -> "Object":
+        if isinstance(value, st.Object):
+            return None
         try:
             value_type = registry.infer_type(value)
         except st.exc.NoTypeFound:
             return None
         return st.Object(impl.Data(value, value_type), registry=registry)
+
+
+@dc.dataclass(frozen=True)
+class BasicObjectBehaviors:
+    """
+    Basic behavior for inferring types from Objects
+    """
+    @st.hookimpl
+    def get_object(self, value: Any, registry: st.Registry) -> "Object":
+        if isinstance(value, st.Object):
+            return value
+        return None
+
+    @st.hookimpl
+    def infer_type(self, obj: Any, registry: "Registry") -> types.Type:
+        if isinstance(obj, st.Object):
+            return obj._type
+        return None
+
+    @st.hookimpl
+    def get_type(
+        self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]
+    ) -> types.Type:
+        if isinstance(annotation, types.Type):
+            return annotation
+        return None
 
 
 def default_plugins() -> Sequence[Any]:
@@ -163,6 +200,7 @@ def default_plugins() -> Sequence[Any]:
         ValuePredicatePlugin(bool, types.BooleanType),
         ParseSequencePlugin(types.ArrayType),
         LiteralPlugin(),
+        BasicObjectBehaviors()
     ]
 
 

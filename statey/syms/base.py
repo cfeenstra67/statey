@@ -32,6 +32,7 @@ class OrderedAttributeAccess(AttributeAccess):
 				return accessor.get_attr(obj, attr)
 			except KeyError:
 				pass
+		print("FAILING", obj, attr, self.accessors)
 		raise KeyError(attr)
 
 
