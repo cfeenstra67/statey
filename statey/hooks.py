@@ -30,7 +30,7 @@ def register_default_plugins(
     type_serializers: bool = True,
     resources: bool = True,
     differs: bool = True,
-    methods: bool = True
+    methods: bool = True,
 ) -> None:
     """
 	Convenience method to register all of the default provided hooks for the given

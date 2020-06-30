@@ -15,6 +15,7 @@ class ObjectImplementation(base.AttributeAccess):
     """
     Some implementation for an object
     """
+
     @abc.abstractmethod
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         """
@@ -61,7 +62,7 @@ class ObjectImplementation(base.AttributeAccess):
         """
         Render a string representation of an object with this implementation
         """
-        return f'{type(obj).__name__}[{obj._type}]({repr(self)})'
+        return f"{type(obj).__name__}[{obj._type}]({repr(self)})"
 
     def type(self) -> types.Type:
         """
@@ -84,6 +85,7 @@ class FunctionalAttributeAccessMixin:
     """
     Get attributes by simplying applying semantic get_attr function within
     """
+
     def get_attr(self, obj: Object, attr: str) -> Any:
         from statey.syms import api
 
@@ -94,7 +96,9 @@ class FunctionalAttributeAccessMixin:
             raise KeyError(attr)
 
         getter_func = lambda x: semantics.get_attr(x, attr)
-        func_type = utils.single_arg_function_type(semantics.type, attr_semantics.type, "x")
+        func_type = utils.single_arg_function_type(
+            semantics.type, attr_semantics.type, "x"
+        )
         function_obj = api.function(getter_func, func_type)
         return self.map(obj, function_obj)
 
@@ -103,6 +107,7 @@ class FunctionalMappingMixin:
     """
     Defines default map() behavior that works for almost all cases
     """
+
     def map(self, obj: Object, function: func.Function) -> Object:
         new_impl = FunctionCall(function, (obj,))
         return Object(new_impl, function.type.return_type, obj._registry)
@@ -119,6 +124,7 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
     """
     References some key in a session, possibly with some relative path
     """
+
     path: str
     ns: "Namespace" = dc.field(repr=False, hash=False, compare=False)
 
@@ -149,7 +155,7 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
 
     @property
     def id(self) -> Any:
-        return f'{type(self).__name__}:{self.path}'
+        return f"{type(self).__name__}:{self.path}"
 
     def type(self) -> types.Type:
         return self.ns.resolve(self.path)
@@ -158,13 +164,14 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
         return self.ns.registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f'{type(self).__name__}[{obj._type}]({self.path})'
+        return f"{type(self).__name__}[{obj._type}]({self.path})"
 
 
 class StandaloneObjectImplementation(ObjectImplementation):
     """
     Object implementation for impementations that never have dependencies
     """
+
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         return ()
 
@@ -184,6 +191,7 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
     """
     Object implementation for concrete data
     """
+
     value: Any
     value_type: Optional[types.Type] = None
 
@@ -209,7 +217,7 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         return self.value_type
 
     def object_repr(self, obj: "Object") -> str:
-        return f'{type(self).__name__}[{obj._type}]({repr(self.value)})'
+        return f"{type(self).__name__}[{obj._type}]({repr(self.value)})"
 
     def get_attr(self, obj: Object, attr: str) -> Any:
         semantics = obj._registry.get_semantics(obj._type)
@@ -226,15 +234,20 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
     """
     Object implementation for a function and associated arguments
     """
+
     func: func.Function
     args: dc.InitVar[Sequence[Object]] = ()
     kwargs: dc.InitVar[Optional[Dict[str, Object]]] = None
     arguments: Dict[str, Object] = dc.field(init=False, default=None)
 
-    def __post_init__(self, args: Sequence[Object], kwargs: Optional[Dict[str, Object]]) -> None:
+    def __post_init__(
+        self, args: Sequence[Object], kwargs: Optional[Dict[str, Object]]
+    ) -> None:
         if kwargs is None:
             kwargs = {}
-        self.__dict__['arguments'] = utils.bind_function_args(self.func.type, args, kwargs)
+        self.__dict__["arguments"] = utils.bind_function_args(
+            self.func.type, args, kwargs
+        )
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         yield from self.arguments.values()
@@ -262,8 +275,10 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
         return self.func.type.return_type
 
     def object_repr(self, obj: "Object") -> str:
-        kwarg_reprs = ', '.join('='.join([key, repr(val)]) for key, val in self.arguments.items())
-        return f'{type(self.func).__name__}Call[{obj._type}]({self.func.name}({kwarg_reprs}))'
+        kwarg_reprs = ", ".join(
+            "=".join([key, repr(val)]) for key, val in self.arguments.items()
+        )
+        return f"{type(self.func).__name__}Call[{obj._type}]({self.func.name}({kwarg_reprs}))"
 
 
 @dc.dataclass(frozen=True)
@@ -298,6 +313,7 @@ class Future(FunctionalBehaviorMixin, ObjectImplementation):
     """
     A future is a value that may or may not yet be set
     """
+
     refs: Sequence[Object] = ()
     result: FutureResult = dc.field(default_factory=FutureResult)
     return_type: Optional[types.Type] = None
@@ -338,7 +354,7 @@ class Future(FunctionalBehaviorMixin, ObjectImplementation):
         return self.return_type
 
     def object_repr(self, obj: "Object") -> str:
-        return f'{type(self).__name__}[{obj._type}]({self.result.result})'
+        return f"{type(self).__name__}[{obj._type}]({self.result.result})"
 
 
 @dc.dataclass(frozen=True)
@@ -346,12 +362,13 @@ class Unknown(ObjectImplementation):
     """
     Some value that is not known
     """
+
     obj: Object
     refs: Sequence[Object] = ()
 
     def __post_init__(self) -> None:
         while isinstance(self.obj._impl, Unknown):
-            self.__dict__['obj'] = self.obj._impl.obj
+            self.__dict__["obj"] = self.obj._impl.obj
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         return self.refs
@@ -360,7 +377,6 @@ class Unknown(ObjectImplementation):
         raise exc.UnknownError(self.refs)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-
         def handle(result):
 
             if isinstance(result, Object):
@@ -374,8 +390,8 @@ class Unknown(ObjectImplementation):
                     return handle(result(*args, **kwargs))
 
                 return wrapper
-        
-            raise TypeError(f'Unhandled attribute result type {result}! Failing')
+
+            raise TypeError(f"Unhandled attribute result type {result}! Failing")
 
         return handle(self.obj[attr])
 
@@ -391,13 +407,15 @@ class Unknown(ObjectImplementation):
         return self.obj._registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f'{type(self).__name__}[{self.obj._type}]({self.obj})'
+        return f"{type(self).__name__}[{self.obj._type}]({self.obj})"
+
 
 @dc.dataclass(frozen=True)
 class StructField:
     """
     Single field in a StructSymbol
     """
+
     name: str
     value: Object
 
@@ -407,6 +425,7 @@ class Struct(FunctionalMappingMixin, ObjectImplementation):
     """
     Combines multiple objects into a struct
     """
+
     fields: Sequence[StructField]
 
     def get_attr(self, obj: Object, attr: str) -> Any:
@@ -431,8 +450,10 @@ class Struct(FunctionalMappingMixin, ObjectImplementation):
         return types.StructType(fields, False)
 
     def object_repr(self, obj: "Object") -> str:
-        field_reprs = ', '.join('='.join([field.name, repr(field.value)]) for field in self.fields)
-        return f'{type(self).__name__}[{obj._type}]({field_reprs})'
+        field_reprs = ", ".join(
+            "=".join([field.name, repr(field.value)]) for field in self.fields
+        )
+        return f"{type(self).__name__}[{obj._type}]({field_reprs})"
 
 
 @dc.dataclass(frozen=True)
@@ -440,6 +461,7 @@ class ExpectedValue(ObjectImplementation):
     """
     Defines some parent object and an expectation of what the value will be after resolved
     """
+
     obj: Object
     expected: Any
 
@@ -451,7 +473,6 @@ class ExpectedValue(ObjectImplementation):
         return Object(new_impl)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-
         def handle(result):
 
             if isinstance(result, Object):
@@ -467,8 +488,8 @@ class ExpectedValue(ObjectImplementation):
                     return handle(result(*args, **kwargs))
 
                 return wrapper
-        
-            raise TypeError(f'Unhandled attribute result type {result}! Failing')
+
+            raise TypeError(f"Unhandled attribute result type {result}! Failing")
 
         return handle(self.obj[attr])
 
@@ -495,4 +516,4 @@ class ExpectedValue(ObjectImplementation):
         return self.obj._registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f'{type(self).__name__}[{obj._type}]({self.expected}, from={self.obj})'
+        return f"{type(self).__name__}[{obj._type}]({self.expected}, from={self.obj})"

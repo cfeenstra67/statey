@@ -148,6 +148,7 @@ class LiteralPlugin:
     """
     Create Data literals from python objects whose types can be inferred directly
     """
+
     @st.hookimpl
     def get_object(self, value: Any, registry: st.Registry) -> "Object":
         if isinstance(value, st.Object):
@@ -164,6 +165,7 @@ class BasicObjectBehaviors:
     """
     Basic behavior for inferring types from Objects
     """
+
     @st.hookimpl
     def get_object(self, value: Any, registry: st.Registry) -> "Object":
         if isinstance(value, st.Object):
@@ -200,7 +202,7 @@ def default_plugins() -> Sequence[Any]:
         ValuePredicatePlugin(bool, types.BooleanType),
         ParseSequencePlugin(types.ArrayType),
         LiteralPlugin(),
-        BasicObjectBehaviors()
+        BasicObjectBehaviors(),
     ]
 
 

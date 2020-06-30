@@ -109,9 +109,7 @@ class PythonSession(session.Session):
 
         return value
 
-    def _build_symbol_dag(
-        self, symbol: Object, graph: nx.DiGraph
-    ) -> nx.DiGraph:
+    def _build_symbol_dag(self, symbol: Object, graph: nx.DiGraph) -> nx.DiGraph:
 
         syms = [(symbol, ())]
 
@@ -218,7 +216,9 @@ class PythonSession(session.Session):
 
             for pred in dag.pred[node]:
                 pref_ref = dag.nodes[pred]["symbol"]
-                pred_base, *pred_rel_path = self.ns.path_parser.split(pref_ref._impl.path)
+                pred_base, *pred_rel_path = self.ns.path_parser.split(
+                    pref_ref._impl.path
+                )
 
                 graph.add_edge(
                     pred_base, base, from_path=pred_rel_path, to_path=rel_path

@@ -75,9 +75,7 @@ class Schema(Mapper):
     metadata: Dict[str, Any]
     validator: Validator
 
-    def __call__(
-        self, arg: Any = utils.MISSING, **kwargs: Dict[str, Any]
-    ) -> Object:
+    def __call__(self, arg: Any = utils.MISSING, **kwargs: Dict[str, Any]) -> Object:
         if arg is utils.MISSING:
             arg = kwargs
         return self.map(arg, st.registry)
@@ -144,12 +142,13 @@ class StructSchema(Schema):
         return types.StructType(tuple(in_fields), nullable)
 
     def transform(self, symbol: Object, registry: st.Registry) -> Any:
-        
         def wrapped_validate(x: self.input_type) -> self.input_type:
             self.validator.validate(x)
             return x
 
-        symbol = symbol._inst.map(utils.native_function(wrapped_validate, registry=registry))
+        symbol = symbol._inst.map(
+            utils.native_function(wrapped_validate, registry=registry)
+        )
 
         out = {}
         for field in self.fields:
@@ -189,7 +188,6 @@ class ArraySchema(Schema):
         return types.ArrayType(element_type, element_type.nullable)
 
     def transform(self, symbol: Object, registry: st.Registry) -> Any:
-
         def validate_and_transform(data: self.input_type) -> self.output_type:
             self.validator.validate(data)
             if data is None:
@@ -203,7 +201,9 @@ class ArraySchema(Schema):
 
             return out
 
-        return symbol._inst.map(utils.native_function(validate_and_transform, registry=registry))
+        return symbol._inst.map(
+            utils.native_function(validate_and_transform, registry=registry)
+        )
 
     def attr_schema(self, attr: Any) -> Optional[Schema]:
         if isinstance(attr, int):
@@ -230,7 +230,6 @@ class ValueSchema(Schema):
             self.__dict__["output_type"] = self.input_type
 
     def transform(self, symbol: Object, registry: st.Registry) -> Any:
-
         def validate(data: self.input_type) -> self.input_type:
             self.validator.validate(data)
             return data

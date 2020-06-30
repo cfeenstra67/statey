@@ -615,7 +615,9 @@ class DefaultMigrator(Migrator):
                     config_state=resource.s.null_state,
                     previous_state=previous_state,
                     resource=resource,
-                    input_symbol=config_session.ns.registry.object(previous_resolved, previous_state.state.type),
+                    input_symbol=config_session.ns.registry.object(
+                        previous_resolved, previous_state.state.type
+                    ),
                 )
 
                 args.update(

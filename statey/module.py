@@ -19,10 +19,4 @@
 
 
 # @dc.dataclass(frozen=True)
-# class 
-
-
-
-
-
-
+# class

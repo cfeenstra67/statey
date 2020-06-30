@@ -89,6 +89,7 @@ class NoObjectFound(SymsError):
     """
     Error indicating we could not create an object from an arbitrary value
     """
+
     def __init__(self, value: Any) -> None:
         self.value = value
         super().__init__(f"Unable to create an object from {value}.")
@@ -118,6 +119,7 @@ class NoInterfaceFactoryFound(SymsError):
     """
     Error to indicate that no interface factory could be found for the given type
     """
+
     def __init__(self, type: "Type") -> None:
         self.type = type
         super().__init__(f"No interface factory found for type: {type}.")
@@ -205,7 +207,9 @@ class UnknownError(SessionError):
     Error to short-circuit resolution when an unknown value is encountered
     """
 
-    def __init__(self, refs: Sequence["Symbol"] = (), expected: Any = utils.MISSING) -> None:
+    def __init__(
+        self, refs: Sequence["Symbol"] = (), expected: Any = utils.MISSING
+    ) -> None:
         self.refs = refs
         self.expected = expected
         super().__init__(f"Unknowns, found, refs: {self.refs}")

@@ -116,9 +116,7 @@ class Session(abc.ABC):
         self.pm = st.create_plugin_manager()
         self.pm.add_hookspecs(SessionHooks)
 
-    def set(
-        self, key: str, value: Any, annotation: Any = utils.MISSING
-    ) -> Object:
+    def set(self, key: str, value: Any, annotation: Any = utils.MISSING) -> Object:
         """
 		Set the given data, using the given registry to determine a schema for value
 		"""

@@ -12,7 +12,7 @@ from statey import (
     BoundState,
     S,
     TaskSession,
-    task
+    task,
 )
 from statey.syms import types, utils, Object
 
@@ -26,6 +26,7 @@ class StateyOS:
     """
     A few statey wrappers for OS functions
     """
+
     class path:
         @utils.native_function
         def realpath(path: str) -> str:
@@ -78,7 +79,7 @@ class FileMachine(Machine):
     @staticmethod
     @task.new
     async def rename_file(current: FileType, path: str) -> FileType:
-        os.rename(current['location'], path)
+        os.rename(current["location"], path)
         return {"data": current["data"], "location": path}
 
     def get_expected(
@@ -113,16 +114,19 @@ class FileMachine(Machine):
         flat = list(diff.flatten(diffconfig))
         if not flat:
             return st.struct[
-                "location" : StateyOS.path.realpath(input.location), "data" : input.data,
+                "location" : StateyOS.path.realpath(input.location),
+                "data" : input.data,
             ]
 
         paths = {d.path for d in flat}
-        loc_changed = ('location',) in paths
-        data_changed = ('data',) in paths
+        loc_changed = ("location",) in paths
+        data_changed = ("data",) in paths
 
         # If location changes only we can just rename the file
         if loc_changed and not data_changed:
-            return session["rename_file"] << (self.rename_file(current_literal, input.location) >> expected)
+            return session["rename_file"] << (
+                self.rename_file(current_literal, input.location) >> expected
+            )
 
         if loc_changed:
             rm_file = session["delete_file"] << self.remove_file(
@@ -158,7 +162,7 @@ class FileMachine(Machine):
         return session["delete_file"] << self.remove_file(current_literal.location)
 
 
-DirectorySchema = S.Struct["location": S.String]
+DirectorySchema = S.Struct["location" : S.String]
 
 
 class DirectoryMachine(Machine):
@@ -174,10 +178,10 @@ class DirectoryMachine(Machine):
         if state == self.null_state.state:
             return current
         out = current.data.copy()
-        path = os.path.realpath(current.data['location'])
+        path = os.path.realpath(current.data["location"])
         if not os.path.isdir(path):
             return BoundState(self.null_state, {})
-        return BoundState(current.resource_state, {'location': path})
+        return BoundState(current.resource_state, {"location": path})
 
     @staticmethod
     @task.new
@@ -231,8 +235,12 @@ class DirectoryMachine(Machine):
         if not flat:
             return current_literal
 
-        result_path = session["rename_dir"] << (self.rename_dir(current_literal.location, input.location))
-        return st.struct["location": result_path] >> {"location": st.map(os.path.realpath, config.data["location"])}
+        result_path = session["rename_dir"] << (
+            self.rename_dir(current_literal.location, input.location)
+        )
+        return st.struct["location":result_path] >> {
+            "location": st.map(os.path.realpath, config.data["location"])
+        }
 
     @transition("DOWN", "UP")
     def create(
@@ -244,7 +252,9 @@ class DirectoryMachine(Machine):
     ) -> Object:
 
         result_path = session["create_dir"] << self.create_dir(input.location)
-        return st.struct["location": result_path] >> {"location": st.map(os.path.realpath, config.data["location"])}
+        return st.struct["location":result_path] >> {
+            "location": st.map(os.path.realpath, config.data["location"])
+        }
 
     @transition("UP", "DOWN")
     def delete(
@@ -273,10 +283,7 @@ directory_resource = MachineResource("directory", DirectoryMachine)
 Directory = directory_resource.s
 
 
-RESOURCES = [
-    file_resource,
-    directory_resource
-]
+RESOURCES = [file_resource, directory_resource]
 
 
 def register() -> None:

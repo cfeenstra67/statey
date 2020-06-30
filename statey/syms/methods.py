@@ -13,6 +13,7 @@ class Method(abc.ABC):
     """
     A method is essentially a factory for creating "computed" attributes
     """
+
     @abc.abstractmethod
     def bind(self, obj: Object) -> Any:
         """
@@ -26,6 +27,7 @@ class InstanceMethod(Method):
     """
     Instance method implementation
     """
+
     func: func.Function
 
     def bind(self, obj: Object) -> Any:
@@ -38,18 +40,21 @@ class CallFunctionMethod(Method):
     """
     Some special logic required for applying functions
     """
+
     func_type: types.FunctionType
 
     def bind(self, obj: Object) -> Any:
         """
         Unlike all other methods, the __apply__ method for functions 
         """
-        def call(*args, **kwargs):
 
+        def call(*args, **kwargs):
             def apply_method(func: self.func_type) -> obj._type.return_type:
                 return utils.wrap_function_call(func, args, kwargs)
 
-            return obj._inst.map(utils.native_function(apply_method, registry=obj._registry))
+            return obj._inst.map(
+                utils.native_function(apply_method, registry=obj._registry)
+            )
 
         return call
 
@@ -58,13 +63,14 @@ class CallFunctionMethod(Method):
     def get_methods(cls, type: types.Type, registry: "Registry") -> "ObjectMethods":
         if not isinstance(type, types.FunctionType):
             return None
-        return ConstantObjectMethods({'__call__': cls(type)})
+        return ConstantObjectMethods({"__call__": cls(type)})
 
 
 class ObjectMethods(base.AttributeAccess):
     """
     Accessor interface for object methods
     """
+
     @abc.abstractmethod
     def get_method(self, name: str) -> Method:
         """
@@ -81,6 +87,7 @@ class SimpleObjectMethods(ObjectMethods):
     """
     Simple fetch a dictionary of methods via a method, and use that for the get_method function.
     """
+
     @abc.abstractmethod
     def methods(self) -> Dict[str, Method]:
         """
@@ -97,6 +104,7 @@ class ConstantObjectMethods(SimpleObjectMethods):
     """
     ObjectMethods implementation from a dict of methods by name
     """
+
     method_map: Dict[str, Method]
 
     def methods(self) -> Dict[str, Method]:
@@ -111,6 +119,7 @@ class CompositeObjectMethods(ObjectMethods):
     """
     Class to combine multiple ObjectMethods instances into one
     """
+
     object_methods: Sequence[ObjectMethods]
 
     def get_method(self, name: str) -> Method:
@@ -125,7 +134,7 @@ class CompositeObjectMethods(ObjectMethods):
 def method_from_function(
     function_obj: func.Function,
     return_type: types.Type = utils.MISSING,
-    registry: "Registry" = utils.MISSING
+    registry: "Registry" = utils.MISSING,
 ) -> Method:
     """
     Construct a method given a function. A method a function that is accessed as an
@@ -143,8 +152,11 @@ def method_from_function(
 
     def bind(self: instance_arg.type) -> method_type:
         def bound(*args, **kwargs):
-            arguments = utils.bind_function_args(function_obj.type, (self,) + args, kwargs)
+            arguments = utils.bind_function_args(
+                function_obj.type, (self,) + args, kwargs
+            )
             return function_obj.apply(arguments)
+
         return utils.native_function(bound, type=method_type, registry=registry)
 
     method_function_obj = utils.native_function(bind, registry=registry)
@@ -154,14 +166,17 @@ def method_from_function(
 def method(
     func: Callable[[Any], Any] = utils.MISSING,
     return_type: types.Type = utils.MISSING,
-    registry: "Registry" = utils.MISSING
+    registry: "Registry" = utils.MISSING,
 ) -> Any:
     """
     method_from_function made into a convenient decorator.
     """
+
     def dec(_func):
         func_obj = utils.native_function(_func, registry=registry)
-        method = method_from_function(func_obj, return_type=return_type, registry=registry)
+        method = method_from_function(
+            func_obj, return_type=return_type, registry=registry
+        )
         _func._statey_method = method
         return _func
 
@@ -172,6 +187,7 @@ class DeclarativeMethodsMeta(type(ObjectMethods)):
     """
     Collect method objects declared 
     """
+
     def __new__(
         cls, name: str, bases: Sequence[PyType], attrs: Dict[str, Any]
     ) -> PyType:
@@ -180,13 +196,13 @@ class DeclarativeMethodsMeta(type(ObjectMethods)):
         methods = methods.copy()
 
         new_methods = {
-            key: val._statey_method for key, val in attrs.items()
+            key: val._statey_method
+            for key, val in attrs.items()
             if isinstance(getattr(val, "_statey_method", None), Method)
         }
-        new_methods.update({
-            key: val for key, val in attrs.items()
-            if isinstance(val, Method)
-        })
+        new_methods.update(
+            {key: val for key, val in attrs.items() if isinstance(val, Method)}
+        )
         methods.update(new_methods)
 
         super_cls.__methods__ = methods
@@ -199,6 +215,7 @@ class DeclarativeMethods(ObjectMethods, metaclass=DeclarativeMethodsMeta):
     Simple way to write methods for particular types by simply declaring them
     as instance methods on a DeclarativeMethods subclass
     """
+
     def get_method(self, name: str) -> Method:
         return self.__methods__[name]
 
@@ -208,6 +225,7 @@ class MethodsForType:
     """
     Plugin to map methods to some particular types.Type subclass
     """
+
     type_cls: PyType[types.Type]
     methods: ObjectMethods
 
@@ -223,6 +241,7 @@ class BinaryMagicMethod(Method):
     """
     Magic methods need to return regular python functions instead of statey objects
     """
+
     name: str
     instance_type: types.Type
     operation: Callable[[Any, Any], Any]
@@ -233,7 +252,6 @@ class BinaryMagicMethod(Method):
         return_type = self.return_type or self.instance_type
 
         def apply_method(other: Any) -> return_type:
-
             def call(inst: self.instance_type) -> return_type:
                 return self.operation(inst, other)
 
@@ -246,17 +264,14 @@ class BinaryMagicMethod(Method):
 
 def get_magic_methods():
     return {
-        '__eq__': operator.eq,
-        '__ne__': operator.ne,
-        '__add__': operator.add,
+        "__eq__": operator.eq,
+        "__ne__": operator.ne,
+        "__add__": operator.add,
     }
 
 
 def get_magic_method_types():
-    return {
-        '__eq__': types.BooleanType(False),
-        '__ne__': types.BooleanType(False)
-    }
+    return {"__eq__": types.BooleanType(False), "__ne__": types.BooleanType(False)}
 
 
 @dc.dataclass(frozen=True)
@@ -265,9 +280,14 @@ class BinaryMagicMethods(ObjectMethods):
     Methods that are defined for all statey objects. These act a bit differently than regular
     methods since they need to be called by python internally
     """
+
     type: types.Type
-    method_map: Dict[str, Callable[[Any, Any], Any]] = dc.field(default_factory=get_magic_methods)
-    method_map_type_overrides: Dict[str, types.Type] = dc.field(default_factory=get_magic_method_types)
+    method_map: Dict[str, Callable[[Any, Any], Any]] = dc.field(
+        default_factory=get_magic_methods
+    )
+    method_map_type_overrides: Dict[str, types.Type] = dc.field(
+        default_factory=get_magic_method_types
+    )
 
     def get_method(self, name: str) -> Method:
         method = self.method_map[name]
@@ -275,7 +295,7 @@ class BinaryMagicMethods(ObjectMethods):
             name=name,
             operation=method,
             instance_type=self.type,
-            return_type=self.method_map_type_overrides.get(name)
+            return_type=self.method_map_type_overrides.get(name),
         )
 
     @classmethod
@@ -289,8 +309,8 @@ class ExpectedValueMethod(Method):
     """
     Method to easily create expected values
     """
-    def bind(self, obj: Object) -> Any:
 
+    def bind(self, obj: Object) -> Any:
         def expect(value: Any) -> Object:
             out_obj = Object(impl.ExpectedValue(obj, value))
             return out_obj
@@ -303,12 +323,11 @@ class BaseObjectMethods(SimpleObjectMethods):
     """
     Defines methods available for all objects
     """
+
     type: types.Type
 
     def methods(self) -> Dict[str, Method]:
-        return {
-            '__rshift__': ExpectedValueMethod()
-        }
+        return {"__rshift__": ExpectedValueMethod()}
 
     @classmethod
     @st.hookimpl
@@ -316,11 +335,7 @@ class BaseObjectMethods(SimpleObjectMethods):
         return cls(type)
 
 
-OBJECT_METHODS_PLUGINS = [
-    CallFunctionMethod,
-    BinaryMagicMethods,
-    BaseObjectMethods
-]
+OBJECT_METHODS_PLUGINS = [CallFunctionMethod, BinaryMagicMethods, BaseObjectMethods]
 
 
 def register() -> None:

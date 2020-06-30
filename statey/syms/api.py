@@ -12,14 +12,20 @@ from statey.syms import utils, types, func, impl, Object
 from statey.syms.plugins import ParseDataClassPlugin, EncodeDataClassPlugin
 
 
-def function(func: Callable[[Any], Any], type: types.Type = utils.MISSING, registry: "Registry" = utils.MISSING) -> func.Function:
+def function(
+    func: Callable[[Any], Any],
+    type: types.Type = utils.MISSING,
+    registry: "Registry" = utils.MISSING,
+) -> func.Function:
     """
     Construct a Function object for a regular python function
     """
     return utils.native_function(func, type, registry)
 
 
-def map(func: Callable[[Any], Any], value: Any, return_type: types.Type = utils.MISSING) -> Any:
+def map(
+    func: Callable[[Any], Any], value: Any, return_type: types.Type = utils.MISSING
+) -> Any:
     """
     Apply the function to the given object. If it is an object, convert `func` to a native
     function and apply it to the object's underlying value
@@ -59,7 +65,7 @@ class _FunctionFactoryWithFunction(utils.Cloneable):
             func=self.func,
             args=args,
             kwargs=kwargs,
-            return_annotation=self.factory.annotation
+            return_annotation=self.factory.annotation,
         )
 
 

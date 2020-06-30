@@ -148,7 +148,9 @@ class BoundState(utils.Cloneable):
         """
 		Convenience method to convert a bound state to a literal with some registry.
 		"""
-        return Object(impl.Data(self.data), self.resource_state.state.type, registry=registry)
+        return Object(
+            impl.Data(self.data), self.resource_state.state.type, registry=registry
+        )
 
 
 class States(abc.ABC):
@@ -291,6 +293,19 @@ class ResourceSession(session.Session):
         new_inst.states = self.states.copy()
         new_inst.pm = self.pm
         return new_inst
+
+
+def create_resource_session(
+    session: Optional[session.Session] = None,
+) -> ResourceSession:
+    """
+    Convenient factory function for creating resource sessions.
+    """
+    if session is None:
+        import statey as st
+
+        session = st.create_session()
+    return ResourceSession(session)
 
 
 @dc.dataclass(frozen=True)

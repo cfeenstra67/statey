@@ -88,9 +88,9 @@ class ColoredTypeRenderer(types.TypeStringRenderer):
         types.TypeStringToken.TYPE_NAME: lambda x: click.style(x, fg="cyan"),
     }
     state_style_map = {
-        'UP': lambda x: click.style(x, fg='green', bold=True),
-        'DOWN': lambda x: click.style(x, fg='red', bold=True),
-        None: lambda x: click.style(x, fg='yellow', bold=True)
+        "UP": lambda x: click.style(x, fg="green", bold=True),
+        "DOWN": lambda x: click.style(x, fg="red", bold=True),
+        None: lambda x: click.style(x, fg="yellow", bold=True),
     }
 
     def render(self, value: str, token: types.TypeStringToken) -> str:
@@ -183,7 +183,10 @@ class PlanNodeSummary:
         )
 
     def data_to_string(self, max_width: int) -> str:
-        if self.plan_node.current_type == self.plan_node.config_type and self.plan_node.current_type != types.EmptyType:
+        if (
+            self.plan_node.current_type == self.plan_node.config_type
+            and self.plan_node.current_type != types.EmptyType
+        ):
             differ = st.registry.get_differ(self.plan_node.current_type)
             diff = differ.diff(self.plan_node.current_data, self.plan_node.config_data)
             current_lines = []
@@ -191,27 +194,35 @@ class PlanNodeSummary:
             path_parser = PathParser()
 
             for subdiff in diff.flatten():
-                current_diff_lines = data_to_lines(subdiff.left, name_func=self._style_current_name)
+                current_diff_lines = data_to_lines(
+                    subdiff.left, name_func=self._style_current_name
+                )
                 path_str = path_parser.join(subdiff.path)
 
                 if len(current_diff_lines) <= 1:
                     current_lines.append(
-                        f'{self._style_current_name(path_str)}:'
+                        f"{self._style_current_name(path_str)}:"
                         f' {"".join(current_diff_lines)}'
                     )
                 else:
-                    current_lines.append(f'{self._style_current_name(path_str)}:')
-                    current_lines.extend(map(lambda x: tr.indent(x, "  "), current_diff_lines))
+                    current_lines.append(f"{self._style_current_name(path_str)}:")
+                    current_lines.extend(
+                        map(lambda x: tr.indent(x, "  "), current_diff_lines)
+                    )
 
-                config_diff_lines = data_to_lines(subdiff.right, name_func=self._style_config_name)
+                config_diff_lines = data_to_lines(
+                    subdiff.right, name_func=self._style_config_name
+                )
                 if len(config_diff_lines) <= 1:
                     config_lines.append(
-                        f'{self._style_config_name(path_str)}:'
+                        f"{self._style_config_name(path_str)}:"
                         f' {"".join(config_diff_lines)}'
                     )
                 else:
-                    config_lines.append(f'{self._style_config_name(path_str)}:')
-                    config_lines.extend(map(lambda x: tr.indent(x, "  "), config_diff_lines))
+                    config_lines.append(f"{self._style_config_name(path_str)}:")
+                    config_lines.extend(
+                        map(lambda x: tr.indent(x, "  "), config_diff_lines)
+                    )
 
         else:
             current_lines = self._current_summary().split("\n")
@@ -230,7 +241,8 @@ class PlanNodeSummary:
 
         current_lines = [truncate_string(line, column_split) for line in current_lines]
         config_lines = [
-            truncate_string(line, max_width - column_split - buffer_length) for line in config_lines
+            truncate_string(line, max_width - column_split - buffer_length)
+            for line in config_lines
         ]
 
         def sep(idx):
@@ -275,12 +287,10 @@ class PlanNodeSummary:
             type_lines.append(type_string)
 
         state_lines = []
-        if (
-            self.plan_node.current_state is not None
-            and (
-                self.plan_node.config_state is None
-                or self.plan_node.current_state.state.name != self.plan_node.config_state.state.name
-            )
+        if self.plan_node.current_state is not None and (
+            self.plan_node.config_state is None
+            or self.plan_node.current_state.state.name
+            != self.plan_node.config_state.state.name
         ):
             state = renderer.render_state(self.plan_node.current_state.state.name)
             state_lines.append(f'- {style_key("state (current)")}: {state}')

@@ -35,6 +35,8 @@ class TypeStringToken(enum.Enum):
     ATTR_NAME = "attr"
     TYPE_NAME = "type"
     COMMA = ","
+    TO = "=>"
+    LAMBDA = "λ"
 
 
 class TypeStringRenderer:
@@ -244,17 +246,54 @@ class FunctionType(StructType):
     """
     First class functions :)
     """
+
     args: Sequence[Field]
     return_type: Type
     # Functions can never be nullable
     nullable: bool = dc.field(init=False, default=False)
     fields: Sequence[Field] = dc.field(init=False, default=())
 
-    # def with_args(self, args: Sequence[Field]) -> "FunctionType":
-    #     """
-    #     Replace the argument in this function with the provided ones
-    #     """
-    #     return dc.replace(self, args=args)
+    def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
+        if renderer is None:
+            renderer = TypeStringRenderer()
+        type_name = renderer.render(self.name, TypeStringToken.TYPE_NAME)
+        suffix = (
+            renderer.render(
+                TypeStringToken.QUESTION_MARK.value, TypeStringToken.QUESTION_MARK
+            )
+            if self.nullable
+            else ""
+        )
+        colon = renderer.render(TypeStringToken.COLON.value, TypeStringToken.COLON)
+
+        arg_strings = [
+            f"{renderer.render(field.name, TypeStringToken.ATTR_NAME)}"
+            f"{colon}{field.type.render_type_string(renderer)}"
+            for field in self.args
+        ]
+        comma_and_space = (
+            renderer.render(TypeStringToken.COMMA.value, TypeStringToken.COMMA) + " "
+        )
+        lbrace = renderer.render(
+            TypeStringToken.LEFT_BRACE.value, TypeStringToken.LEFT_BRACE
+        )
+        rbrace = renderer.render(
+            TypeStringToken.RIGHT_BRACE.value, TypeStringToken.RIGHT_BRACE
+        )
+
+        args_string = "".join(
+            [lbrace, comma_and_space.join(arg_strings), rbrace, suffix]
+        )
+
+        return_type_string = self.return_type.render_type_string(renderer)
+
+        to_string = renderer.render(TypeStringToken.TO.value, TypeStringToken.TO)
+        lambda_string = renderer.render(
+            TypeStringToken.LAMBDA.value, TypeStringToken.LAMBDA
+        )
+
+        func_type_string = " ".join([args_string, to_string, return_type_string])
+        return "".join([lambda_string, lbrace, func_type_string, rbrace])
 
     @property
     def name(self) -> str:
@@ -266,8 +305,9 @@ class NativeFunctionType(FunctionType):
     """
     Regular python implementation of FunctionType
     """
+
     def __post_init__(self) -> None:
-        self.__dict__['fields'] = (
+        self.__dict__["fields"] = (
             # Serialized function object
             Field("serialized", StringType(False)),
         )

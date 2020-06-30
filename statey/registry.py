@@ -101,6 +101,7 @@ class Registry(abc.ABC):
         Create an object bound to this registry
         """
         from statey.syms import Object
+
         return Object(*args, registry=self, **kwargs)
 
 
@@ -258,8 +259,11 @@ class DefaultRegistry(Registry):
 
     def get_methods(self, type: types.Type) -> "ObjectMethods":
         from statey.syms.methods import CompositeObjectMethods
+
         methods_instances = self.pm.hook.get_methods(type=type, registry=self)
-        non_null_methods = [methods for methods in methods_instances if methods is not None]
+        non_null_methods = [
+            methods for methods in methods_instances if methods is not None
+        ]
         return CompositeObjectMethods(tuple(non_null_methods))
 
     def get_object(self, value: Any) -> "Object":

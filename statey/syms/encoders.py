@@ -271,6 +271,7 @@ class NativeFunctionEncoder(StructEncoder):
     """
     Encoder for native python functions
     """
+
     def encode(self, value: Any) -> Any:
         if isinstance(value, Object):
             return super().encode(value)
@@ -306,7 +307,7 @@ MARSHMALLOW_ENCODER_CLASSES = [
     StringEncoder,
     ArrayEncoder,
     StructEncoder,
-    NativeFunctionEncoder
+    NativeFunctionEncoder,
 ]
 
 

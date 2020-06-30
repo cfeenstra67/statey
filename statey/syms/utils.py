@@ -221,7 +221,9 @@ def infer_annotation(obj: Any) -> Any:
     return obj_type
 
 
-def function_type(sig: inspect.Signature, registry: "Registry" = MISSING) -> "FunctionType":
+def function_type(
+    sig: inspect.Signature, registry: "Registry" = MISSING
+) -> "FunctionType":
     """
     Convert a python function signature to a FunctionType object
     """
@@ -229,6 +231,7 @@ def function_type(sig: inspect.Signature, registry: "Registry" = MISSING) -> "Fu
 
     if is_missing(registry):
         import statey
+
         registry = statey.registry
 
     def get_type(annotation):
@@ -244,7 +247,9 @@ def function_type(sig: inspect.Signature, registry: "Registry" = MISSING) -> "Fu
     return types.NativeFunctionType(tuple(out_fields), return_type)
 
 
-def single_arg_function_type(from_type: "Type", to_type: "Type" = MISSING, arg_name: str = "x", **kwargs) -> "FunctionType":
+def single_arg_function_type(
+    from_type: "Type", to_type: "Type" = MISSING, arg_name: str = "x", **kwargs
+) -> "FunctionType":
     """
     Return a NativeFunctionType for a simple single-argument function
     """
@@ -256,7 +261,9 @@ def single_arg_function_type(from_type: "Type", to_type: "Type" = MISSING, arg_n
     return types.NativeFunctionType(fields, to_type, **kwargs)
 
 
-def native_function(input: Callable[[Any], Any], type: "Type" = MISSING, registry: "Registry" = MISSING) -> "Function":
+def native_function(
+    input: Callable[[Any], Any], type: "Type" = MISSING, registry: "Registry" = MISSING
+) -> "Function":
     """
     Construct a Function object for a regular python function
     """
@@ -265,8 +272,8 @@ def native_function(input: Callable[[Any], Any], type: "Type" = MISSING, registr
     if is_missing(type):
         type = function_type(inspect.signature(input), registry)
     kws = {}
-    if hasattr(input, '__name__'):
-        kws['name'] = input.__name__
+    if hasattr(input, "__name__"):
+        kws["name"] = input.__name__
     return func.NativeFunction(type, input, **kws)
 
 
@@ -275,7 +282,7 @@ def wrap_function_call(
     args: Sequence[Any] = (),
     kwargs: Optional[Dict[str, Any]] = None,
     registry: Optional["Registry"] = None,
-    return_annotation: Any = MISSING
+    return_annotation: Any = MISSING,
 ) -> "Object":
 
     from statey.syms import api, impl, types, func as func_module, Object
@@ -295,7 +302,11 @@ def wrap_function_call(
         try:
             function_obj = native_function(func, registry=registry)
         except ValueError:
-            return_annotation = func.return_annotation if is_missing(return_annotation) else return_annotation
+            return_annotation = (
+                func.return_annotation
+                if is_missing(return_annotation)
+                else return_annotation
+            )
             return_type = registry.get_type(return_annotation)
 
             fields = []
@@ -311,7 +322,9 @@ def wrap_function_call(
     return Object(impl.FunctionCall(function_obj, args, kwargs), registry=registry)
 
 
-def bind_function_args(func_type: "FunctionType", args: Sequence[Any], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def bind_function_args(
+    func_type: "FunctionType", args: Sequence[Any], kwargs: Dict[str, Any]
+) -> Dict[str, Any]:
     """
     Given a function type, bind the given args and kwargs to names
     """
