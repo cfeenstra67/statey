@@ -1,1 +1,1 @@
-from object_ import Object
+from statey.syms.object_ import Object

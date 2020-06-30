@@ -18,7 +18,7 @@ import networkx as nx
 import statey as st
 from statey import exc
 from statey.task import TaskSession
-from statey.syms import types, utils, session, symbols
+from statey.syms import types, utils, session, impl, Object
 
 
 class StateSchema(ma.Schema):
@@ -144,12 +144,11 @@ class BoundState(utils.Cloneable):
     resource_state: ResourceState
     data: Any
 
-    def literal(self, registry: "Registry") -> symbols.Literal:
+    def literal(self, registry: "Registry") -> Object:
         """
 		Convenience method to convert a bound state to a literal with some registry.
 		"""
-        semantics = registry.get_semantics(self.resource_state.state.type)
-        return symbols.Literal(value=self.data, semantics=semantics)
+        return Object(impl.Data(self.data), self.resource_state.state.type, registry=registry)
 
 
 class States(abc.ABC):
@@ -157,6 +156,7 @@ class States(abc.ABC):
 	An interface for accessing states of a resource. While only a `null_state` implementation
 	is required, additional methods can be exposed here to simplify resource state creation.
 	"""
+
     resource_name: str
 
     @property
@@ -167,61 +167,6 @@ class States(abc.ABC):
 		a resource graph
 		"""
         raise NotImplementedError
-
-
-# class KnownStatesMeta(abc.ABCMeta):
-#     """
-# 	Metaclass for resources
-# 	"""
-
-#     @classmethod
-#     def _validate_states(
-#         cls, old_states: Sequence[State], new_states: Sequence[State]
-#     ) -> Tuple[Sequence[State], State]:
-
-#         new_names = Counter(state.name for state in new_states)
-#         if new_names and max(new_names.values()) > 1:
-#             multi = {k: v for k, v in new_names.items() if v > 1}
-#             raise ValueError(f"Duplicate states found: {multi}")
-
-#         old_states = [state for state in old_states if state.name not in new_names]
-#         return old_states + list(new_states)
-
-#     def __new__(
-#         cls, name: str, bases: Sequence[PyType], attrs: Dict[str, Any]
-#     ) -> PyType:
-#         super_cls = super().__new__(cls, name, bases, attrs)
-#         states = super_cls.__states__ if hasattr(super_cls, "__states__") else ()
-#         new_states = [val for val in attrs.values() if isinstance(val, State)]
-#         states = cls._validate_states(states, new_states)
-#         super_cls.__states__ = tuple(states)
-#         return super_cls
-
-
-# class KnownStates(States, metaclass=KnownStatesMeta):
-#     """
-# 	Define a fixed set of known states
-# 	"""
-
-#     def __init__(self, resource_name: str) -> None:
-#         self.resource_name = resource_name
-#         # This is temporary, should clean this up
-#         for state in self.__states__:
-#             self.set_resource_state(ResourceState(state, resource_name))
-
-#     def set_resource_state(self, state: ResourceState) -> None:
-#         setattr(self, state.state.name, state)
-
-#     @property
-#     def null_state(self) -> ResourceState:
-#         state = next((s for s in self.__states__ if s.null))
-#         return ResourceState(state, self.resource_name)
-
-#     def __call__(self, *args, **kwargs) -> ResourceState:
-#         states = [state for state in self.__states__ if state != self.null_state.state]
-#         if len(states) > 1:
-#             raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
-#         return ResourceState(states[0], self.resource_name)(*args, **kwargs)
 
 
 class Resource(abc.ABC):
@@ -249,8 +194,8 @@ class Resource(abc.ABC):
         current: BoundState,
         config: BoundState,
         session: TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
         """
 		Given a task session, the current state of a resource, and a task session with
 		corresponding input reference, return an output reference that can be fully
@@ -292,7 +237,7 @@ class ResourceSession(session.Session):
         return value.data, value.resource_state.state.type
 
     def resolve(
-        self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True
+        self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
     ) -> Any:
         return self.session.resolve(symbol, allow_unknowns, decode)
 
@@ -352,7 +297,7 @@ class ResourceSession(session.Session):
 class ResourceGraph:
     """
 	A resource graph is a wrapper around a simple graph that stores similar information
-	to a resource session, but without symbols. Resource graphs are serializable. Note that
+	to a resource session, but without objects. Resource graphs are serializable. Note that
 	not every node in a resource graph is necessarily a resource, it can contain any name
 	just like a session.
 	"""

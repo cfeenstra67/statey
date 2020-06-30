@@ -167,7 +167,7 @@ class StructTypeSerializer(TypeSerializer):
         for field in data["fields"]:
             serializer = self.field_serializers[field["name"]]
             fields.append(
-                types.StructField(
+                types.Field(
                     name=field["name"], type=serializer.deserialize(field["type"])
                 )
             )

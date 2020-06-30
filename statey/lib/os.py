@@ -1,25 +1,35 @@
 import os
+import shutil
 from typing import Dict, Any
 
 import statey as st
-from statey.fsm import (
+from statey import (
     Machine,
     transition,
     MachineState,
     NullMachineState,
     MachineResource,
+    BoundState,
+    S,
+    TaskSession,
+    task
 )
-from statey.resource import BoundState
-from statey.syms import symbols, types
-from statey.syms.schemas import builder as S
-from statey.task import TaskSession, task
+from statey.syms import types, utils, Object
 
 
-FileSchema = S.Struct[
-    "location" : S.String, "data" : S.String
-].s
+FileSchema = S.Struct["location" : S.String, "data" : S.String].s
 
 FileType = FileSchema.output_type
+
+
+class StateyOS:
+    """
+    A few statey wrappers for OS functions
+    """
+    class path:
+        @utils.native_function
+        def realpath(path: str) -> str:
+            return os.path.realpath(path)
 
 
 class FileMachine(Machine):
@@ -46,7 +56,7 @@ class FileMachine(Machine):
         return current.clone(data=dict(current.data, data=""))
 
     @staticmethod
-    @task
+    @task.new
     async def remove_file(path: str) -> types.EmptyType:
         """
         Delete the file
@@ -55,7 +65,7 @@ class FileMachine(Machine):
         return {}
 
     @staticmethod
-    @task
+    @task.new
     async def set_file(data: FileType) -> FileType:
         """
         Create the file
@@ -65,11 +75,19 @@ class FileMachine(Machine):
             f.write(data["data"])
         return dict(data, location=path)
 
-    def get_expected(self, session: TaskSession, data: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    @task.new
+    async def rename_file(current: FileType, path: str) -> FileType:
+        os.rename(current['location'], path)
+        return {"data": current["data"], "location": path}
+
+    def get_expected(
+        self, session: TaskSession, data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         string_semantics = session.ns.registry.get_semantics(S.String.t)
         return {
-            'location': string_semantics.map(os.path.realpath, data['location']),
-            'data': data['data']
+            "location": string_semantics.map(os.path.realpath, data["location"]),
+            "data": data["data"],
         }
 
     @transition("UP", "UP")
@@ -78,8 +96,8 @@ class FileMachine(Machine):
         current: BoundState,
         config: BoundState,
         session: TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
 
         differ = session.ns.registry.get_differ(current.resource_state.state.type)
         diffconfig = differ.config()
@@ -96,20 +114,23 @@ class FileMachine(Machine):
         flat = list(diff.flatten(diffconfig))
         if not flat:
             return st.struct[
-                'location': input['location'].map(os.path.realpath),
-                'data': input['data']
+                "location" : StateyOS.path.realpath(input.location), "data" : input.data,
             ]
 
         paths = {d.path for d in flat}
-        # If location changes we need to recreate
-        if ("location",) in paths:
+        loc_changed = ('location',) in paths
+        data_changed = ('data',) in paths
+
+        # If location changes only we can just rename the file
+        if loc_changed and not data_changed:
+            return session["rename_file"] << (self.rename_file(current_literal, input.location) >> expected)
+
+        if loc_changed:
             rm_file = session["delete_file"] << self.remove_file(
                 current_literal.location
             )
             joined_input = st.join(input, rm_file)
-            return session["create_file"] << (
-                self.set_file(joined_input) >> expected
-            )
+            return session["create_file"] << (self.set_file(joined_input) >> expected)
 
         return session["update_file"] << (self.set_file(input) >> expected)
 
@@ -119,8 +140,8 @@ class FileMachine(Machine):
         current: BoundState,
         config: BoundState,
         session: TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
 
         expected = self.get_expected(session, config.data)
         return session["create_file"] << (self.set_file(input) >> expected)
@@ -131,11 +152,114 @@ class FileMachine(Machine):
         current: BoundState,
         config: BoundState,
         session: TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
 
         current_literal = current.literal(session.ns.registry)
         return session["delete_file"] << self.remove_file(current_literal.location)
+
+
+DirectorySchema = S.Struct["location": S.String]
+
+
+class DirectoryMachine(Machine):
+    """
+    Simple file state machine
+    """
+
+    UP = MachineState("UP", DirectorySchema)
+    DOWN = NullMachineState("DOWN")
+
+    async def refresh(self, current: BoundState) -> BoundState:
+        state = current.resource_state.state
+        if state == self.null_state.state:
+            return current
+        out = current.data.copy()
+        path = os.path.realpath(current.data['location'])
+        if not os.path.isdir(path):
+            return BoundState(self.null_state, {})
+        return BoundState(current.resource_state, {'location': path})
+
+    @staticmethod
+    @task.new
+    async def remove_dir(path: str) -> types.EmptyType:
+        """
+        Delete the directory
+        """
+        shutil.rmtree(path)
+        return {}
+
+    @staticmethod
+    @task.new
+    async def create_dir(path: str) -> str:
+        """
+        Create the directory
+        """
+        os.mkdir(path)
+        return os.path.realpath(path)
+
+    @staticmethod
+    @task.new
+    async def rename_dir(from_path: str, to_path: str) -> str:
+        """
+        Rename the directory from the given path to the given path
+        """
+        os.rename(from_path, to_path)
+        return os.path.realpath(to_path)
+
+    @transition("UP", "UP")
+    def modify(
+        self,
+        current: BoundState,
+        config: BoundState,
+        session: TaskSession,
+        input: Object,
+    ) -> Object:
+
+        differ = session.ns.registry.get_differ(current.resource_state.state.type)
+        diffconfig = differ.config()
+        expected = self.get_expected(session, config.data)
+
+        def compare_realpaths(x, y):
+            return os.path.realpath(x) == os.path.realpath(y)
+
+        diffconfig.set_comparison("location", compare_realpaths)
+
+        current_literal = current.literal(session.ns.registry)
+
+        diff = differ.diff(current.data, config.data)
+        flat = list(diff.flatten(diffconfig))
+        if not flat:
+            return current_literal
+
+        result_path = session["rename_dir"] << (self.rename_dir(current_literal.location, input.location))
+        string_semantics = session.ns.registry.get_semantics(S.String.t)
+        return st.struct["location": result_path] >> {"location": string_semantics.map(os.path.realpath, config.data["location"])}
+
+    @transition("DOWN", "UP")
+    def create(
+        self,
+        current: BoundState,
+        config: BoundState,
+        session: TaskSession,
+        input: Object,
+    ) -> Object:
+
+        result_path = session["create_dir"] << self.create_dir(input.location)
+        string_semantics = session.ns.registry.get_semantics(S.String.t)
+        return st.struct["location": result_path] >> {"location": string_semantics.map(os.path.realpath, config.data["location"])}
+
+    @transition("UP", "DOWN")
+    def delete(
+        self,
+        current: BoundState,
+        config: BoundState,
+        session: TaskSession,
+        input: Object,
+    ) -> Object:
+
+        current_literal = current.literal(session.ns.registry)
+        return session["remove_dir"] << self.remove_dir(current_literal.location)
 
 
 # Declaring global resources
@@ -146,7 +270,16 @@ file_resource = MachineResource("file", FileMachine)
 File = file_resource.s
 
 
-RESOURCES = [file_resource]
+directory_resource = MachineResource("directory", DirectoryMachine)
+
+# Resource state factory
+Directory = directory_resource.s
+
+
+RESOURCES = [
+    file_resource,
+    directory_resource
+]
 
 
 def register() -> None:

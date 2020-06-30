@@ -140,9 +140,9 @@ class PossiblySymbolicField(ma.fields.Field):
         if not isinstance(value, Object):
             return self.field._deserialize(value, attr, data, **kwargs)
 
-        if self.type != value.type:
+        if self.type != value._type:
             raise ma.ValidationError(
-                f"Invalid symbol type (expected {self.type}, got {value.type})."
+                f"Invalid symbol type (expected {self.type}, got {value._type})."
             )
         return value
 
@@ -200,6 +200,13 @@ def invert_filter(func: Callable[[Any], bool]) -> Callable[[Any], bool]:
     return wrapper
 
 
+def is_missing(value: Any) -> bool:
+    """
+    Check if a value is equal to MISSING
+    """
+    return isinstance(value, Global) and value == MISSING
+
+
 def infer_annotation(obj: Any) -> Any:
     """
 	Attempt to infer an annotation from obj, falling back on `type(obj)`
@@ -220,7 +227,7 @@ def function_type(sig: inspect.Signature, registry: "Registry" = MISSING) -> "Fu
     """
     from statey.syms import types
 
-    if registry is MISSING:
+    if is_missing(registry):
         import statey
         registry = statey.registry
 
@@ -243,7 +250,7 @@ def single_arg_function_type(from_type: "Type", to_type: "Type" = MISSING, arg_n
     """
     from statey.syms import types
 
-    if to_type is MISSING:
+    if is_missing(to_type):
         to_type = from_type
     fields = (types.Field(arg_name, from_type),)
     return types.NativeFunctionType(fields, to_type, **kwargs)
@@ -255,13 +262,16 @@ def native_function(input: Callable[[Any], Any], type: "Type" = MISSING, registr
     """
     from statey.syms import func
 
-    if type is MISSING:
+    if is_missing(type):
         type = function_type(inspect.signature(input), registry)
-    return func.NativeFunction(type, input)
+    kws = {}
+    if hasattr(input, '__name__'):
+        kws['name'] = input.__name__
+    return func.NativeFunction(type, input, **kws)
 
 
 def wrap_function_call(
-    func: Callable[[Any], Any],
+    func: Union["Function", Callable[[Any], Any]],
     args: Sequence[Any] = (),
     kwargs: Optional[Dict[str, Any]] = None,
     registry: Optional["Registry"] = None,
@@ -279,23 +289,40 @@ def wrap_function_call(
     args = tuple(map(lambda x: Object(x, registry=registry), args))
     kwargs = {key: Object(val, registry=registry) for key, val in kwargs.items()}
 
-    try:
-        function_obj = native_function(func, registry=registry)
-    except ValueError:
-        return_annotation = func.return_annotation is return_annotation is MISSING else return_annotation
-        return_type = registry.get_type(return_annotation)
+    if isinstance(func, func_module.Function):
+        function_obj = func
+    else:
+        try:
+            function_obj = native_function(func, registry=registry)
+        except ValueError:
+            return_annotation = func.return_annotation if is_missing(return_annotation) else return_annotation
+            return_type = registry.get_type(return_annotation)
 
-        fields = []
-        for idx, arg in enumerate(args):
-            fields.append(types.Field(str(idx), arg.__type))
+            fields = []
+            for idx, arg in enumerate(args):
+                fields.append(types.Field(str(idx), arg._type))
 
-        for name, val in kwargs.items():
-            fields.append(types.Field(name, val.__type))
+            for name, val in kwargs.items():
+                fields.append(types.Field(name, val._type))
 
-        func_type = types.NativeFunctionType(tuple(fields), return_type)
-        function_obj = func_module.NativeFunction(func_type, func)
+            func_type = types.NativeFunctionType(tuple(fields), return_type)
+            function_obj = func_module.NativeFunction(func_type, func)
 
     return Object(impl.FunctionCall(function_obj, args, kwargs), registry=registry)
+
+
+def bind_function_args(func_type: "FunctionType", args: Sequence[Any], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Given a function type, bind the given args and kwargs to names
+    """
+    out_args = {}
+
+    for field, arg in zip(func_type.args, args):
+        out_args[field.name] = arg
+
+    names = {arg.name for arg in func_type.args}
+    out_args.update({key: val for key, val in kwargs.items() if key in names})
+    return out_args
 
 
 def encodeable_dataclass_fields(data: Any) -> Sequence[dc.field]:

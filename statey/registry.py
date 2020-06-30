@@ -1,6 +1,6 @@
 import abc
 import dataclasses as dc
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 
 import pluggy
 
@@ -42,7 +42,7 @@ class Registry(abc.ABC):
     @abc.abstractmethod
     def get_semantics(self, type: types.Type) -> "Semantics":
         """
-		Given a type, get the semantics to use for symbols of that type.
+		Given a type, get the semantics to use for objects of that type.
 		"""
         raise NotImplementedError
 
@@ -82,6 +82,27 @@ class Registry(abc.ABC):
 		"""
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def get_methods(self, type: types.Type) -> "ObjectMethods":
+        """
+        Get ObjectMethods for the given type
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_object(self, value: Any) -> "Object":
+        """
+        Get a statey object given a value
+        """
+        raise NotImplementedError
+
+    def object(self, *args, **kwargs) -> "Object":
+        """
+        Create an object bound to this registry
+        """
+        from statey.syms import Object
+        return Object(*args, registry=self, **kwargs)
+
 
 class RegistryHooks:
     """
@@ -111,7 +132,7 @@ class RegistryHooks:
     @hookspec(firstresult=True)
     def get_semantics(self, type: types.Type, registry: Registry) -> "Semantics":
         """
-		Handle the given type and produce a Semantics instance for symbols of that type
+		Handle the given type and produce a Semantics instance for objects of that type
 		"""
 
     @hookspec(firstresult=True)
@@ -127,13 +148,25 @@ class RegistryHooks:
         self, data: Any, registry: Registry
     ) -> "TypeSerializer":
         """
-		Handle the given type and produce a TypeSerializer instance for symbols of that type
+		Handle the given type and produce a TypeSerializer instance for objects of that type
 		"""
 
     @hookspec(firstresult=True)
     def get_differ(self, type: types.Type, registry: Registry) -> "Encoder":
         """
         Handle the given type and produce an Differ instance for diffing values of that type
+        """
+
+    @hookspec
+    def get_methods(self, type: types.Type, registry: Registry) -> "ObjectMethods":
+        """
+        Hook to get methods for a particular type
+        """
+
+    @hookspec(firstresult=True)
+    def get_object(self, value: Any, registry: Registry) -> "Object":
+        """
+        Hook to create an object from an arbitrary value
         """
 
 
@@ -218,3 +251,21 @@ class DefaultRegistry(Registry):
         if resource is None:
             raise exc.NoResourceFound(name)
         return resource
+
+    def get_differ(self, type: types.Type) -> "Differ":
+        handled = self.pm.hook.get_differ(type=type, registry=self)
+        if handled is None:
+            raise exc.NoDifferFound(type)
+        return handled
+
+    def get_methods(self, type: types.Type) -> "ObjectMethods":
+        from statey.syms.methods import CompositeObjectMethods
+        methods_instances = self.pm.hook.get_methods(type=type, registry=self)
+        non_null_methods = [methods for methods in methods_instances if methods is not None]
+        return CompositeObjectMethods(tuple(non_null_methods))
+
+    def get_object(self, value: Any) -> "Object":
+        handled = self.pm.hook.get_object(value=value, registry=self)
+        if handled is None:
+            raise exc.NoObjectFound(value)
+        return handled

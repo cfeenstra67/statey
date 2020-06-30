@@ -118,19 +118,19 @@ class PythonSession(session.Session):
         while syms:
             sym, downstreams = syms.pop(0)
             processed = False
-            if sym.__impl.id in graph.nodes:
+            if sym._impl.id in graph.nodes:
                 processed = True
             else:
-                graph.add_node(sym.__impl.id, symbol=sym)
+                graph.add_node(sym._impl.id, symbol=sym)
 
             for symbol_id in downstreams:
-                graph.add_edge(sym.__impl.id, symbol_id)
+                graph.add_edge(sym._impl.id, symbol_id)
 
             if processed:
                 continue
 
-            for upstream in sym.__inst.depends_on(self):
-                syms.append((upstream, (sym.__impl.id,)))
+            for upstream in sym._inst.depends_on(self):
+                syms.append((upstream, (sym._impl.id,)))
 
         # Check that this is in fact a DAG and has no cycles
         if not is_directed_acyclic_graph(graph):
@@ -148,7 +148,7 @@ class PythonSession(session.Session):
                 return dag.nodes[symbol_id]["result"]
 
             try:
-                result = sym.__inst.apply(dag, self)
+                result = sym._inst.apply(dag, self)
             except exc.UnknownError as err:
                 if not allow_unknowns:
                     raise
@@ -157,7 +157,7 @@ class PythonSession(session.Session):
                 else:
                     result = Object(impl.Unknown(sym))
             else:
-                semantics = self.ns.registry.get_semantics(sym.__type)
+                semantics = self.ns.registry.get_semantics(sym._type)
                 expanded_result = semantics.expand(result)
 
                 def resolve_child(x):
@@ -165,13 +165,13 @@ class PythonSession(session.Session):
                         return x
 
                     self._build_symbol_dag(x, dag)
-                    dag.add_edge(x.__impl.id, symbol_id)
+                    dag.add_edge(x._impl.id, symbol_id)
 
-                    ancestors = set(nx.ancestors(dag, x.__impl.id))
+                    ancestors = set(nx.ancestors(dag, x._impl.id))
                     for sym_id in topological_sort(dag.subgraph(ancestors).copy()):
                         handle_symbol_id(sym_id)
 
-                    return handle_symbol_id(x.__impl.id)
+                    return handle_symbol_id(x._impl.id)
 
                 result = semantics.map(resolve_child, expanded_result)
 
@@ -188,10 +188,10 @@ class PythonSession(session.Session):
         graph = nx.DiGraph()
         dag = self._build_symbol_dag(symbol, graph)
         self._process_symbol_dag(dag, allow_unknowns)
-        encoded = dag.nodes[symbol.__impl]["result"]
+        encoded = dag.nodes[symbol._impl.id]["result"]
         if not decode:
             return encoded
-        encoder = self.ns.registry.get_encoder(symbol.type)
+        encoder = self.ns.registry.get_encoder(symbol._type)
         return encoder.decode(encoded)
 
     def dependency_graph(self) -> nx.MultiDiGraph:
@@ -208,7 +208,7 @@ class PythonSession(session.Session):
         ref_symbol_ids = set()
 
         for node in dag.nodes:
-            if isinstance(dag.nodes[node]["symbol"].__impl, impl.Reference):
+            if isinstance(dag.nodes[node]["symbol"]._impl, impl.Reference):
                 ref_symbol_ids.add(node)
 
         utils.subgraph_retaining_dependencies(dag, ref_symbol_ids)
@@ -216,12 +216,12 @@ class PythonSession(session.Session):
         for node in list(nx.topological_sort(dag)):
             ref = dag.nodes[node]["symbol"]
 
-            base, *rel_path = self.ns.path_parser.split(ref.path)
+            base, *rel_path = self.ns.path_parser.split(ref._impl.path)
             graph.add_node(base)
 
             for pred in dag.pred[node]:
                 pref_ref = dag.nodes[pred]["symbol"]
-                pred_base, *pred_rel_path = self.ns.path_parser.split(pref_ref.path)
+                pred_base, *pred_rel_path = self.ns.path_parser.split(pref_ref._impl.path)
 
                 graph.add_edge(
                     pred_base, base, from_path=pred_rel_path, to_path=rel_path

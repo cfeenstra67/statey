@@ -248,13 +248,13 @@ class FunctionType(StructType):
     return_type: Type
     # Functions can never be nullable
     nullable: bool = dc.field(init=False, default=False)
-    fields: Sequence[Field] = dc.field(init=False, default=None)
+    fields: Sequence[Field] = dc.field(init=False, default=())
 
-    def __post_init__(self) -> None:
-        self.__dict__['fields'] = (
-            Field("args", StructType(self.args, not self.args)),
-            Field("return", self.return_type),
-        )
+    # def with_args(self, args: Sequence[Field]) -> "FunctionType":
+    #     """
+    #     Replace the argument in this function with the provided ones
+    #     """
+    #     return dc.replace(self, args=args)
 
     @property
     def name(self) -> str:
@@ -267,9 +267,9 @@ class NativeFunctionType(FunctionType):
     Regular python implementation of FunctionType
     """
     def __post_init__(self) -> None:
-        self.__dict__['fields'] += (
+        self.__dict__['fields'] = (
             # Serialized function object
-            Field("serialized_func", StringType(False)),
+            Field("serialized", StringType(False)),
         )
 
     @property

@@ -30,6 +30,7 @@ def register_default_plugins(
     type_serializers: bool = True,
     resources: bool = True,
     differs: bool = True,
+    methods: bool = True
 ) -> None:
     """
 	Convenience method to register all of the default provided hooks for the given
@@ -64,3 +65,8 @@ def register_default_plugins(
         from statey.syms.diff import register as register_differs
 
         register_differs()
+
+    if methods:
+        from statey.syms.methods import register as register_methods
+
+        register_methods()

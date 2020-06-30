@@ -1,4 +1,6 @@
 import abc
+import base64
+
 import dataclasses as dc
 from typing import (
     Type as PyType,
@@ -6,11 +8,12 @@ from typing import (
     Dict,
 )
 
+import dill
 import marshmallow as ma
 import pluggy
 
 import statey as st
-from statey.syms import types, utils
+from statey.syms import types, utils, Object
 
 
 class Encoder(abc.ABC):
@@ -263,6 +266,38 @@ class StructEncoder(MarshmallowEncoder):
         return instance
 
 
+@dc.dataclass(frozen=True)
+class NativeFunctionEncoder(StructEncoder):
+    """
+    Encoder for native python functions
+    """
+    def encode(self, value: Any) -> Any:
+        if isinstance(value, Object):
+            return super().encode(value)
+
+        serialized_bytes = dill.dumps(value.func)
+        converted = {"serialized": base64.b64encode(serialized_bytes)}
+        return super().encode(converted)
+
+    def decode(self, value: Any) -> Any:
+        from statey.syms import func
+
+        value = super().decode(value)
+        if isinstance(value, Object):
+            return value
+        function_ob = dill.loads(base64.b64decode(value["serialized"]))
+        return func.NativeFunction(self.type, function_ob)
+
+    @classmethod
+    @st.hookimpl
+    def get_encoder(cls, type: types.Type, registry: "Registry") -> Encoder:
+        if not isinstance(type, types.NativeFunctionType):
+            return None
+        as_struct = types.StructType(type.fields, False)
+        struct_encoder = registry.get_encoder(as_struct)
+        return cls(type, struct_encoder.field_encoders)
+
+
 # Intentionally a list--this can be mutated if desired
 MARSHMALLOW_ENCODER_CLASSES = [
     IntegerEncoder,
@@ -271,6 +306,7 @@ MARSHMALLOW_ENCODER_CLASSES = [
     StringEncoder,
     ArrayEncoder,
     StructEncoder,
+    NativeFunctionEncoder
 ]
 
 

@@ -5,7 +5,6 @@ import shutil
 
 import statey as st
 from statey.executor import AsyncIOGraphExecutor
-from statey.hooks import register_default_plugins
 from statey.plan import DefaultMigrator
 from statey.cli.graph_utils import Inspector, ExecutorLoggingPlugin
 from statey.cli.state_manager import FileStateManager
@@ -22,7 +21,7 @@ def cli(ctx, state):
     ctx.obj["state_manager"] = FileStateManager(state)
     ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
     # Set up all default plugins
-    register_default_plugins()
+    # register_default_plugins()
 
 
 async def refresh_graph(graph):

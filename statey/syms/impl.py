@@ -1,13 +1,14 @@
+import abc
 import dataclasses as dc
+from functools import wraps
 from itertools import zip_longest
-from typing import Iterable, Any, Optional
+from typing import Iterable, Any, Optional, Sequence, Dict
 
 import networkx as nx
 
 from statey import exc
 from statey.syms import base, func, utils, types
 from statey.syms.object_ import Object
-from statey.syms.semantics import Semantics
 
 
 class ObjectImplementation(base.AttributeAccess):
@@ -43,6 +44,12 @@ class ObjectImplementation(base.AttributeAccess):
         """
         raise NotImplementedError
 
+    def call(self, obj: Object, args: Sequence[Any], kwargs: Dict[str, Any]) -> Object:
+        """
+        Some object implementations can apply arguments
+        """
+        raise NotImplementedError
+
     @property
     def id(self) -> Any:
         """
@@ -50,13 +57,19 @@ class ObjectImplementation(base.AttributeAccess):
         """
         return id(self)
 
+    def object_repr(self, obj: "Object") -> str:
+        """
+        Render a string representation of an object with this implementation
+        """
+        return f'{type(obj).__name__}[{obj._type}]({repr(self)})'
+
     def type(self) -> types.Type:
         """
         Some object implementations are bound to a specific type, so this method
         allows the ability to infer the type from the implementatino. Returning
         NotImplemented incidates the type is not necessarily known
         """
-        return NotImplemented
+        raise NotImplementedError
 
     def registry(self) -> "Registry":
         """
@@ -64,7 +77,7 @@ class ObjectImplementation(base.AttributeAccess):
         allows the ability to infer the registry from the implementation. Default
         behavior is returning NotImplemented
         """
-        return NotImplemented
+        raise NotImplementedError
 
 
 class FunctionalAttributeAccessMixin:
@@ -74,8 +87,12 @@ class FunctionalAttributeAccessMixin:
     def get_attr(self, obj: Object, attr: str) -> Any:
         from statey.syms import api
 
-        semantics = obj.__registry.get_semantics(obj.__type)
+        semantics = obj._registry.get_semantics(obj._type)
         attr_semantics = semantics.attr_semantics(attr)
+
+        if attr_semantics is None:
+            raise KeyError(attr)
+
         getter_func = lambda x: semantics.get_attr(x, attr)
         func_type = utils.single_arg_function_type(semantics.type, attr_semantics.type, "x")
         function_obj = api.function(getter_func, func_type)
@@ -87,8 +104,8 @@ class FunctionalMappingMixin:
     Defines default map() behavior that works for almost all cases
     """
     def map(self, obj: Object, function: func.Function) -> Object:
-        new_impl = FunctionCall(function, (obj,), {})
-        return Object(new_impl, function.type.return_type, obj.__registry)
+        new_impl = FunctionCall(function, (obj,))
+        return Object(new_impl, function.type.return_type, obj._registry)
 
 
 class FunctionalBehaviorMixin(FunctionalMappingMixin, FunctionalAttributeAccessMixin):
@@ -106,17 +123,16 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
     ns: "Namespace" = dc.field(repr=False, hash=False, compare=False)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-        semantics = obj.__registry.get_semantics(obj.__type)
-        attr_semantics = semantics.attr_semantics(attr)
+        semantics = obj._registry.get_semantics(obj._type)
         path = self.ns.path_parser.join([self.path, attr])
         if semantics is None:
             raise exc.SymbolKeyError(path, ns)
 
         new_ref = Reference(path, self.ns)
-        return Object(new_ref, semantics=attr_semantics)
+        return Object(new_ref)
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
-        semantics = obj.__registry.get_semantics(obj.__type)
+        semantics = obj._registry.get_semantics(obj._type)
         data = session.get_encoded_data(self.path)
         expanded = semantics.expand(data)
 
@@ -129,7 +145,7 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
         semantics.map(collect_objects, expanded)
         return syms
 
-    def apply(self, semantics: Semantics, dag: nx.DiGraph, session: "Session") -> Any:
+    def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
         return session.get_encoded_data(self.path)
 
     @property
@@ -142,12 +158,15 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
     def registry(self) -> "Registry":
         return self.ns.registry
 
+    def object_repr(self, obj: "Object") -> str:
+        return f'{type(self).__name__}[{obj._type}]({self.path})'
+
 
 class StandaloneObjectImplementation(ObjectImplementation):
     """
     Object implementation for impementations that never have dependencies
     """
-    def depends_on(self, semantics: Semantics, session: "Session") -> Iterable[Object]:
+    def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         return ()
 
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
@@ -162,7 +181,7 @@ class StandaloneObjectImplementation(ObjectImplementation):
 
 
 @dc.dataclass(frozen=True)
-class Value(FunctionalBehaviorMixin, StandaloneObjectImplementation):
+class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
     """
     Object implementation for concrete data
     """
@@ -170,7 +189,7 @@ class Value(FunctionalBehaviorMixin, StandaloneObjectImplementation):
     value_type: Optional[types.Type] = None
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
-        semantics = obj.__registry.get_semantics(obj.__type)
+        semantics = obj._registry.get_semantics(obj._type)
         data = self.value
         expanded = semantics.expand(data)
 
@@ -184,12 +203,25 @@ class Value(FunctionalBehaviorMixin, StandaloneObjectImplementation):
         return syms
 
     def apply_alone(self, obj: Object) -> Any:
-        return self.value
+        encoder = obj._registry.get_encoder(obj._type)
+        return encoder.encode(self.value)
 
     def type(self) -> types.Type:
         if self.value_type is None:
-            return super().type()
+            raise NotImplementedError
         return self.value_type
+
+    def object_repr(self, obj: "Object") -> str:
+        return f'{type(self).__name__}[{obj._type}]({repr(self.value)})'
+
+    def get_attr(self, obj: Object, attr: str) -> Any:
+        semantics = obj._registry.get_semantics(obj._type)
+        if self.value is None:
+            new_data = None
+        else:
+            new_data = semantics.get_attr(self.value, attr)
+        attr_semantics = semantics.attr_semantics(attr)
+        return Object(Data(new_data), attr_semantics.type, obj._registry)
 
 
 @dc.dataclass(frozen=True)
@@ -203,13 +235,9 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
     arguments: Dict[str, Object] = dc.field(init=False, default=None)
 
     def __post_init__(self, args: Sequence[Object], kwargs: Optional[Dict[str, Object]]) -> None:
-        arg_fields = self.func.type.args
-        arg_names = [field.name for field in arg_fields]
-
-        arg_dict = dict(zip(arg_names, args))
-        arg_dict.update(kwargs or {})
-
-        self.__dict__['arguments'] = arg_dict
+        if kwargs is None:
+            kwargs = {}
+        self.__dict__['arguments'] = utils.bind_function_args(self.func.type, args, kwargs)
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         yield from self.arguments.values()
@@ -219,18 +247,26 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
 
         kwargs = {}
         for key, sym in self.arguments.items():
-            arg = dag.nodes[sym.symbol_id]["result"]
-            if isinstance(arg, Unknown):
+            arg = dag.nodes[sym._impl.id]["result"]
+            arg_encoder = session.ns.registry.get_encoder(sym._type)
+            arg = arg_encoder.decode(arg)
+            if isinstance(arg, Object):
                 unknowns.append(arg)
             kwargs[key] = arg
 
         if unknowns:
             raise exc.UnknownError(unknowns)
 
-        return self.func.apply(kwargs)
+        result = self.func.apply(kwargs)
+        encoder = session.ns.registry.get_encoder(self.func.type.return_type)
+        return encoder.encode(result)
 
     def type(self) -> types.Type:
-        return self.func.return_type
+        return self.func.type.return_type
+
+    def object_repr(self, obj: "Object") -> str:
+        kwarg_reprs = ', '.join('='.join([key, repr(val)]) for key, val in self.arguments.items())
+        return f'{type(self.func).__name__}Call[{obj._type}]({self.func.name}({kwarg_reprs}))'
 
 
 @dc.dataclass(frozen=True)
@@ -287,30 +323,38 @@ class Future(FunctionalBehaviorMixin, ObjectImplementation):
         return self.refs
 
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
-        res = self.apply_alone(obj)
-        if res is NotImplemented:
-            raise exc.UnknownError
+        try:
+            res = self.apply_alone(obj)
+        except NotImplementedError as err:
+            raise exc.UnknownError from err
         return res
 
     def apply_alone(self, obj: Object) -> Any:
         try:
             return self.get_result()
         except exc.FutureResultNotSet as err:
-            return NotImplemented
+            raise NotImplementedError from err
 
     def type(self) -> types.Type:
         if self.return_type is None:
-            return super().type()
+            raise NotImplementedError
         return self.return_type
+
+    def object_repr(self, obj: "Object") -> str:
+        return f'{type(self).__name__}[{obj._type}]({self.result.result})'
 
 
 @dc.dataclass(frozen=True)
-class Unknown(ObjectImplementation, utils.Cloneable):
+class Unknown(ObjectImplementation):
     """
     Some value that is not known
     """
     obj: Object
     refs: Sequence[Object] = ()
+
+    def __post_init__(self) -> None:
+        while isinstance(self.obj._impl, Unknown):
+            self.__dict__['obj'] = self.obj._impl.obj
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         return self.refs
@@ -319,21 +363,38 @@ class Unknown(ObjectImplementation, utils.Cloneable):
         raise exc.UnknownError(self.refs)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-        object_attr = self.obj[attr]
-        new_impl = self.clone(obj=object_attr)
-        return Object(new_impl, object_attr.__type, object_attr.__registry)
+
+        def handle(result):
+
+            if isinstance(result, Object):
+                new_impl = Unknown(result, self.refs)
+                return Object(new_impl, result._type, result._registry)
+
+            if callable(result):
+
+                @wraps(result)
+                def wrapper(*args, **kwargs):
+                    return handle(result(*args, **kwargs))
+
+                return wrapper
+        
+            raise TypeError(f'Unhandled attribute result type {result}! Failing')
+
+        return handle(self.obj[attr])
 
     def map(self, obj: Object, function: func.Function) -> Object:
-        mapped_object = self.obj.__impl.map(self.obj, function)
-        new_impl = self.clone(obj=mapped_object)
-        return Object(new_impl, mapped_object.__type, mapped_object.__registry)
+        mapped_object = self.src._inst.map(function)
+        new_impl = Unknown(mapped_object, self.refs)
+        return Object(new_impl, mapped_object._type, mapped_object._registry)
 
     def type(self) -> types.Type:
-        return self.obj.type()
+        return self.obj._type
 
     def registry(self) -> "Registry":
-        return self.obj.__registry
+        return self.obj._registry
 
+    def object_repr(self, obj: "Object") -> str:
+        return f'{type(self).__name__}[{self.obj._type}]({self.obj})'
 
 @dc.dataclass(frozen=True)
 class StructField:
@@ -357,22 +418,24 @@ class Struct(FunctionalMappingMixin, ObjectImplementation):
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         for field in self.fields:
-            yield from field.value.__impl.depends_on(obj[field.name], session)
+            yield from field.value._impl.depends_on(obj[field.name], session)
 
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
         out = {}
         for field in self.fields:
-            out[field.name] = field.value.__impl.apply(obj[field.name], dag, session)
+            out[field.name] = field.value._impl.apply(obj[field.name], dag, session)
         return out
 
     def type(self) -> types.Type:
         fields = []
         for field in self.fields:
-            typ = field.value.type()
-            if typ is NotImplemented:
-                return NotImplemented
-            fields.append(types.Field(field.name typ))
+            typ = field.value._type
+            fields.append(types.Field(field.name, typ))
         return types.StructType(fields, False)
+
+    def object_repr(self, obj: "Object") -> str:
+        field_reprs = ', '.join('='.join([field.name, repr(field.value)]) for field in self.fields)
+        return f'{type(self).__name__}[{obj._type}]({field_reprs})'
 
 
 @dc.dataclass(frozen=True)
@@ -384,29 +447,55 @@ class ExpectedValue(ObjectImplementation):
     expected: Any
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-        semantics = obj.__registry.get_semantics(obj.__type)
+        semantics = obj._registry.get_semantics(obj._type)
         obj_attr = self.obj[attr]
         expected_attr = semantics.get_attr(self.expected, attr)
-        return ExpectedValue(obj_attr, expected_attr)
+        new_impl = ExpectedValue(obj_attr, expected_attr)
+        return Object(new_impl)
+
+    def get_attr(self, obj: Object, attr: str) -> Any:
+
+        def handle(result):
+
+            if isinstance(result, Object):
+                semantics = self.obj._registry.get_semantics(self.obj._type)
+                expected_attr = semantics.get_attr(self.expected, attr)
+                new_impl = ExpectedValue(result, expected_attr)
+                return Object(new_impl, result._type, result._registry)
+
+            if callable(result):
+
+                @wraps(result)
+                def wrapper(*args, **kwargs):
+                    return handle(result(*args, **kwargs))
+
+                return wrapper
+        
+            raise TypeError(f'Unhandled attribute result type {result}! Failing')
+
+        return handle(self.obj[attr])
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
-        yield from self.obj.__impl.depends_on(self.obj, session)
+        yield from self.obj._impl.depends_on(self.obj, session)
 
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
         try:
-            return self.obj.__impl.apply(self.obj, dag, session)
+            return self.obj._impl.apply(self.obj, dag, session)
         except exc.UnknownError as err:
             refs = list(self.depends_on(obj, session))
             raise exc.UnknownError(refs, expected=self.expected) from err
 
     def map(self, obj: Object, function: func.Function) -> Object:
-        mapped_obj = self.obj.__impl.map(self.obj, function)
+        mapped_obj = self.obj._impl.map(self.obj, function)
         mapped_expected = function.apply(self.expected)
         new_impl = ExpectedValue(mapped_obj, mapped_expected)
-        return Object(new_impl, function.type.return_type, obj.__registry)
+        return Object(new_impl, function.type.return_type, obj._registry)
 
     def type(self) -> types.Type:
-        return self.obj.type()
+        return self.obj._type
 
     def registry(self) -> "Registry":
-        return self.obj.__registry
+        return self.obj._registry
+
+    def object_repr(self, obj: "Object") -> str:
+        return f'{type(self).__name__}[{obj._type}]({self.expected}, from={self.obj})'

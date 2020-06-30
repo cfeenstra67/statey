@@ -77,13 +77,13 @@ class Diff:
         """
         Indicate whether the left side of this diff is an `Unknown` instance
         """
-        return isinstance(self.left, Object) and isinstance(self.left.__impl, impl.Unknown)
+        return isinstance(self.left, Object) and isinstance(self.left._impl, impl.Unknown)
 
     def right_is_unknown(self) -> bool:
         """
         Indicate whether the right side of this diff is an `Unknown` instance
         """
-        return isinstance(self.right, Object) and isinstance(self.right.__impl, impl.Unknown)
+        return isinstance(self.right, Object) and isinstance(self.right._impl, impl.Unknown)
 
     def flatten(self, config: Optional[DiffConfig] = None) -> Iterator["Diff"]:
         """

@@ -15,7 +15,7 @@ from statey.resource import (
     Resource,
     ResourceGraph,
 )
-from statey.syms import session, symbols, types
+from statey.syms import session, types, Object
 from statey.task import (
     TaskSession,
     SessionSwitch,
@@ -70,13 +70,13 @@ class ExecuteTaskSession(PlanAction):
 
     task_session: TaskSession
     task_input_key: str
-    output_ref: symbols.Symbol
-    graph_ref: symbols.Symbol
+    output_ref: Object
+    graph_ref: Object
     output_key: str
     config_state: ResourceState
     previous_state: ResourceState
     resource: Resource
-    input_symbol: symbols.Symbol
+    input_symbol: Object
 
     def input_task(self, prefix: str) -> str:
         return f"{prefix}:input"
@@ -170,7 +170,7 @@ class SetValue(PlanAction):
 	"""
 
     output_key: str
-    output_symbol: symbols.Symbol
+    output_symbol: Object
 
     def input_task(self, prefix: str) -> str:
         return f"{prefix}:state"
@@ -615,12 +615,7 @@ class DefaultMigrator(Migrator):
                     config_state=resource.s.null_state,
                     previous_state=previous_state,
                     resource=resource,
-                    input_symbol=symbols.Literal(
-                        value=previous_resolved,
-                        semantics=config_session.ns.registry.get_semantics(
-                            previous_state.state.type
-                        ),
-                    ),
+                    input_symbol=config_session.ns.registry.object(previous_resolved, previous_state.state.type),
                 )
 
                 args.update(

@@ -8,7 +8,7 @@ from typing import Sequence, Callable, Type as PyType, Dict, Any
 import networkx as nx
 
 from statey import resource, task, exc
-from statey.syms import schemas, utils, symbols, types
+from statey.syms import schemas, utils, types, Object
 
 
 @dc.dataclass(frozen=True)
@@ -38,42 +38,6 @@ class MachineResourceState(resource.ResourceState):
         return bound.clone(data=self.state.schema(bound.data))
 
 
-# class TransitionSpec(abc.ABC):
-#     """
-#     Transition specification
-#     """
-#     from_name: str
-#     to_name: str
-#     name: str
-
-#     @abc.abstractmethod
-#     def bind(self, machine: 'Machine') -> 'Transition':
-#         """
-#         Factory method to bind a transition spec to a specific machine
-#         instance
-#         """
-#         raise NotImplementedError
-
-
-# @dc.dataclass(frozen=True)
-# class FunctionTransitionSpec(TransitionSpec):
-#     """
-#     Transition spec for a simple function
-#     """
-#     from_name: str
-#     to_name: str
-#     name: str
-#     func: Callable[[Any], Any]
-
-#     def bind(self, machine: 'Machine') -> 'Transition':
-#         return FunctionTransition(
-#             from_name=self.from_name,
-#             to_name=self.to_name,
-#             machine=machine,
-#             func=self.func
-#         )
-
-
 class Transition(abc.ABC):
     """
     A transition defines the procedure from migration a machine
@@ -90,8 +54,8 @@ class Transition(abc.ABC):
         current: resource.BoundState,
         config: resource.BoundState,
         session: task.TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
         """
         Same as Resource.plan(), except for planning
         a specific transition.
@@ -115,8 +79,8 @@ class FunctionTransition(Transition):
         current: resource.BoundState,
         config: resource.BoundState,
         session: task.TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
         return self.func(current=current, config=config, session=session, input=input)
 
 
@@ -214,8 +178,8 @@ class Machine(resource.States, metaclass=MachineMeta):
         current: resource.BoundState,
         config: resource.BoundState,
         session: task.TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
 
         from_name = current.resource_state.state.name
         to_name = config.resource_state.state.name
@@ -276,8 +240,8 @@ class MachineResource(resource.Resource):
         current: resource.BoundState,
         config: resource.BoundState,
         session: task.TaskSession,
-        input: symbols.Symbol,
-    ) -> symbols.Symbol:
+        input: Object,
+    ) -> Object:
         return self.s.plan(current, config, session, input)
 
     async def refresh(self, current: resource.BoundState) -> resource.BoundState:

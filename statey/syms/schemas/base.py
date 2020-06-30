@@ -127,7 +127,7 @@ class StructSchema(Schema):
         out_fields = []
         for field in self.fields:
             out_fields.append(
-                types.StructField(name=field.name, type=field.schema.output_type)
+                types.Field(name=field.name, type=field.schema.output_type)
             )
         nullable = all(field.type.nullable for field in out_fields)
         return types.StructType(tuple(out_fields), nullable)
@@ -138,17 +138,18 @@ class StructSchema(Schema):
         for field in self.fields:
             if field.attr:
                 in_fields.append(
-                    types.StructField(name=field.name, type=field.schema.input_type)
+                    types.Field(name=field.name, type=field.schema.input_type)
                 )
         nullable = all(field.type.nullable for field in in_fields)
         return types.StructType(tuple(in_fields), nullable)
 
     def transform(self, symbol: Object, registry: st.Registry) -> Any:
-        def wrapped_validate(x):
+        
+        def wrapped_validate(x: self.input_type) -> self.input_type:
             self.validator.validate(x)
             return x
 
-        symbol = symbol.__inst.map(wrapped_validate)
+        symbol = symbol._inst.map(utils.native_function(wrapped_validate, registry=registry))
 
         out = {}
         for field in self.fields:
@@ -188,7 +189,8 @@ class ArraySchema(Schema):
         return types.ArrayType(element_type, element_type.nullable)
 
     def transform(self, symbol: Object, registry: st.Registry) -> Any:
-        def validate_and_transform(data):
+
+        def validate_and_transform(data: self.input_type) -> self.output_type:
             self.validator.validate(data)
             if data is None:
                 return None
@@ -201,7 +203,7 @@ class ArraySchema(Schema):
 
             return out
 
-        return symbol.__inst.map(validate_and_transform)
+        return symbol._inst.map(utils.native_function(validate_and_transform, registry=registry))
 
     def attr_schema(self, attr: Any) -> Optional[Schema]:
         if isinstance(attr, int):
@@ -228,11 +230,12 @@ class ValueSchema(Schema):
             self.__dict__["output_type"] = self.input_type
 
     def transform(self, symbol: Object, registry: st.Registry) -> Any:
-        def validate(data):
+
+        def validate(data: self.input_type) -> self.input_type:
             self.validator.validate(data)
             return data
 
-        symbol = symbol.__inst.map(validate)
+        symbol = symbol._inst.map(utils.native_function(validate))
         return self.mapper(symbol)
 
     def attr_schema(self, attr: Any) -> Optional[Schema]:
@@ -297,12 +300,14 @@ class ValueSchemaFactory(SchemaFactory, utils.Cloneable):
 
     def schema(self) -> Schema:
         typ = self.type_cls(self.nullable)
+        func_type = utils.single_arg_function_type(typ)
+        mapper = utils.native_function(self.mapper, func_type)
         return ValueSchema(
             input_type=typ,
             output_type=typ,
             validator=self.validator,
             metadata=self.metadata,
-            mapper=lambda x: x.map(self.mapper),
+            mapper=lambda x: x._inst.map(mapper),
         )
 
     def __call__(

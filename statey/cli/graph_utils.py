@@ -10,7 +10,8 @@ import networkx as nx
 import statey as st
 from statey.executor import ExecutionInfo
 from statey.plan import Plan, PlanNode
-from statey.syms import utils, symbols, types
+from statey.syms import utils, types, impl, Object
+from statey.syms.path import PathParser
 from statey.task import Task, SessionSwitch, ResourceGraphOperation, TaskStatus
 
 
@@ -86,18 +87,26 @@ class ColoredTypeRenderer(types.TypeStringRenderer):
         types.TypeStringToken.COMMA: lambda x: click.style(x, fg="yellow"),
         types.TypeStringToken.TYPE_NAME: lambda x: click.style(x, fg="cyan"),
     }
+    state_style_map = {
+        'UP': lambda x: click.style(x, fg='green', bold=True),
+        'DOWN': lambda x: click.style(x, fg='red', bold=True),
+        None: lambda x: click.style(x, fg='yellow', bold=True)
+    }
 
     def render(self, value: str, token: types.TypeStringToken) -> str:
         if token in self.style_map:
             return self.style_map[token](value)
         return value
 
+    def render_state(self, name: str) -> str:
+        return self.state_style_map.get(name, self.state_style_map[None])(name)
+
 
 def data_to_lines(data: Any, name_func=lambda x: x) -> Sequence[str]:
     """
 	Render the data to a readable, yaml-like structure
 	"""
-    if isinstance(data, symbols.Unknown):
+    if isinstance(data, Object) and isinstance(data._impl, impl.Unknown):
         return ["<unknown>"]
     if isinstance(data, list):
         out_lines = []
@@ -174,8 +183,39 @@ class PlanNodeSummary:
         )
 
     def data_to_string(self, max_width: int) -> str:
-        current_lines = self._current_summary().split("\n")
-        config_lines = self._config_summary().split("\n")
+        if self.plan_node.current_type == self.plan_node.config_type and self.plan_node.current_type != types.EmptyType:
+            differ = st.registry.get_differ(self.plan_node.current_type)
+            diff = differ.diff(self.plan_node.current_data, self.plan_node.config_data)
+            current_lines = []
+            config_lines = []
+            path_parser = PathParser()
+
+            for subdiff in diff.flatten():
+                current_diff_lines = data_to_lines(subdiff.left, name_func=self._style_current_name)
+                path_str = path_parser.join(subdiff.path)
+
+                if len(current_diff_lines) <= 1:
+                    current_lines.append(
+                        f'{self._style_current_name(path_str)}:'
+                        f' {"".join(current_diff_lines)}'
+                    )
+                else:
+                    current_lines.append(f'{self._style_current_name(path_str)}:')
+                    current_lines.extend(map(lambda x: tr.indent(x, "  "), current_diff_lines))
+
+                config_diff_lines = data_to_lines(subdiff.right, name_func=self._style_config_name)
+                if len(config_diff_lines) <= 1:
+                    config_lines.append(
+                        f'{self._style_config_name(path_str)}:'
+                        f' {"".join(config_diff_lines)}'
+                    )
+                else:
+                    config_lines.append(f'{self._style_config_name(path_str)}:')
+                    config_lines.extend(map(lambda x: tr.indent(x, "  "), config_diff_lines))
+
+        else:
+            current_lines = self._current_summary().split("\n")
+            config_lines = self._config_summary().split("\n")
 
         max_n_lines = max(len(current_lines), len(config_lines))
 
@@ -184,11 +224,13 @@ class PlanNodeSummary:
                 lines.append("")
 
         max_line_length = max(map(len, current_lines))
-        column_split = min((max_width - 6) // 2, max_line_length)
+        buffer_length = 6
+
+        column_split = min((max_width - buffer_length) // 2, max_line_length)
 
         current_lines = [truncate_string(line, column_split) for line in current_lines]
         config_lines = [
-            truncate_string(line, max_width - column_split) for line in config_lines
+            truncate_string(line, max_width - column_split - buffer_length) for line in config_lines
         ]
 
         def sep(idx):
@@ -232,12 +274,28 @@ class PlanNodeSummary:
             type_string = f'- {style_key("type (current)")}: {rendered}'
             type_lines.append(type_string)
 
+        state_lines = []
+        if (
+            self.plan_node.current_state is not None
+            and (
+                self.plan_node.config_state is None
+                or self.plan_node.current_state.state.name != self.plan_node.config_state.state.name
+            )
+        ):
+            state = renderer.render_state(self.plan_node.current_state.state.name)
+            state_lines.append(f'- {style_key("state (current)")}: {state}')
+
         if self.plan_node.config_type is not None:
             rendered = self.plan_node.config_type.render_type_string(renderer)
             type_string = f'- {style_key("type")}: {rendered}'
             type_lines.append(type_string)
 
+        if self.plan_node.config_state is not None:
+            state = renderer.render_state(self.plan_node.config_state.state.name)
+            state_lines.append(f'- {style_key("state")}: {state}')
+
         type_string = "\n".join(type_lines)
+        state_string = "\n".join(state_lines)
 
         data_string_with_title = "\n".join(
             [f'- {style_key("data")}:', tw.indent(data_string, indent_str * 2)]
@@ -248,6 +306,7 @@ class PlanNodeSummary:
             f"- {style_key(self.plan_node.key)}:",
             tw.indent(tasks_string, indent_str),
             tw.indent(type_string, indent_str),
+            tw.indent(state_string, indent_str),
             tw.indent(data_string_with_title, indent_str),
         ]
         return "\n".join(lines)

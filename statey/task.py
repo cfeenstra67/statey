@@ -20,7 +20,7 @@ from typing import (
 import networkx as nx
 
 import statey as st
-from statey.syms import session, types, symbols, utils
+from statey.syms import session, types, utils, impl, Object
 
 
 class TaskStatus(enum.Enum):
@@ -120,7 +120,7 @@ class FunctionTaskFactory:
         )
 
 
-def task(
+def task_wrapper(
     func: Callable[[Any], Any] = utils.MISSING,
     description: Optional[str] = None,
     always_eager: bool = False,
@@ -148,6 +148,10 @@ def task(
     return process(func)
 
 
+# Alias for the task() function to allow syntax like st.task.new()
+new = task_wrapper
+
+
 @dc.dataclass(frozen=True)
 class SessionTaskSpec(utils.Cloneable):
     """
@@ -161,32 +165,31 @@ class SessionTaskSpec(utils.Cloneable):
     is_always_eager: bool = False
     expected: Any = utils.MISSING
 
-    def expecting(self, value: Any) -> "SessionTaskSpec":
+    def _expect(self, value: Any) -> "SessionTaskSpec":
         """
 		Set the expectation of the output future for tasks created from this spec.
 		"""
         return self.clone(expected=value)
 
-    def __rshift__(self, other: Any) -> "SessionTaskSpec":
-        return self.expecting(other)
+    def __rshift__(self, value: Any) -> "SessionTaskSpec":
+        return self._expect(value)
 
     def bind(self, session: session.Session) -> "SessionTask":
         """
 		Bind this spec to the given session, returning a SessionTask that can be run independently.
 		"""
-        wrapped_args, wrapped_kwargs, wrapped_return = utils.wrap_function_call(
-            session.ns.registry, self.func, *self.args, **self.kwargs
+        call_obj = utils.wrap_function_call(
+            self.func, self.args, self.kwargs, registry=session.ns.registry
         )
-        semantics = session.ns.registry.get_semantics(wrapped_return)
-        new_future = symbols.Future(
-            semantics, refs=list(wrapped_args) + list(wrapped_kwargs.values())
-        ).expecting(self.expected)
+        new_future = impl.Future(tuple(call_obj._impl.arguments.values()))
+
         return SessionTask(
             session=session,
             func=self.func,
-            args=wrapped_args,
-            kwargs=wrapped_kwargs,
+            func_type=call_obj._impl.func.type,
+            arguments=call_obj._impl.arguments,
             output_future=new_future,
+            output_type=call_obj._type,
             description=self.description,
             is_always_eager=self.is_always_eager,
         )
@@ -200,9 +203,10 @@ class SessionTask(Task):
 
     session: session.Session
     func: Callable[[Any], Any]
-    args: Sequence[symbols.Symbol]
-    kwargs: Dict[str, symbols.Symbol]
-    output_future: symbols.Future
+    func_type: types.FunctionType
+    arguments: Dict[str, Object]
+    output_future: impl.Future
+    output_type: types.Type
     description: Optional[str] = None
     is_always_eager: bool = False
 
@@ -210,15 +214,15 @@ class SessionTask(Task):
         return self.is_always_eager
 
     async def run(self) -> None:
-        args = [self.session.resolve(ref, decode=False) for ref in self.args]
-        kwargs = {
-            key: self.session.resolve(ref, decode=False) for ref in self.kwargs.items()
-        }
-        output = await self.func(*args, **kwargs)
-        output_symbol = symbols.Literal(
-            value=output, semantics=self.output_future.semantics
-        )
+        args = []
+        for arg in self.func_type.args:
+            ref = self.arguments[arg.name]
+            args.append(self.session.resolve(ref))
+
+        output = await self.func(*args)
+        output_symbol = Object(output, self.output_type, self.session.ns.registry)
         resolved_output = self.session.resolve(output_symbol, decode=False)
+
         self.output_future.set_result(resolved_output)
 
 
@@ -229,7 +233,7 @@ class SessionSwitch(Task):
 	"""
 
     input_session: session.Session
-    input_symbol: symbols.Symbol
+    input_symbol: Object
     output_session: session.Session
     output_key: str
     allow_unknowns: bool = True
@@ -271,7 +275,7 @@ class GraphSetKey(ResourceGraphOperation):
 	"""
 
     input_session: session.Session
-    input_symbol: symbols.Symbol
+    input_symbol: Object
     dependencies: Sequence[str] = ()
     remove_dependencies: bool = True
     state: Optional["ResourceState"] = None
@@ -287,7 +291,7 @@ class GraphSetKey(ResourceGraphOperation):
         self.resource_graph.set(
             key=self.key,
             value=final_state.data,
-            type=self.input_symbol.type,
+            type=self.input_symbol._type,
             remove_dependencies=self.remove_dependencies,
             state=final_state.resource_state,
         )
@@ -330,10 +334,13 @@ class TaskSession(session.Session):
         if not isinstance(value, SessionTaskSpec):
             return None
         self.tasks[key] = bound = value.bind(self)
-        return bound.output_future, bound.output_future.type
+        out_sym = Object(bound.output_future, bound.output_type, self.ns.registry)
+        if value.expected is not utils.MISSING:
+            out_sym >>= value.expected
+        return out_sym, out_sym._type
 
     def resolve(
-        self, symbol: symbols.Symbol, allow_unknowns: bool = False, decode: bool = True
+        self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
     ) -> Any:
         return self.session.resolve(symbol, allow_unknowns, decode)
 

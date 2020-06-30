@@ -2,7 +2,7 @@ import dataclasses as dc
 from typing import Type as PyType, Dict, Any, Union, Callable, Sequence
 
 import statey as st
-from statey.syms import types, utils
+from statey.syms import types, utils, impl
 
 
 # Default Plugin definitions
@@ -134,6 +134,20 @@ class EncodeDataClassPlugin:
         }
 
 
+@dc.dataclass(frozen=True)
+class LiteralPlugin:
+    """
+    Create Data literals from python objects whose types can be inferred directly
+    """
+    @st.hookimpl
+    def get_object(self, value: Any, registry: st.Registry) -> "Object":
+        try:
+            value_type = registry.infer_type(value)
+        except st.exc.NoTypeFound:
+            return None
+        return st.Object(impl.Data(value, value_type), registry=registry)
+
+
 def default_plugins() -> Sequence[Any]:
     """
 	Generate the default predicates dictionary, optionally replacing any of the default
@@ -148,6 +162,7 @@ def default_plugins() -> Sequence[Any]:
         ValuePredicatePlugin(str, types.StringType),
         ValuePredicatePlugin(bool, types.BooleanType),
         ParseSequencePlugin(types.ArrayType),
+        LiteralPlugin(),
     ]
 
 

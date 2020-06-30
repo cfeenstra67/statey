@@ -129,7 +129,7 @@ class Session(abc.ABC):
 
         if typ is utils.MISSING:
             if isinstance(value, Object):
-                typ = value.type
+                typ = value._type
             elif annotation is utils.MISSING:
                 typ = self.ns.registry.infer_type(value)
             else:

@@ -1,13 +1,24 @@
 import abc
 import dataclasses as dc
-from typing import Any, Dict, Sequence, Iterable, Optional
+from typing import Any, Dict, Sequence, Iterable, Optional, Callable
 
 import networkx as nx
 
 from statey.syms import base
 
 
-@dc.dataclass(frozen=True)
+def get_item_passthrough(name: str) -> Callable[[Any], Any]:
+	"""
+	Get a simple method that will just get an attribute using __getitem__
+	"""
+	def func(self):
+		return self[name]
+
+	func.__name__ = name
+	return property(func)
+
+
+@dc.dataclass(frozen=True, repr=False)
 class Object(base.Proxy):
 	"""
 	A uniform API for structuring access to statey objects. Should not be
@@ -16,10 +27,10 @@ class Object(base.Proxy):
 	impl: dc.InitVar[Any]
 	type: dc.InitVar[Optional["Type"]] = None
 	registry: dc.InitVar[Optional["Registry"]] = None
-	__impl: "ObjectImplementation" = dc.field(init=False, default=None)
-	__type: "Type" = dc.field(init=False, default=None)
-	__registry: "Registry" = dc.field(init=False, default=None)
-	__inst: "Proxy" = dc.field(init=False, default=None)
+	_impl: "ObjectImplementation" = dc.field(init=False, default=None)
+	_type: "Type" = dc.field(init=False, default=None)
+	_registry: "Registry" = dc.field(init=False, default=None)
+	_inst: "Proxy" = dc.field(init=False, default=None)
 
 	def __post_init__(
 		self,
@@ -35,59 +46,75 @@ class Object(base.Proxy):
 
 		if isinstance(impl, Object):
 			obj = impl
-			impl = obj.__impl
-			type = type or obj.__type
-			registry = registry or obj.__registry
+			impl = obj._impl
+			type = type or obj._type
+			registry = registry or obj._registry
 
 		elif not isinstance(impl, ObjectImplementation):
 			if registry is None:
 				registry = st.registry
 			obj = registry.get_object(impl)
-			impl = obj.__impl
-			type = type or obj.__type
+			impl = obj._impl
+			type = type or obj._type
 
 		if type is None:
-			type = impl.type()
+			try:
+				type = impl.type()
+			except NotImplementedError:
+				pass
 
-		if type is NotImplemented:
+		if type is None:
 			raise ValueError(
 				f"Object implementation {impl} does not have an implied type, one must "
 				f"be passed manually."
 			)
 
 		if registry is None:
-			registry = impl.registry()
+			try:
+				registry = impl.registry()
+			except NotImplementedError:
+				pass
 
-		if registry is NotImplemented:
+		if registry is None:
 			registry = st.registry
 
-		self.__dict__['__impl'] = impl
-		self.__dict__['__type'] = type
-		self.__dict__['__registry'] = registry
+		self.__dict__['_impl'] = impl
+		self.__dict__['_type'] = type
+		self.__dict__['_registry'] = registry
 
-		impl_accessor = base.GetattrBasedAttributeAccess(self.__impl)
-		self.__dict__['__inst'] = base.BoundAttributeAccess(self, impl_accessor)
+		impl_accessor = base.GetattrBasedAttributeAccess(self._impl)
+		self.__dict__['_inst'] = base.BoundAttributeAccess(self, impl_accessor)
 
 	@property
-	def __accessor(self) -> base.AttributeAccess:
+	def _accessor(self) -> base.AttributeAccess:
+		methods = self._registry.get_methods(self._type)
 		return base.OrderedAttributeAccess((
-			self.__impl,
-			self.__registry.get_methods(self.__type)
+			self._impl, methods
 		))
+
+	@property
+	def _instance(self) -> Any:
+		return self
+
+	def __repr__(self) -> str:
+		"""
+		Produce a string representation of this object
+		"""
+		return self._inst.object_repr()
 
 	@property
 	def i(self) -> base.Proxy:
 		"""
 		Convenient access to get an implementation-specific bound attribute accessor
 		"""
-		return base.BoundAttributeAccess(self, self.__impl)
+		return base.BoundAttributeAccess(self, self._impl)
 
 	@property
 	def m(self) -> base.Proxy:
 		"""
 		Convenient access for object methods
 		"""
-		return base.BoundAttributeAccess(self, self.__registry.get_methods(self.__type))
+		return base.BoundAttributeAccess(self, self._registry.get_methods(self._type))
 
 	@property
 	def _(self) -> Any:
@@ -96,5 +123,67 @@ class Object(base.Proxy):
 		return self. This is useful to resolve something "as much as possible" without
 		having to reason about whether something is an Object vs. a regular Python object
 		"""
-		res = self.__impl.apply_alone(self)
-		return self if res is NotImplemented else res
+		try:
+			return self._inst.apply_alone()
+		except NotImplementedError:
+			return self
+
+	# Magic methods need to be type itself
+	# http://docs.python.org/3/reference/datamodel.html#special-method-lookup
+	__call__ = get_item_passthrough("__call__")
+
+	__add__ = get_item_passthrough("__add__")
+
+	__sub__ = get_item_passthrough("__sub__")
+
+	__mul__ = get_item_passthrough("__mul__")
+
+	__floordiv__ = get_item_passthrough("__floordiv__")
+
+	__truediv__ = get_item_passthrough("__truediv__")
+
+	__mod__ = get_item_passthrough("__mod__")
+
+	__pow__ = get_item_passthrough("__pow__")
+
+	__lshift__ = get_item_passthrough("__lshift__")
+
+	__rshift__ = get_item_passthrough("__rshift__")
+
+	__and__ = get_item_passthrough("__and__")
+
+	__xor__ = get_item_passthrough("__xor__")
+
+	__or__ = get_item_passthrough("__or__")
+
+	__lt__ = get_item_passthrough("__lt__")
+
+	__le__ = get_item_passthrough("__le__")
+
+	__eq__ = get_item_passthrough("__eq__")
+
+	__ne__ = get_item_passthrough("__ne__")
+
+	__ge__ = get_item_passthrough("__ge__")
+
+	__gt__ = get_item_passthrough("__gt__")
+
+	__neg__ = get_item_passthrough("__ne__")
+
+	__pos__ = get_item_passthrough("__pos__")
+
+	__abs__ = get_item_passthrough("__abs__")
+
+	__invert__ = get_item_passthrough("__invert__")
+
+	__complex__ = get_item_passthrough("__complex__")
+
+	__int__ = get_item_passthrough("__int__")
+
+	__long__ = get_item_passthrough("__long__")
+
+	__float__ = get_item_passthrough("__float__")
+
+	__oct__ = get_item_passthrough("__oct__")
+
+	__hex__ = get_item_passthrough("__hex__")

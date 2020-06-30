@@ -87,7 +87,7 @@ def join(head: Object, *tail: Sequence[Any]) -> Object:
     return the first element, but the result will depend on all of the
     additional arguments symbolically as well
     """
-    def join_func(left: head.__type, right: Sequence[Any]) -> head.__type:
+    def join_func(left: head._type, right: Sequence[Any]) -> head._type:
         return left
 
     new_func = function(join_func)

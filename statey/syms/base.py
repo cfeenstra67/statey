@@ -3,6 +3,7 @@ Base classes for basic functionality used in several different types of objects
 """
 import abc
 import dataclasses as dc
+from functools import partial
 from typing import Any, Sequence
 
 
@@ -28,7 +29,7 @@ class OrderedAttributeAccess(AttributeAccess):
 	def get_attr(self, obj: Any, attr: str) -> Any:
 		for accessor in self.accessors:
 			try:
-				return accessor.get_attr(self, attr)
+				return accessor.get_attr(obj, attr)
 			except KeyError:
 				pass
 		raise KeyError(attr)
@@ -41,13 +42,8 @@ class GetattrBasedAttributeAccess(AttributeAccess):
 	"""
 	obj: Any
 
-	@property
-	def __instance(self) -> Any:
-		return self.obj
-
 	def get_attr(self, obj: Any, attr: str) -> Any:
-		func = getattr(self.obj, attr)
-		return func(obj, attr)
+		return partial(getattr(self.obj, attr), obj)
 
 
 class Proxy(abc.ABC):
@@ -55,7 +51,7 @@ class Proxy(abc.ABC):
 	Defines a generic way to bind an attribute access object to some instance
 	"""
 	@property
-	def __instance(self) -> Any:
+	def _instance(self) -> Any:
 		"""
 		Allow use of this class 
 		"""
@@ -63,7 +59,7 @@ class Proxy(abc.ABC):
 
 	@property
 	@abc.abstractmethod
-	def __accessor(self) -> AttributeAccess:
+	def _accessor(self) -> AttributeAccess:
 		"""
 		Get the AttributeAccess instance for this instance
 		"""
@@ -73,7 +69,7 @@ class Proxy(abc.ABC):
 		"""
 		Main API method for accessing attributes. Test all accessors in order.
 		"""
-		return self.__accessor.get_attr(self.__instance, attr)
+		return self._accessor.get_attr(self._instance, attr)
 
 	def __getattr__(self, attr: Any) -> Any:
 		try:
@@ -90,9 +86,9 @@ class BoundAttributeAccess(Proxy):
 	"""
 	instance: dc.InitVar[Any]
 	accessor: dc.InitVar[AttributeAccess]
-	__instance: Any = dc.field(init=False, default=None)
-	__accessor: AttributeAccess = dc.field(init=False, default=None)
+	_instance: Any = dc.field(init=False, default=None)
+	_accessor: AttributeAccess = dc.field(init=False, default=None)
 
 	def __post_init__(self, obj: Any, accessor: AttributeAccess) -> None:
-		self.__dict__['__instance'] = obj
-		self.__dict__['__accessor'] = accessor
+		self.__dict__['_instance'] = obj
+		self.__dict__['_accessor'] = accessor
