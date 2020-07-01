@@ -166,17 +166,33 @@ class ExecuteTaskSession(PlanAction):
 @dc.dataclass(frozen=True)
 class SetValue(PlanAction):
     """
-	
+	Set a given value in either the resource graph, the output session, or both during execution
 	"""
 
     output_key: str
     output_symbol: Object
+    set_graph: bool = True
+    set_session: bool = True
+
+    def __post_init__(self) -> None:
+        if not (self.set_graph or self.set_session):
+            raise ValueError('At least one of `set_session` or `set_graph` must be true.')
+
+    def graph_update_task(self, prefix: str) -> str:
+        return f"{prefix}:graph-update"
+
+    def session_switch_task(self, prefix: str) -> str:
+        return f"{prefix}:session-switch"
 
     def input_task(self, prefix: str) -> str:
-        return f"{prefix}:state"
+        if self.set_graph and self.set_session or not self.set_session:
+            return self.graph_update_task(prefix)
+        return self.session_switch_task(prefix)
 
     def output_task(self, prefix: str) -> str:
-        return f"{prefix}:state"
+        if self.set_session:
+            return self.session_switch_task(prefix)
+        return self.graph_update_task(prefix)
 
     def render(
         self,
@@ -188,15 +204,28 @@ class SetValue(PlanAction):
         dependencies: Sequence[str],
     ) -> None:
 
-        graph_task_name = self.input_task(prefix)
-        graph_task = GraphSetKey(
-            input_session=output_session,
-            key=self.output_key,
-            input_symbol=self.output_symbol,
-            resource_graph=resource_graph,
-            dependencies=dependencies,
-        )
-        graph.add_node(graph_task_name, task=graph_task, source=prefix)
+        input_task_name = self.input_task(prefix)
+        if self.set_graph:
+            graph_task = GraphSetKey(
+                input_session=output_session,
+                key=self.output_key,
+                input_symbol=self.output_symbol,
+                resource_graph=resource_graph,
+                dependencies=dependencies,
+            )
+            graph.add_node(input_task_name, task=graph_task, source=prefix)
+
+        output_task_name = self.output_task(prefix)
+        if self.set_session:
+            session_task = SessionSwitch(
+                input_session=output_session,
+                input_symbol=self.output_symbol,
+                output_session=output_session,
+                output_key=self.output_key
+            )
+            graph.add_node(output_task_name, task=session_task, source=prefix)
+            if self.set_graph:
+                graph.add_edge(input_task_name, output_task_name)
 
 
 @dc.dataclass(frozen=True)
@@ -251,11 +280,13 @@ class PlanNode:
     config_depends_on: Sequence[str]
     config_action: Optional[PlanAction]
 
-    def input_task(self) -> str:
+    def input_task(self) -> Optional[str]:
         """
 
 		"""
         action = self.current_action or self.config_action
+        if action is None:
+            return None
         return action.input_task(self.current_prefix())
 
     def current_prefix(self) -> str:
@@ -266,7 +297,7 @@ class PlanNode:
             return f"{self.key}:current"
         return self.key
 
-    def current_output_task(self) -> str:
+    def current_output_task(self) -> Optional[str]:
         """
 		The output task of migrating the current state. This may or may not be the
 		same as output_task(); the case where it is the same is when either this key
@@ -274,6 +305,8 @@ class PlanNode:
 		resource whose state is being migrated.
 		"""
         action = self.current_action or self.config_action
+        if action is None:
+            return None
         return action.output_task(self.current_prefix())
 
     def config_prefix(self) -> str:
@@ -289,13 +322,17 @@ class PlanNode:
 
 		"""
         action = self.config_action or self.current_action
+        if action is None:
+            return None
         return action.input_task(self.config_prefix())
 
-    def output_task(self) -> str:
+    def output_task(self) -> Optional[str]:
         """
 
 		"""
         action = self.config_action or self.current_action
+        if action is None:
+            return None
         return action.output_task(self.config_prefix())
 
     def get_edges(
@@ -307,19 +344,24 @@ class PlanNode:
         edges = set()
 
         input_task = self.input_task()
+        if input_task is None:
+            return edges
+
         current_output_task = self.current_output_task()
 
         for upstream in self.config_depends_on:
             node = other_nodes[upstream]
             ref = node.output_task()
-
+            if ref is None:
+                continue
             edges.add((ref, input_task))
 
         for downstream in self.current_depends_on:
             node = other_nodes[downstream]
             current_ref = node.current_output_task()
             config_ref = node.output_task()
-
+            if config_ref is None:
+                continue
             # So we are checking if our input/config currently depends on the _current_
             # output of the other task. If not, we'll make the other input dependent
             # on the _current output task_
@@ -364,7 +406,7 @@ class PlanNode:
                 output_session=output_session,
                 dependencies=(),
             )
-        else:
+        elif self.config_action:
             self.config_action.render(
                 graph=tasks,
                 prefix=self.config_prefix(),
@@ -532,8 +574,49 @@ class DefaultMigrator(Migrator):
                 output_partial_resolved = task_session.resolve(
                     output_ref, allow_unknowns=True, decode=False
                 )
-
                 output_session.set_data(node, output_partial_resolved)
+
+                test_graph = task_session.task_graph(ResourceGraph(), node)
+                # This indicates there are no tasks in the session and the state has not changed.
+                if (
+                    not test_graph.nodes
+                    and previous_state.state.name == config_state.state.name
+                    and previous_state.state.type == config_state.state.type
+                    and current_depends_on == config_depends_on
+                ):
+                    try:
+                        resolved_graph_ref = task_session.resolve(graph_ref, decode=False)
+                    # The graph reference isn't fully resolved yet, we still need
+                    # to execute the task session
+                    except exc.UnknownError:
+                        pass
+                    else:
+                        if resolved_graph_ref == previous_resolved:
+                            state_obj = Object(
+                                resolved_graph_ref,
+                                config_state.state.type,
+                                config_session.ns.registry
+                            )
+                            # Since we are not setting this key in the graph, we can
+                            # act like the configuration has no dependencies during
+                            # planning. This essentially lets us avoid circular
+                            # dependencies because these no-op resources will never
+                            # depend on anything.
+                            plan_node = PlanNode(
+                                key=node,
+                                current_data=previous_resolved,
+                                current_type=previous_state.state.type,
+                                current_state=previous_state,
+                                current_depends_on=(),
+                                current_action=None,
+                                config_data=resolved_graph_ref,
+                                config_type=config_state.state.type,
+                                config_state=config_state,
+                                config_depends_on=(),
+                                config_action=SetValue(node, state_obj, set_graph=False),
+                            )
+                            plan_nodes.append(plan_node)
+                            continue
 
                 action = ExecuteTaskSession(
                     task_session=task_session,

@@ -251,7 +251,10 @@ class FunctionType(StructType):
     return_type: Type
     # Functions can never be nullable
     nullable: bool = dc.field(init=False, default=False)
-    fields: Sequence[Field] = dc.field(init=False, default=())
+    fields: Sequence[Field] = dc.field(
+        init=False,
+        default=(Field("name", StringType(False)),)
+    )
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
         if renderer is None:
@@ -308,6 +311,7 @@ class NativeFunctionType(FunctionType):
 
     def __post_init__(self) -> None:
         self.__dict__["fields"] = (
+            Field("name", StringType(False)),
             # Serialized function object
             Field("serialized", StringType(False)),
         )

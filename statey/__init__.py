@@ -21,7 +21,7 @@ from statey.fsm import (
     MachineResource,
 )
 
-from statey.syms.api import F, join, struct, function, map
+from statey.syms.api import F, join, struct, function, map, declarative
 
 from statey.syms.func import Function
 
@@ -34,12 +34,14 @@ from statey.syms.session import Session
 from statey.syms.py_session import create_session
 
 from statey.syms.types import (
+    Type,
     StructType,
     StringType,
     IntegerType,
     FloatType,
     ArrayType,
     BooleanType,
+    Field
 )
 
 from statey.resource import (

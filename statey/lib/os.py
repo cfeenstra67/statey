@@ -69,7 +69,7 @@ class FileMachine(Machine):
     @task.new
     async def set_file(data: FileType) -> FileType:
         """
-        Create the file
+        Set the file's contents
         """
         path = os.path.realpath(data["location"])
         with open(path, "w+") as f:
@@ -79,6 +79,7 @@ class FileMachine(Machine):
     @staticmethod
     @task.new
     async def rename_file(current: FileType, path: str) -> FileType:
+        path = os.path.realpath(path)
         os.rename(current["location"], path)
         return {"data": current["data"], "location": path}
 
@@ -162,7 +163,7 @@ class FileMachine(Machine):
         return session["delete_file"] << self.remove_file(current_literal.location)
 
 
-DirectorySchema = S.Struct["location" : S.String]
+DirectorySchema = S.Struct["location" : S.String].s
 
 
 class DirectoryMachine(Machine):

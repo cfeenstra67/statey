@@ -234,6 +234,9 @@ class PlanNodeSummary:
             while len(lines) < max_n_lines:
                 lines.append("")
 
+        if not current_lines:
+            return ""
+
         max_line_length = max(map(len, current_lines))
         buffer_length = 6
 

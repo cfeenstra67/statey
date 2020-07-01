@@ -14,12 +14,12 @@ from statey.syms import schemas, utils, types, Object
 @dc.dataclass(frozen=True)
 class MachineState(resource.AbstractState):
     name: str
-    schema: schemas.Schema
+    schema: schemas.Schema = dc.field(compare=False, repr=False)
     null: bool = False
+    type: types.Type = dc.field(init=False, default=None)
 
-    @property
-    def type(self) -> types.Type:
-        return self.schema.output_type
+    def __post_init__(self) -> None:
+        self.__dict__['type'] = self.schema.output_type
 
 
 @dc.dataclass(frozen=True)

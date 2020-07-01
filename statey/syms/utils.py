@@ -1,7 +1,8 @@
 import dataclasses as dc
 import inspect
+import sys
 from contextlib import contextmanager
-from functools import partial, reduce
+from functools import wraps, partial, reduce
 from itertools import product
 from typing import Type, Optional, Union, Any, Dict, Hashable, Sequence, Callable
 
@@ -388,3 +389,97 @@ class Location(Cloneable):
 
     def __getitem__(self, attr: Any) -> "Location":
         return self.clone(path=tuple(self.path) + (attr,))
+
+
+def trace_func(func: Callable[[Any], Any], cb: Callable[[Any, Any, Any], None]) -> None:
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        prev = sys.gettrace()
+        trace_frame = sys._getframe(0)
+        call_frame = None
+
+        def tracer(frame, event, arg):
+            nonlocal call_frame
+            # Only immediate child frame should be the function call
+            if frame.f_back is not trace_frame:
+                return
+            call_frame = frame
+            cb(frame, event, arg)
+            # 'done' is a fake event that we fire just to finalize
+            # the namespace, so we don't want to pass it to the previous
+            # tracer function
+            if prev is not None and event != 'done':
+                prev(frame, event, arg)
+            return tracer
+
+        sys.settrace(tracer)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            sys.settrace(prev)
+            if call_frame is not None:
+                tracer(call_frame, 'done', None)
+
+    return wrapper
+
+
+def locals_history(frame):
+
+    current_locals = frame.f_locals.copy()
+
+    def diff():
+        nonlocal current_locals
+
+        new_locals = frame.f_locals.copy()
+
+        updated = {
+            key: loc for key, loc in new_locals.items()
+            if key not in current_locals
+            or loc is not current_locals[key]
+        }
+        deleted = {key for key in current_locals if key not in new_locals}
+        current_locals = new_locals
+
+        return updated, deleted
+
+    diff.frame = frame
+
+    return diff
+
+
+def make_tracer(diff_cb: Callable[[Any, Any, Any], None]):
+
+    current_history = None
+
+    def tracer(frame, event, arg):
+        nonlocal current_history
+
+        if current_history is None:
+            current_history = locals_history(frame)
+
+        diff_cb(frame, *current_history())
+
+        return tracer
+
+    return tracer
+
+
+def locals_diff_tracer(diff_cb: Callable[[Any, Any, Any], None]):
+
+    tracer = make_tracer(diff_cb)
+
+    def dec(func):
+        return trace_func(func, cb=tracer)
+
+    return dec
+
+
+def scope_update_handler(handler: Callable[[Any, str, Any], None]):
+
+    @locals_diff_tracer
+    def differ(frame, updated, deleted):
+        for key, val in updated.items():
+            handler(frame, key, val)
+
+    return differ

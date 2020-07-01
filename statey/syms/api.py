@@ -5,6 +5,7 @@ contained in the the other modules in this package
 """
 import dataclasses as dc
 import inspect
+from functools import wraps
 from typing import Any, Sequence, Dict, Callable, Type, Tuple
 
 import statey as st
@@ -35,6 +36,44 @@ def map(
     func_type = utils.single_arg_function_type(value._type, return_type)
     func_obj = function(func, func_type)
     return value._inst.map(func_obj)
+
+
+def declarative(func: Callable[[Any], Any] = utils.MISSING) -> Callable[[Any], Any]:
+    """
+    Wrap the given function as a function that declares statey objects
+    """
+    def dec(_func):
+
+        @wraps(_func)
+        def wrapper(session, *args, name_key=lambda x: x, **kwargs):
+
+            @utils.scope_update_handler
+            def update_handler(frame, name, value):
+                absolute = name_key(name)
+                # Ignore reassignments
+                if (
+                    isinstance(value, st.Object)
+                    and isinstance(value._impl, impl.Reference)
+                    and value._impl.path == absolute
+                ):
+                    return
+
+                try:
+                    typ = session.ns.resolve(absolute)
+                except st.exc.SymbolKeyError:
+                    annotations = frame.f_locals.get('__annotations__', {})
+                    name_annotation = annotations.get(absolute, utils.MISSING)
+                    frame.f_locals[name] = session[absolute: name_annotation] << value
+                else:
+                    session.set_data(absolute, value)
+                    frame.f_locals[name] = session.ns.ref(absolute)
+
+            update_handler(_func)(session, *args, **kwargs)
+            return session
+
+        return wrapper
+
+    return dec if func is utils.MISSING else dec(func)
 
 
 @dc.dataclass(frozen=True)

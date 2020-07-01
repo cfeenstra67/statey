@@ -37,14 +37,19 @@ async def refresh_graph(graph):
 @click.option(
     "--session-name",
     help="Set a module attribute other than `session` to use for planning.",
-    default="session",
+    default="session()",
 )
 @click.argument("module")
 @click.pass_context
 def plan(ctx, module, session_name):
     module_obj = importlib.import_module(module)
 
-    session = getattr(module_obj, session_name)
+    if session_name.endswith("()"):
+        session_factory = getattr(module_obj, session_name[:-2])
+        session = session_factory()
+    else:
+        session = getattr(module_obj, session_name)
+
     resource_graph = ctx.obj["state_manager"].load(st.registry)
 
     loop = asyncio.get_event_loop()

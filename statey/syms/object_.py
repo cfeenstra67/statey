@@ -1,6 +1,6 @@
 import abc
 import dataclasses as dc
-from typing import Any, Dict, Sequence, Iterable, Optional, Callable
+from typing import Any, Dict, Sequence, Iterable, Optional, Callable, Union
 
 import networkx as nx
 
@@ -27,7 +27,7 @@ class Object(base.Proxy):
 	"""
 
     impl: dc.InitVar[Any]
-    type: dc.InitVar[Optional["Type"]] = None
+    type: dc.InitVar[Optional[Union["Type", Any]]] = None
     registry: dc.InitVar[Optional["Registry"]] = None
     _impl: "ObjectImplementation" = dc.field(init=False, default=None)
     _type: "Type" = dc.field(init=False, default=None)
@@ -55,6 +55,10 @@ class Object(base.Proxy):
             obj = registry.get_object(impl)
             impl = obj._impl
             type = type or obj._type
+
+        if type is not None and not isinstance(type, st.Type):
+            # Convert an annotation to a type
+            type = registry.get_type(type)
 
         if type is None:
             try:

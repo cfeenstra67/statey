@@ -8,8 +8,8 @@ from typing import (
     Dict,
 )
 
-import dill
 import marshmallow as ma
+import pickle
 import pluggy
 
 import statey as st
@@ -271,13 +271,14 @@ class NativeFunctionEncoder(StructEncoder):
     """
     Encoder for native python functions
     """
+    module: Any = pickle
 
     def encode(self, value: Any) -> Any:
         if isinstance(value, Object):
             return super().encode(value)
 
-        serialized_bytes = dill.dumps(value.func)
-        converted = {"serialized": base64.b64encode(serialized_bytes)}
+        serialized_bytes = self.module.dumps(value.func)
+        converted = {"serialized": base64.b64encode(serialized_bytes), "name": value.name}
         return super().encode(converted)
 
     def decode(self, value: Any) -> Any:
@@ -286,8 +287,8 @@ class NativeFunctionEncoder(StructEncoder):
         value = super().decode(value)
         if isinstance(value, Object):
             return value
-        function_ob = dill.loads(base64.b64decode(value["serialized"]))
-        return func.NativeFunction(self.type, function_ob)
+        function_ob = self.module.loads(base64.b64decode(value["serialized"]))
+        return func.NativeFunction(self.type, function_ob, value["name"])
 
     @classmethod
     @st.hookimpl
@@ -299,21 +300,54 @@ class NativeFunctionEncoder(StructEncoder):
         return cls(type, struct_encoder.field_encoders)
 
 
-# Intentionally a list--this can be mutated if desired
-MARSHMALLOW_ENCODER_CLASSES = [
+# Intentionally a list--this can be mutated
+ENCODER_CLASSES = [
     IntegerEncoder,
     FloatEncoder,
     BooleanEncoder,
     StringEncoder,
     ArrayEncoder,
     StructEncoder,
-    NativeFunctionEncoder,
+    NativeFunctionEncoder
 ]
+
+
+# We'll prefer a better pickling module if we have one.
+try:
+    import dill
+except ImportError:
+    import warnings
+    warnings.warn('Dill is not installed', RuntimeWarning)
+else:
+    @dc.dataclass(frozen=True)
+    class DillFunctionEncoder(NativeFunctionEncoder):
+        """
+        dill-based python function encoder
+        """
+        module: Any = dill
+
+    ENCODER_CLASSES.append(DillFunctionEncoder)
+
+
+try:
+    import cloudpickle
+except ImportError:
+    import warnings
+    warnings.warn('Cloudpickle is not installed', RuntimeWarning)
+else:
+    @dc.dataclass(frozen=True)
+    class CloudPickleEncoder(NativeFunctionEncoder):
+        """
+        cloudpickle-based python function encoder
+        """
+        module: Any = cloudpickle
+
+    ENCODER_CLASSES.append(CloudPickleEncoder)
 
 
 def register() -> None:
     """
 	Replace default encoder with encoders defined here
 	"""
-    for cls in MARSHMALLOW_ENCODER_CLASSES:
+    for cls in ENCODER_CLASSES:
         st.registry.pm.register(cls)
