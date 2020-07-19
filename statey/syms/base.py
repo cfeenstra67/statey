@@ -6,6 +6,8 @@ import dataclasses as dc
 from functools import partial
 from typing import Any, Sequence
 
+from statey import exc
+
 
 class AttributeAccess(abc.ABC):
     """
@@ -32,10 +34,9 @@ class OrderedAttributeAccess(AttributeAccess):
         for accessor in self.accessors:
             try:
                 return accessor.get_attr(obj, attr)
-            except KeyError:
+            except (exc.SymbolAttributeError, exc.SymbolKeyError):
                 pass
-        print("FAILING", obj, attr, self.accessors)
-        raise KeyError(attr)
+        raise exc.SymbolAttributeError(obj, attr)
 
 
 @dc.dataclass(frozen=True)

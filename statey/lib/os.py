@@ -6,20 +6,17 @@ import statey as st
 from statey import (
     Machine,
     transition,
-    MachineState,
-    NullMachineState,
     MachineResource,
-    BoundState,
     S,
     TaskSession,
     task,
+    StateSnapshot,
+    StateConfig
 )
 from statey.syms import types, utils, Object
 
 
-FileSchema = S.Struct["location" : S.String, "data" : S.String].s
-
-FileType = FileSchema.output_type
+FileType = S.Struct["location" : S.String, "data" : S.String].t
 
 
 class StateyOS:
@@ -38,22 +35,22 @@ class FileMachine(Machine):
     Simple file state machine
     """
 
-    UP = MachineState("UP", FileSchema)
-    DOWN = NullMachineState("DOWN")
+    UP = st.State("UP", FileType, FileType)
+    DOWN = st.NullState("DOWN")
 
-    async def refresh(self, current: BoundState) -> BoundState:
-        state = current.resource_state.state
+    async def refresh(self, current: StateSnapshot) -> StateSnapshot:
+        state = current.state.state
         if state == self.null_state.state:
             return current
         out = current.data.copy()
         if not os.path.isfile(current.data["location"]):
-            return BoundState(self.null_state, {})
+            return StateSnapshot({}, self.null_state)
         out["location"] = os.path.realpath(out["location"])
         with open(out["location"]) as f:
             out["data"] = f.read()
-        return BoundState(current.resource_state, out)
+        return StateSnapshot(out, current.state)
 
-    async def finalize(self, current: BoundState) -> BoundState:
+    async def finalize(self, current: StateSnapshot) -> StateSnapshot:
         return current.clone(data=dict(current.data, data=""))
 
     @staticmethod
@@ -84,7 +81,7 @@ class FileMachine(Machine):
         return {"data": current["data"], "location": path}
 
     def get_expected(
-        self, session: TaskSession, data: Dict[str, Any]
+        self, data: Dict[str, Any]
     ) -> Dict[str, Any]:
         return {
             "location": st.map(os.path.realpath, data["location"]),
@@ -94,22 +91,22 @@ class FileMachine(Machine):
     @transition("UP", "UP")
     def modify(
         self,
-        current: BoundState,
-        config: BoundState,
+        current: StateSnapshot,
+        config: StateConfig,
         session: TaskSession,
         input: Object,
     ) -> Object:
 
-        differ = session.ns.registry.get_differ(current.resource_state.state.type)
+        differ = session.ns.registry.get_differ(current.state.input_type)
         diffconfig = differ.config()
-        expected = self.get_expected(session, config.data)
+        expected = self.get_expected(config.data)
 
         def compare_realpaths(x, y):
             return os.path.realpath(x) == os.path.realpath(y)
 
         diffconfig.set_comparison("location", compare_realpaths)
 
-        current_literal = current.literal(session.ns.registry)
+        current_literal = current.obj(session.ns.registry)
 
         diff = differ.diff(current.data, config.data)
         flat = list(diff.flatten(diffconfig))
@@ -141,133 +138,133 @@ class FileMachine(Machine):
     @transition("DOWN", "UP")
     def create(
         self,
-        current: BoundState,
-        config: BoundState,
+        current: StateSnapshot,
+        config: StateConfig,
         session: TaskSession,
         input: Object,
     ) -> Object:
 
-        expected = self.get_expected(session, config.data)
+        expected = self.get_expected(config.data)
         return session["create_file"] << (self.set_file(input) >> expected)
 
     @transition("UP", "DOWN")
     def delete(
         self,
-        current: BoundState,
-        config: BoundState,
+        current: StateSnapshot,
+        config: StateConfig,
         session: TaskSession,
         input: Object,
     ) -> Object:
 
-        current_literal = current.literal(session.ns.registry)
+        current_literal = current.obj(session.ns.registry)
         return session["delete_file"] << self.remove_file(current_literal.location)
 
 
-DirectorySchema = S.Struct["location" : S.String].s
+# DirectorySchema = S.Struct["location" : S.String].s
 
 
-class DirectoryMachine(Machine):
-    """
-    Simple file state machine
-    """
+# class DirectoryMachine(Machine):
+#     """
+#     Simple file state machine
+#     """
 
-    UP = MachineState("UP", DirectorySchema)
-    DOWN = NullMachineState("DOWN")
+#     UP = MachineState("UP", DirectorySchema)
+#     DOWN = NullMachineState("DOWN")
 
-    async def refresh(self, current: BoundState) -> BoundState:
-        state = current.resource_state.state
-        if state == self.null_state.state:
-            return current
-        out = current.data.copy()
-        path = os.path.realpath(current.data["location"])
-        if not os.path.isdir(path):
-            return BoundState(self.null_state, {})
-        return BoundState(current.resource_state, {"location": path})
+#     async def refresh(self, current: BoundState) -> BoundState:
+#         state = current.resource_state.state
+#         if state == self.null_state.state:
+#             return current
+#         out = current.data.copy()
+#         path = os.path.realpath(current.data["location"])
+#         if not os.path.isdir(path):
+#             return BoundState(self.null_state, {})
+#         return BoundState(current.resource_state, {"location": path})
 
-    @staticmethod
-    @task.new
-    async def remove_dir(path: str) -> types.EmptyType:
-        """
-        Delete the directory
-        """
-        shutil.rmtree(path)
-        return {}
+#     @staticmethod
+#     @task.new
+#     async def remove_dir(path: str) -> types.EmptyType:
+#         """
+#         Delete the directory
+#         """
+#         shutil.rmtree(path)
+#         return {}
 
-    @staticmethod
-    @task.new
-    async def create_dir(path: str) -> str:
-        """
-        Create the directory
-        """
-        os.mkdir(path)
-        return os.path.realpath(path)
+#     @staticmethod
+#     @task.new
+#     async def create_dir(path: str) -> str:
+#         """
+#         Create the directory
+#         """
+#         os.mkdir(path)
+#         return os.path.realpath(path)
 
-    @staticmethod
-    @task.new
-    async def rename_dir(from_path: str, to_path: str) -> str:
-        """
-        Rename the directory from the given path to the given path
-        """
-        os.rename(from_path, to_path)
-        return os.path.realpath(to_path)
+#     @staticmethod
+#     @task.new
+#     async def rename_dir(from_path: str, to_path: str) -> str:
+#         """
+#         Rename the directory from the given path to the given path
+#         """
+#         os.rename(from_path, to_path)
+#         return os.path.realpath(to_path)
 
-    @transition("UP", "UP")
-    def modify(
-        self,
-        current: BoundState,
-        config: BoundState,
-        session: TaskSession,
-        input: Object,
-    ) -> Object:
+#     @transition("UP", "UP")
+#     def modify(
+#         self,
+#         current: BoundState,
+#         config: BoundState,
+#         session: TaskSession,
+#         input: Object,
+#     ) -> Object:
 
-        differ = session.ns.registry.get_differ(current.resource_state.state.type)
-        diffconfig = differ.config()
-        expected = self.get_expected(session, config.data)
+#         differ = session.ns.registry.get_differ(current.resource_state.state.type)
+#         diffconfig = differ.config()
+#         expected = self.get_expected(session, config.data)
 
-        def compare_realpaths(x, y):
-            return os.path.realpath(x) == os.path.realpath(y)
+#         def compare_realpaths(x, y):
+#             return os.path.realpath(x) == os.path.realpath(y)
 
-        diffconfig.set_comparison("location", compare_realpaths)
+#         diffconfig.set_comparison("location", compare_realpaths)
 
-        current_literal = current.literal(session.ns.registry)
+#         current_literal = current.literal(session.ns.registry)
 
-        diff = differ.diff(current.data, config.data)
-        flat = list(diff.flatten(diffconfig))
-        if not flat:
-            return current_literal
+#         diff = differ.diff(current.data, config.data)
+#         flat = list(diff.flatten(diffconfig))
+#         if not flat:
+#             return current_literal
 
-        result_path = session["rename_dir"] << (
-            self.rename_dir(current_literal.location, input.location)
-        )
-        return st.struct["location":result_path] >> {
-            "location": st.map(os.path.realpath, config.data["location"])
-        }
+#         result_path = session["rename_dir"] << (
+#             self.rename_dir(current_literal.location, input.location)
+#         )
+#         return st.struct["location":result_path] >> {
+#             "location": st.map(os.path.realpath, config.data["location"])
+#         }
 
-    @transition("DOWN", "UP")
-    def create(
-        self,
-        current: BoundState,
-        config: BoundState,
-        session: TaskSession,
-        input: Object,
-    ) -> Object:
+#     @transition("DOWN", "UP")
+#     def create(
+#         self,
+#         current: BoundState,
+#         config: BoundState,
+#         session: TaskSession,
+#         input: Object,
+#     ) -> Object:
 
-        result_path = session["create_dir"] << self.create_dir(input.location)
-        return st.struct["location":result_path] >> {
-            "location": st.map(os.path.realpath, config.data["location"])
-        }
+#         result_path = session["create_dir"] << self.create_dir(input.location)
+#         return st.struct["location":result_path] >> {
+#             "location": st.map(os.path.realpath, config.data["location"])
+#         }
 
-    @transition("UP", "DOWN")
-    def delete(
-        self,
-        current: BoundState,
-        config: BoundState,
-        session: TaskSession,
-        input: Object,
-    ) -> Object:
+#     @transition("UP", "DOWN")
+#     def delete(
+#         self,
+#         current: BoundState,
+#         config: BoundState,
+#         session: TaskSession,
+#         input: Object,
+#     ) -> Object:
 
-        current_literal = current.literal(session.ns.registry)
-        return session["remove_dir"] << self.remove_dir(current_literal.location)
+#         current_literal = current.literal(session.ns.registry)
+#         return session["remove_dir"] << self.remove_dir(current_literal.location)
 
 
 # Declaring global resources
@@ -278,13 +275,16 @@ file_resource = MachineResource("file", FileMachine)
 File = file_resource.s
 
 
-directory_resource = MachineResource("directory", DirectoryMachine)
+# directory_resource = MachineResource("directory", DirectoryMachine)
 
-# Resource state factory
-Directory = directory_resource.s
+# # Resource state factory
+# Directory = directory_resource.s
 
 
-RESOURCES = [file_resource, directory_resource]
+RESOURCES = [
+    file_resource,
+    # directory_resource
+]
 
 
 def register() -> None:

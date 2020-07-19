@@ -11,31 +11,31 @@ from statey import resource, task, exc
 from statey.syms import schemas, utils, types, Object
 
 
-@dc.dataclass(frozen=True)
-class MachineState(resource.AbstractState):
-    name: str
-    schema: schemas.Schema = dc.field(compare=False, repr=False)
-    null: bool = False
-    type: types.Type = dc.field(init=False, default=None)
+# @dc.dataclass(frozen=True)
+# class MachineState(resource.AbstractState):
+#     name: str
+#     schema: schemas.Schema = dc.field(compare=False, repr=False)
+#     null: bool = False
+#     type: types.Type = dc.field(init=False, default=None)
 
-    def __post_init__(self) -> None:
-        self.__dict__['type'] = self.schema.output_type
-
-
-@dc.dataclass(frozen=True)
-class NullMachineState(MachineState):
-    schema: types.Type = dc.field(init=False, default=schemas.StructSchema(()))
-    null: bool = dc.field(repr=False, init=False, default=True)
+#     def __post_init__(self) -> None:
+#         self.__dict__['type'] = self.schema.output_type
 
 
-@dc.dataclass(frozen=True)
-class MachineResourceState(resource.ResourceState):
-    state: MachineState
-    resource_name: str
+# @dc.dataclass(frozen=True)
+# class NullMachineState(MachineState):
+#     schema: types.Type = dc.field(init=False, default=schemas.StructSchema(()))
+#     null: bool = dc.field(repr=False, init=False, default=True)
 
-    def __call__(self, *args, **kwargs) -> resource.BoundState:
-        bound = super().__call__(*args, **kwargs)
-        return bound.clone(data=self.state.schema(bound.data))
+
+# @dc.dataclass(frozen=True)
+# class MachineResourceState(resource.ResourceState):
+#     state: MachineState
+#     resource_name: str
+
+#     def __call__(self, *args, **kwargs) -> resource.BoundState:
+#         bound = super().__call__(*args, **kwargs)
+#         return bound.clone(data=self.state.schema(bound.data))
 
 
 class Transition(abc.ABC):
@@ -76,8 +76,8 @@ class FunctionTransition(Transition):
 
     def plan(
         self,
-        current: resource.BoundState,
-        config: resource.BoundState,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
         session: task.TaskSession,
         input: Object,
     ) -> Object:
@@ -115,8 +115,8 @@ class MachineMeta(type(resource.States)):
 
     @classmethod
     def _validate_states(
-        cls, old_states: Sequence[MachineState], new_states: Sequence[MachineState]
-    ) -> Sequence[MachineState]:
+        cls, old_states: Sequence[resource.State], new_states: Sequence[resource.State]
+    ) -> Sequence[resource.State]:
 
         new_names = Counter(state.name for state in new_states)
         if new_names and max(new_names.values()) > 1:
@@ -131,7 +131,7 @@ class MachineMeta(type(resource.States)):
     ) -> PyType:
         super_cls = super().__new__(cls, name, bases, attrs)
         states = super_cls.__states__ if hasattr(super_cls, "__states__") else ()
-        new_states = [val for val in attrs.values() if isinstance(val, MachineState)]
+        new_states = [val for val in attrs.values() if isinstance(val, resource.State)]
         states = cls._validate_states(states, new_states)
         super_cls.__states__ = tuple(states)
 
@@ -159,30 +159,26 @@ class Machine(resource.States, metaclass=MachineMeta):
         self.resource_name = resource_name
         # This is temporary, should clean this up
         for state in self.__states__:
-            self.set_resource_state(MachineResourceState(state, resource_name))
+            self.set_resource_state(resource.ResourceState(state, resource_name))
 
-    def set_resource_state(self, state: MachineResourceState) -> None:
+    def set_resource_state(self, state: resource.ResourceState) -> None:
         setattr(self, state.state.name, state)
 
     @property
     def null_state(self) -> resource.ResourceState:
         state = next((s for s in self.__states__ if s.null))
-        return MachineResourceState(state, self.resource_name)
-
-    def get_schema(self, state: str) -> schemas.Schema:
-        state_map = {state.name for state in self.__states__}
-        return state_map[state].schema
+        return resource.ResourceState(state, self.resource_name)
 
     def plan(
         self,
-        current: resource.BoundState,
-        config: resource.BoundState,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
         session: task.TaskSession,
         input: Object,
     ) -> Object:
 
-        from_name = current.resource_state.state.name
-        to_name = config.resource_state.state.name
+        from_name = current.state.name
+        to_name = config.state.name
 
         transitions = (getattr(self, tran)() for tran in self.__transitions__)
         transition = next(
@@ -205,7 +201,7 @@ class Machine(resource.States, metaclass=MachineMeta):
         states = [state for state in self.__states__ if state != self.null_state.state]
         if len(states) > 1:
             raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
-        return MachineResourceState(states[0], self.resource_name)(*args, **kwargs)
+        return resource.ResourceState(states[0], self.resource_name)(*args, **kwargs)
 
     @abc.abstractmethod
     async def refresh(self, current: resource.BoundState) -> resource.BoundState:

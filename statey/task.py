@@ -282,10 +282,10 @@ class GraphSetKey(ResourceGraphOperation):
     finalize: Callable[[Any], Coroutine] = async_identity
 
     async def run(self) -> None:
-        from statey.resource import BoundState
+        from statey.resource import StateSnapshot
 
         data = self.input_session.resolve(self.input_symbol, decode=False)
-        state = BoundState(self.state, data)
+        state = StateSnapshot(data, self.state)
         final_state = await self.finalize(state)
 
         self.resource_graph.set(
@@ -293,7 +293,7 @@ class GraphSetKey(ResourceGraphOperation):
             value=final_state.data,
             type=self.input_symbol._type,
             remove_dependencies=self.remove_dependencies,
-            state=final_state.resource_state,
+            state=final_state.state,
         )
         if self.dependencies:
             self.resource_graph.add_dependencies(self.key, self.dependencies)
@@ -320,14 +320,14 @@ class TaskSession(session.Session):
         self.tasks = {}
         self.pm.register(self)
 
-    @st.hookimpl
-    def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
-        from statey.resource import BoundState
+    # @st.hookimpl
+    # def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
+    #     from statey.resource import BoundState
 
-        if not isinstance(value, BoundState):
-            return None
-        self.checkpoints[key] = value
-        return value.data, value.resource_state.state.type
+    #     if not isinstance(value, BoundState):
+    #         return None
+    #     self.checkpoints[key] = value
+    #     return value.data, value.state.state.type
 
     @st.hookimpl
     def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
@@ -366,13 +366,13 @@ class TaskSession(session.Session):
                 # Construct checkpoint task
                 state = self.checkpoints[node]
                 resource = self.ns.registry.get_resource(
-                    state.resource_state.resource_name
+                    state.state.resource
                 )
                 task = GraphSetKey(
                     input_session=self,
-                    input_symbol=self.symbolify(state.data, state.resource_state.type),
+                    input_symbol=st.Object(state.data, state.state.output_type, self.ns.registry),
                     remove_dependencies=False,
-                    state=state.resource_state,
+                    state=state.state,
                     key=checkpoint_key,
                     resource_graph=resource_graph,
                     finalize=resource.finalize,

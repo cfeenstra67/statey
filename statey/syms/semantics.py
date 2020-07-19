@@ -78,7 +78,7 @@ class ValueSemantics(Semantics):
         return None
 
     def get_attr(self, value: Any, attr: Any) -> Any:
-        raise AttributeError(attr)
+        raise st.exc.SymbolAttributeError(value, attr)
 
     def map_objects(self, func: Callable[[Any], Any], value: Any) -> Any:
         if isinstance(value, Object):

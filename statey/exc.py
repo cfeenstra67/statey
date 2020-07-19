@@ -102,7 +102,7 @@ class NoTypeSerializerFoundForType(NoTypeSerializerFound):
 
     def __init__(self, type: "Type") -> None:
         self.type = type
-        super().__init__(f"No resource registered for type: {type}.")
+        super().__init__(f"No type serializer registered for type: {type}.")
 
 
 class NoTypeSerializerFoundForData(NoTypeSerializerFound):
@@ -160,10 +160,10 @@ class SymbolAttributeError(SymsError, AttributeError):
 	Error raised to indicate that an attribute reference cannot be resolved on a symbol
 	"""
 
-    def __init__(self, symbol: "Symbol", attr: Any) -> None:
-        self.symbol = symbol
+    def __init__(self, value: Any, attr: Any) -> None:
+        self.value = value
         self.attr = attr
-        super().__init__(f'Could not resolve attribute "{attr}" of symbol {symbol}.')
+        super().__init__(f'Could not resolve attribute "{attr}" of value {value}.')
 
 
 class FutureError(SymsError):

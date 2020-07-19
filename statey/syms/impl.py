@@ -36,7 +36,7 @@ class ObjectImplementation(base.AttributeAccess):
         Object implementations may not depend on other objects and thus can
         be trivially resolved this way. Default behavior is to return NotImplemented
         """
-        return NotImplemented
+        raise NotImplementedError
 
     @abc.abstractmethod
     def map(self, obj: Object, function: func.Function) -> Object:
@@ -93,7 +93,7 @@ class FunctionalAttributeAccessMixin:
         attr_semantics = semantics.attr_semantics(attr)
 
         if attr_semantics is None:
-            raise KeyError(attr)
+            raise exc.SymbolAttributeError(obj, attr)
 
         getter_func = lambda x: semantics.get_attr(x, attr)
         func_type = utils.single_arg_function_type(
@@ -362,13 +362,23 @@ class Unknown(ObjectImplementation):
     """
     Some value that is not known
     """
-
-    obj: Object
+    obj: Optional[Object] = None
     refs: Sequence[Object] = ()
+    return_type: Optional[types.Type] = None
 
     def __post_init__(self) -> None:
-        while isinstance(self.obj._impl, Unknown):
+        return_type = self.return_type
+        while self.obj is not None and isinstance(self.obj._impl, Unknown):
+            return_type = self.obj._impl.return_type
             self.__dict__["obj"] = self.obj._impl.obj
+
+        if self.return_type is None:
+            if return_type is not None:
+                self.__dict__['return_type'] = return_type
+            elif self.obj is None:
+                raise ValueError('Either an origin object or a return type are required')
+            else:
+                self.__dict__['return_type'] = self.obj._type
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         return self.refs
@@ -393,21 +403,34 @@ class Unknown(ObjectImplementation):
 
             raise TypeError(f"Unhandled attribute result type {result}! Failing")
 
+        if self.obj is None:
+            semantics = obj._registry.get_semantics(self.return_type)
+            attr_semantics = semantics.attr_semantics(attr)
+            new_impl = Unknown(refs=self.refs, return_type=attr_semantics.type)
+            return Object(new_impl, attr_semantics.type, obj._registry)
+
         return handle(self.obj[attr])
 
     def map(self, obj: Object, function: func.Function) -> Object:
-        mapped_object = self.src._inst.map(function)
+
+        if self.obj is None:
+            new_impl = Unknown(refs=self.refs, return_type=function.type.return_type)
+            return Object(new_impl, function.type.return_type, obj._registry)
+
+        mapped_object = self.obj._inst.map(function)
         new_impl = Unknown(mapped_object, self.refs)
         return Object(new_impl, mapped_object._type, mapped_object._registry)
 
     def type(self) -> types.Type:
-        return self.obj._type
+        return self.return_type
 
     def registry(self) -> "Registry":
+        if self.obj is None:
+            raise NotImplementedError
         return self.obj._registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f"{type(self).__name__}[{self.obj._type}]({self.obj})"
+        return f"{type(self).__name__}[{self.return_type}]({self.obj})"
 
 
 @dc.dataclass(frozen=True)

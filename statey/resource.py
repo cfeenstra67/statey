@@ -27,7 +27,8 @@ class StateSchema(ma.Schema):
 	"""
 
     name = ma.fields.Str(required=True, default=None)
-    type = ma.fields.Dict(required=True, default=None)
+    input_type = ma.fields.Dict(required=True, default=None)
+    output_type = ma.fields.Dict(required=True, default=None)
     null = ma.fields.Bool(required=True, default=None)
 
 
@@ -37,17 +38,24 @@ class AbstractState(abc.ABC):
     """
 
     name: str
-    type: types.Type
+    input_type: types.Type
+    output_type: types.Type
     null: bool
+
+    @property
+    def type(self) -> types.Type:
+        return self.output_type
 
     def to_dict(self, registry: "Registry") -> Dict[str, Any]:
         """
         Render this state to a JSON-serializable dictionary
         """
-        type_serializer = registry.get_type_serializer(self.type)
+        input_type_serializer = registry.get_type_serializer(self.input_type)
+        output_type_serializer = registry.get_type_serializer(self.output_type)
         out = {
             "name": self.name,
-            "type": type_serializer.serialize(self.type),
+            "input_type": input_type_serializer.serialize(self.input_type),
+            "output_type": output_type_serializer.serialize(self.output_type),
             "null": self.null,
         }
         return StateSchema().dump(out)
@@ -58,9 +66,16 @@ class AbstractState(abc.ABC):
         Render a State from the output of to_dict()
         """
         data = StateSchema().load(data)
-        type_serializer = registry.get_type_serializer_from_data(data["type"])
-        typ = type_serializer.deserialize(data["type"])
-        return cls(name=data["name"], type=typ, null=data["null"])
+        input_type_serializer = registry.get_type_serializer_from_data(data["input_type"])
+        input_type = input_type_serializer.deserialize(data["input_type"])
+        output_type_serializer = registry.get_type_serializer_from_data(data["output_type"])
+        output_type = output_type_serializer.deserialize(data["output_type"])
+        return cls(
+            name=data["name"],
+            input_type=input_type,
+            output_type=output_type,
+            null=data["null"]
+        )
 
 
 @dc.dataclass(frozen=True)
@@ -70,7 +85,8 @@ class State(AbstractState):
 	"""
 
     name: str
-    type: types.Type
+    input_type: types.Type
+    output_type: types.Type
     null: bool = dc.field(repr=False, default=False)
 
 
@@ -81,7 +97,8 @@ class NullState(State):
 	this is a helper to create such states.
 	"""
 
-    type: types.Type = dc.field(init=False, default=types.EmptyType)
+    input_type: types.Type = dc.field(init=False, default=types.EmptyType)
+    output_type: types.Type = dc.field(init=False, default=types.EmptyType)
     null: bool = dc.field(repr=False, init=False, default=True)
 
 
@@ -91,7 +108,7 @@ class ResourceStateSchema(ma.Schema):
 	"""
 
     state = ma.fields.Nested(StateSchema(), required=True, default=None)
-    resource_name = ma.fields.Str(required=True, default=None)
+    resource = ma.fields.Str(required=True, default=None)
 
 
 @dc.dataclass(frozen=True)
@@ -99,9 +116,28 @@ class ResourceState:
     """
 	A resource state is a state that is bound to some resource.
 	"""
-
     state: AbstractState
-    resource_name: str
+    resource: str
+
+    @property
+    def name(self) -> str:
+        return self.state.name
+
+    @property
+    def input_type(self) -> types.Type:
+        return self.state.input_type
+
+    @property
+    def output_type(self) -> types.Type:
+        return self.state.output_type
+
+    @property
+    def type(self) -> types.Type:
+        return self.state.type
+
+    @property
+    def null(self) -> bool:
+        return self.state.null
 
     def __call__(self, arg=utils.MISSING, **kwargs) -> "BoundState":
         """
@@ -120,7 +156,7 @@ class ResourceState:
 		Render this resource state to a JSON-serializable dictionary
 		"""
         out = {
-            "resource_name": self.resource_name,
+            "resource": self.resource,
             "state": self.state.to_dict(registry),
         }
         return ResourceStateSchema().dump(out)
@@ -132,25 +168,80 @@ class ResourceState:
 		"""
         data = ResourceStateSchema().load(data)
         state = State.from_dict(data["state"], registry)
-        return cls(resource_name=data["resource_name"], state=state)
+        return cls(resource=data["resource"], state=state)
 
 
 @dc.dataclass(frozen=True)
 class BoundState(utils.Cloneable):
     """
-	A bound state binds a resource state to some date.
-	"""
+    Describes an input configuration for a resource
+    """
+    state: ResourceState
+    input: "Object"
+    output: "Object" = dc.field(init=False, default=None)
 
-    resource_state: ResourceState
-    data: Any
+    def __post_init__(self) -> None:
+        input_obj = st.Object(self.input, self.state.input_type)
+        self.__dict__['input'] = input_obj
+        output_impl = impl.Unknown(refs=(input_obj,), return_type=self.state.output_type)
+        self.__dict__['output'] = st.Object(output_impl)
 
-    def literal(self, registry: "Registry") -> Object:
+    def bind(self, registry: "Registry") -> None:
         """
-		Convenience method to convert a bound state to a literal with some registry.
-		"""
-        return Object(
-            impl.Data(self.data), self.resource_state.state.type, registry=registry
-        )
+        Bind input and output objects to the given registry
+        """
+        self.__dict__['input'] = st.Object(self.input, registry=registry)
+        self.__dict__['output'] = st.Object(self.output, registry=registry)
+
+
+class StateTuple(abc.ABC, utils.Cloneable):
+    """
+    Binding a state to a value
+    """
+    data: Any
+    state: ResourceState
+
+    @property
+    @abc.abstractmethod
+    def type(self) -> types.Type:
+        """
+        Return the type of `data`
+        """
+        raise NotImplementedError
+
+    def obj(self, registry: Optional["Registry"] = None) -> "Object":
+        """
+        Obtain an object representation of this StateTuple
+        """
+        if registry is None:
+            registry = st.registry
+        return st.Object(self.data, self.type, registry)
+
+
+@dc.dataclass(frozen=True)
+class StateConfig(StateTuple):
+    """
+    A state configuration object, may contain unknowns
+    """
+    data: Any
+    state: ResourceState
+
+    @property
+    def type(self) -> types.Type:
+        return self.state.input_type
+
+
+@dc.dataclass(frozen=True)
+class StateSnapshot(StateTuple):
+    """
+    A fully-resolved snapshot of a resource state
+    """
+    data: Any
+    state: ResourceState
+
+    @property
+    def type(self) -> types.Type:
+        return self.state.output_type
 
 
 class States(abc.ABC):
@@ -193,8 +284,8 @@ class Resource(abc.ABC):
     @abc.abstractmethod
     def plan(
         self,
-        current: BoundState,
-        config: BoundState,
+        current: StateSnapshot,
+        config: StateConfig,
         session: TaskSession,
         input: Object,
     ) -> Object:
@@ -206,16 +297,16 @@ class Resource(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def refresh(self, current: BoundState) -> BoundState:
+    async def refresh(self, current: StateSnapshot) -> StateSnapshot:
         """
 		Given the current bound state, return a new bound state that represents that actual
 		current state of the object
 		"""
         raise NotImplementedError
 
-    async def finalize(self, data: BoundState) -> BoundState:
+    async def finalize(self, data: StateSnapshot) -> StateSnapshot:
         """
-        Called on states before they are committed to the resource graph. By default a nooop
+        Called on states before they are committed to the resource graph. By default a noop
         """
         return data
 
@@ -235,8 +326,10 @@ class ResourceSession(session.Session):
     def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
         if not isinstance(value, BoundState):
             return
-        self.states[key] = value.resource_state
-        return value.data, value.resource_state.state.type
+        # Bind the config to this registry
+        value.bind(self.ns.registry)
+        self.states[key] = value
+        return value.output, value.output._type
 
     def resolve(
         self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
@@ -261,11 +354,17 @@ class ResourceSession(session.Session):
         dep_graph = self.dependency_graph()
 
         for key in self.ns.keys():
-            ref = self.ns.ref(key)
-            resolved = self.resolve(ref, decode=False)
-            graph.set(
-                key=key, value=resolved, type=ref.type, state=self.states.get(key)
-            )
+            if key in self.states:
+                state = self.states[key]
+                resolved = self.resolve(self.ns.ref(key), decode=False)
+                graph.set(
+                    key=key, value=resolved, type=state.state.output_type, state=state.state
+                )
+            else:
+                resolved = self.resolve(self.ns.ref(key), decode=False)
+                graph.set(
+                    key=key, value=resolved, type=self.ns.resolve(key)
+                )
 
         for node in dep_graph:
             if dep_graph.pred[node]:
@@ -273,7 +372,7 @@ class ResourceSession(session.Session):
 
         return graph
 
-    def resource_state(self, name: str) -> ResourceState:
+    def get_state(self, name: str) -> BoundState:
         """
 		Get the resource state for the given name, raising SymbolKeyError to indicate
 		a failure
@@ -281,11 +380,6 @@ class ResourceSession(session.Session):
         if name not in self.states:
             raise exc.SymbolKeyError(name, self)
         return self.states[name]
-
-    def get_bound_state(self, name: str) -> BoundState:
-        state = self.resource_state(name)
-        data = self.resolve(self.ns.ref(name))
-        return BoundState(resource_state=state, data=data)
 
     def clone(self) -> "ResourceSession":
         cloned_session = self.session.clone()
@@ -369,13 +463,13 @@ class ResourceGraph:
             if data["state"] is None:
                 return
             state = data["state"]
-            resource = registry.get_resource(state.resource_name)
-            result = await resource.refresh(BoundState(state, data["value"]))
+            resource = registry.get_resource(state.resource)
+            result = await resource.refresh(StateSnapshot(data["value"], state))
             self.set(
                 key=key,
                 value=result.data,
-                type=type,
-                state=result.resource_state,
+                type=result.type,
+                state=result.state,
                 remove_dependencies=False,
             )
 
@@ -398,23 +492,17 @@ class ResourceGraph:
         for node in self.graph.nodes:
             data = self.graph.nodes[node]
 
+            type_serializer = registry.get_type_serializer(data["type"])
+            state_dict = None
             if data["state"]:
                 state_dict = data["state"].to_dict(registry)
-                state_type = state_dict["state"].pop("type")
-                nodes[node] = {
-                    "data": data["value"],
-                    "type": state_type,
-                    "state": state_dict,
-                    "depends_on": list(self.graph.pred[node]),
-                }
-            else:
-                type_serializer = registry.get_type_serializer(data["type"])
-                nodes[node] = {
-                    "data": data["value"],
-                    "type": type_serializer.serialize(data["type"]),
-                    "state": None,
-                    "depends_on": list(self.graph.pred[node]),
-                }
+
+            nodes[node] = {
+                "data": data["value"],
+                "type": type_serializer.serialize(data["type"]),
+                "state": state_dict,
+                "depends_on": list(self.graph.pred[node]),
+            }
 
         return nodes
 
@@ -431,7 +519,6 @@ class ResourceGraph:
                 type_dict = node["type"]
                 state_dict_copy = node["state"].copy()
                 state_dict_copy["state"] = state_dict_copy["state"].copy()
-                state_dict_copy["state"]["type"] = type_dict
                 state = ResourceState.from_dict(state_dict_copy, registry)
                 typ = state.state.type
                 instance.set(key, node["data"], typ, state)

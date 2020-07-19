@@ -14,6 +14,8 @@ from statey.resource import (
     ResourceState,
     Resource,
     ResourceGraph,
+    StateConfig,
+    StateSnapshot
 )
 from statey.syms import session, types, Object
 from statey.task import (
@@ -523,11 +525,14 @@ class DefaultMigrator(Migrator):
                 previous_state = state_dep_graph.nodes[node]["state"]
 
             config_exists = node in config_nodes
+            config_bound_state = None
             config_state = None
             try:
-                config_state = output_session.resource_state(node)
+                config_bound_state = output_session.get_state(node)
             except exc.SymbolKeyError:
                 pass
+            else:
+                config_state = config_bound_state.state
 
             current_depends_on = (
                 list(state_dep_graph.pred[node]) if previous_exists else []
@@ -541,29 +546,25 @@ class DefaultMigrator(Migrator):
             if (
                 config_state is not None
                 and previous_state is not None
-                and config_state.resource_name == previous_state.resource_name
+                and config_state.resource == previous_state.resource
             ):
                 resource = output_session.ns.registry.get_resource(
-                    config_state.resource_name
+                    config_state.resource
                 )
                 previous_resolved = state_dep_graph.nodes[node]["value"]
-                config_partial_resolved = output_session.resolve(
-                    output_session.ns.ref(node), decode=False, allow_unknowns=True
-                )
 
-                previous_bound = BoundState(
-                    data=previous_resolved, resource_state=previous_state
+                config_partial_resolved = output_session.resolve(
+                    config_bound_state.input, decode=False, allow_unknowns=True
                 )
-                config_bound = BoundState(
-                    data=config_partial_resolved, resource_state=config_state
-                )
+                previous_snapshot = StateSnapshot(previous_resolved, previous_state)
+                bound_config = StateConfig(config_partial_resolved, config_state)
 
                 task_session = self.create_task_session()
-                input_ref = task_session.ns.new("input", config_state.state.type)
+                input_ref = task_session.ns.new("input", config_state.state.input_type)
                 task_session.set_data("input", config_partial_resolved)
 
                 plan_output = resource.plan(
-                    previous_bound, config_bound, task_session, input_ref
+                    previous_snapshot, bound_config, task_session, input_ref
                 )
                 # Allow different refs for graph vs. session by returning a tuple of refs
                 if isinstance(plan_output, tuple) and len(plan_output) == 2:
@@ -594,7 +595,7 @@ class DefaultMigrator(Migrator):
                         if resolved_graph_ref == previous_resolved:
                             state_obj = Object(
                                 resolved_graph_ref,
-                                config_state.state.type,
+                                config_state.state.output_type,
                                 config_session.ns.registry
                             )
                             # Since we are not setting this key in the graph, we can
@@ -605,12 +606,12 @@ class DefaultMigrator(Migrator):
                             plan_node = PlanNode(
                                 key=node,
                                 current_data=previous_resolved,
-                                current_type=previous_state.state.type,
+                                current_type=previous_state.state.output_type,
                                 current_state=previous_state,
                                 current_depends_on=(),
                                 current_action=None,
                                 config_data=resolved_graph_ref,
-                                config_type=config_state.state.type,
+                                config_type=config_state.state.output_type,
                                 config_state=config_state,
                                 config_depends_on=(),
                                 config_action=SetValue(node, state_obj, set_graph=False),
@@ -627,18 +628,18 @@ class DefaultMigrator(Migrator):
                     config_state=config_state,
                     previous_state=previous_state,
                     resource=resource,
-                    input_symbol=config_session.ns.ref(node),
+                    input_symbol=config_bound_state.input,
                 )
 
                 plan_node = PlanNode(
                     key=node,
                     current_data=previous_resolved,
-                    current_type=previous_state.state.type,
+                    current_type=previous_state.state.output_type,
                     current_state=previous_state,
                     current_depends_on=current_depends_on,
                     current_action=None,
                     config_data=output_partial_resolved,
-                    config_type=config_state.state.type,
+                    config_type=config_state.state.output_type,
                     config_state=config_state,
                     config_depends_on=config_depends_on,
                     config_action=action,
@@ -662,21 +663,21 @@ class DefaultMigrator(Migrator):
 
             if previous_state:
                 resource = config_session.ns.registry.get_resource(
-                    previous_state.resource_name
+                    previous_state.resource
                 )
                 previous_resolved = state_dep_graph.nodes[node]["value"]
 
-                previous_bound = BoundState(
-                    data=previous_resolved, resource_state=previous_state
-                )
-                config_bound = BoundState(data={}, resource_state=resource.s.null_state)
+                previous_snapshot = StateSnapshot(previous_resolved, previous_state)
+
+                null_state = resource.s.null_state
+                config_bound = StateConfig({}, null_state)
 
                 task_session = self.create_task_session()
-                input_ref = task_session.ns.new("input", previous_state.state.type)
-                task_session.set_data("input", previous_resolved)
+                input_ref = task_session.ns.new("input", config_bound.type)
+                task_session.set_data("input", config_bound.data)
 
                 plan_output = resource.plan(
-                    previous_bound, config_bound, task_session, input_ref
+                    previous_snapshot, config_bound, task_session, input_ref
                 )
                 # Allow different refs for graph vs. session by returning a tuple of refs
                 if isinstance(plan_output, tuple) and len(plan_output) == 2:
@@ -685,9 +686,9 @@ class DefaultMigrator(Migrator):
                     output_ref, graph_ref = plan_output, plan_output
 
                 # In theory this should _not_ allow unknowns, but keeping it less strict for now.
-                output_partial_resolved = task_session.resolve(
-                    output_ref, allow_unknowns=True, decode=False
-                )
+                # Update: removed unknowns, they should not be needed
+                output_resolved = task_session.resolve(output_ref, decode=False)
+                output_session.set_data(node, output_resolved)
 
                 action = ExecuteTaskSession(
                     task_session=task_session,
@@ -699,14 +700,14 @@ class DefaultMigrator(Migrator):
                     previous_state=previous_state,
                     resource=resource,
                     input_symbol=config_session.ns.registry.object(
-                        previous_resolved, previous_state.state.type
+                        config_bound.data, config_bound.type
                     ),
                 )
 
                 args.update(
                     {
                         "current_data": previous_resolved,
-                        "current_type": previous_state.state.type,
+                        "current_type": previous_state.output_type,
                         "current_state": previous_state,
                         "current_action": action,
                     }
@@ -725,25 +726,21 @@ class DefaultMigrator(Migrator):
 
             if config_state:
                 resource = config_session.ns.registry.get_resource(
-                    config_state.resource_name
+                    config_state.resource
                 )
                 config_partial_resolved = output_session.resolve(
-                    output_session.ns.ref(node), decode=False, allow_unknowns=True
+                    config_bound_state.input, decode=False, allow_unknowns=True
                 )
 
-                previous_bound = BoundState(
-                    data={}, resource_state=resource.s.null_state
-                )
-                config_bound = BoundState(
-                    data=config_partial_resolved, resource_state=config_state
-                )
+                previous_snapshot = StateSnapshot({}, resource.s.null_state)
+                config_bound = StateConfig(config_partial_resolved, config_state)
 
                 task_session = self.create_task_session()
-                input_ref = task_session.ns.new("input", config_state.state.type)
+                input_ref = task_session.ns.new("input", config_state.state.input_type)
                 task_session.set_data("input", config_partial_resolved)
 
                 plan_output = resource.plan(
-                    previous_bound, config_bound, task_session, input_ref
+                    previous_snapshot, config_bound, task_session, input_ref
                 )
                 # Allow different refs for graph vs. session by returning a tuple of refs
                 if isinstance(plan_output, tuple) and len(plan_output) == 2:
@@ -766,13 +763,13 @@ class DefaultMigrator(Migrator):
                     config_state=config_state,
                     previous_state=resource.s.null_state,
                     resource=resource,
-                    input_symbol=config_session.ns.ref(node),
+                    input_symbol=config_bound_state.input,
                 )
 
                 args.update(
                     {
                         "config_data": output_partial_resolved,
-                        "config_type": config_state.state.type,
+                        "config_type": config_state.state.output_type,
                         "config_state": config_state,
                         "config_action": action,
                     }

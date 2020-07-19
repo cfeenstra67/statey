@@ -223,7 +223,9 @@ def infer_annotation(obj: Any) -> Any:
 
 
 def function_type(
-    sig: inspect.Signature, registry: "Registry" = MISSING
+    sig: inspect.Signature,
+    return_type: "Type" = MISSING,
+    registry: "Registry" = MISSING
 ) -> "FunctionType":
     """
     Convert a python function signature to a FunctionType object
@@ -244,7 +246,8 @@ def function_type(
     for name, param in sig.parameters.items():
         out_fields.append(types.Field(name, get_type(param.annotation)))
 
-    return_type = get_type(sig.return_annotation)
+    if is_missing(return_type):
+        return_type = get_type(sig.return_annotation)
     return types.NativeFunctionType(tuple(out_fields), return_type)
 
 
@@ -271,7 +274,7 @@ def native_function(
     from statey.syms import func
 
     if is_missing(type):
-        type = function_type(inspect.signature(input), registry)
+        type = function_type(inspect.signature(input), registry=registry)
     kws = {}
     if hasattr(input, "__name__"):
         kws["name"] = input.__name__

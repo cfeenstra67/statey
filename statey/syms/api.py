@@ -73,7 +73,7 @@ def declarative(func: Callable[[Any], Any] = utils.MISSING) -> Callable[[Any], A
 
         return wrapper
 
-    return dec if func is utils.MISSING else dec(func)
+    return dec if utils.is_missing(func) else dec(func)
 
 
 @dc.dataclass(frozen=True)
@@ -85,27 +85,17 @@ class _FunctionFactory(utils.Cloneable):
     annotation: Any = utils.MISSING
 
     def __call__(self, func: Callable[[Any], Any]) -> "_FunctionFactoryWithFunction":
-        return _FunctionFactoryWithFunction(func, self)
+        typ = self.annotation
+        if not utils.is_missing(typ):
+            return_type = st.registry.get_type(typ)
+            typ = utils.function_type(inspect.signature(func), return_type=return_type)
+        return function(func, typ)
 
     def __getitem__(self, annotation: Any) -> "_FunctionFactory":
         # Use double square brackets to indicate the annotation is the function/callable
         if isinstance(annotation, list) and len(annotation) == 1:
             return self.clone(annotation=annotation[0])(annotation[0])
         return self.clone(annotation=annotation)
-
-
-@dc.dataclass(frozen=True)
-class _FunctionFactoryWithFunction(utils.Cloneable):
-    func: Any
-    factory: _FunctionFactory
-
-    def __call__(self, *args, **kwargs):
-        return utils.wrap_function_call(
-            func=self.func,
-            args=args,
-            kwargs=kwargs,
-            return_annotation=self.factory.annotation,
-        )
 
 
 F = _FunctionFactory()

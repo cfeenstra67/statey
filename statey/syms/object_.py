@@ -129,7 +129,7 @@ class Object(base.Proxy):
         except NotImplementedError:
             return self
 
-    # Magic methods need to be type itself
+    # Magic methods need to be defined on the type itself
     # http://docs.python.org/3/reference/datamodel.html#special-method-lookup
     __call__ = get_item_passthrough("__call__")
 

@@ -16,8 +16,6 @@ from statey import task, syms
 from statey.fsm import (
     Machine,
     transition,
-    MachineState,
-    NullMachineState,
     MachineResource,
 )
 
@@ -49,7 +47,10 @@ from statey.resource import (
     ResourceSession,
     ResourceState,
     State,
+    NullState,
     create_resource_session,
+    StateSnapshot,
+    StateConfig
 )
 
 from statey.task import TaskSession
