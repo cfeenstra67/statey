@@ -39,7 +39,7 @@ from statey.syms.types import (
     FloatType,
     ArrayType,
     BooleanType,
-    Field
+    Field,
 )
 
 from statey.resource import (
@@ -50,9 +50,20 @@ from statey.resource import (
     NullState,
     create_resource_session,
     StateSnapshot,
-    StateConfig
+    StateConfig,
+    ResourceGraph,
+    Resource,
 )
 
-from statey.task import TaskSession
+from statey.task import TaskSession, create_task_session
+
 
 register_default_plugins()
+
+
+def set_registry(new_registry: Registry) -> None:
+    """
+    Set st.registry
+    """
+    global registry
+    registry = new_registry

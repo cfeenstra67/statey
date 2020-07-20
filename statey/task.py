@@ -1,11 +1,12 @@
 import abc
 import dataclasses as dc
 import enum
+import inspect
 import sys
 import textwrap as tw
 import traceback
 from datetime import datetime
-from functools import wraps
+from functools import wraps, partial
 from typing import (
     Tuple,
     Any,
@@ -25,7 +26,7 @@ from statey.syms import session, types, utils, impl, Object
 
 class TaskStatus(enum.Enum):
     """
-
+    Indicates what stage of execution a given task is in.
 	"""
 
     NOT_STARTED = 0
@@ -124,6 +125,7 @@ def task_wrapper(
     func: Callable[[Any], Any] = utils.MISSING,
     description: Optional[str] = None,
     always_eager: bool = False,
+    maybe_instance_method: bool = True,
 ) -> Callable[[Any], Any]:
     """
 	Decorator to wrap `func` as a task factory. `func` should be an asynchronous function.
@@ -135,11 +137,26 @@ def task_wrapper(
             doc = getattr(_func, "__doc__", None)
             desc = tw.dedent(doc).strip() if doc else desc
 
-        @wraps(_func)
-        def wrapper(*args, **kwargs):
-            return FunctionTaskFactory(
-                func=_func, is_always_eager=always_eager, description=desc
-            )(*args, **kwargs)
+        sig = inspect.signature(_func)
+        param_names = list(sig.parameters)
+
+        if param_names[:1] == ["self"] and maybe_instance_method:
+
+            @wraps(_func)
+            def wrapper(self, *args, **kwargs):
+                return FunctionTaskFactory(
+                    func=partial(func, self),
+                    is_always_eager=always_eager,
+                    description=desc,
+                )(*args, **kwargs)
+
+        else:
+
+            @wraps(_func)
+            def wrapper(*args, **kwargs):
+                return FunctionTaskFactory(
+                    func=_func, is_always_eager=always_eager, description=desc
+                )(*args, **kwargs)
 
         return wrapper
 
@@ -365,12 +382,12 @@ class TaskSession(session.Session):
             else:
                 # Construct checkpoint task
                 state = self.checkpoints[node]
-                resource = self.ns.registry.get_resource(
-                    state.state.resource
-                )
+                resource = self.ns.registry.get_resource(state.state.resource)
                 task = GraphSetKey(
                     input_session=self,
-                    input_symbol=st.Object(state.data, state.state.output_type, self.ns.registry),
+                    input_symbol=st.Object(
+                        state.data, state.state.output_type, self.ns.registry
+                    ),
                     remove_dependencies=False,
                     state=state.state,
                     key=checkpoint_key,
@@ -387,3 +404,12 @@ class TaskSession(session.Session):
         new_inst.tasks = self.tasks.copy()
         new_inst.pm = self.pm
         return new_inst
+
+
+def create_task_session(session: Optional[session.Session] = None) -> TaskSession:
+    """
+    Create a task session with default configuration
+    """
+    if session is None:
+        session = st.create_session()
+    return TaskSession(session)

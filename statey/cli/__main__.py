@@ -20,8 +20,6 @@ def cli(ctx, state):
     ctx.ensure_object(dict)
     ctx.obj["state_manager"] = FileStateManager(state)
     ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
-    # Set up all default plugins
-    # register_default_plugins()
 
 
 async def refresh_graph(graph):
@@ -39,9 +37,12 @@ async def refresh_graph(graph):
     help="Set a module attribute other than `session` to use for planning.",
     default="session()",
 )
+@click.option(
+    "--show-dag", is_flag=True, help="Show the task graph DAG as part of planning."
+)
 @click.argument("module")
 @click.pass_context
-def plan(ctx, module, session_name):
+def plan(ctx, module, session_name, show_dag):
     module_obj = importlib.import_module(module)
 
     if session_name.endswith("()"):
@@ -78,6 +79,12 @@ def plan(ctx, module, session_name):
 
     click.echo(summary_string)
     click.echo()
+
+    if show_dag and plan_summary.non_empty_summaries(ctx.obj["terminal_size"].columns):
+        task_dag_string = plan_summary.task_dag_string()
+        click.secho(f"Task DAG:", fg="green")
+        click.echo(task_dag_string)
+        click.echo()
 
 
 @plan.command()

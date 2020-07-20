@@ -61,7 +61,7 @@ class TaskGraph:
 
     def get_descendants(self, key: str) -> Sequence[str]:
         """
-		Get all ancestor tasks of `key`
+		Get all descendant tasks of `key`
 		"""
         return descendants(self.task_graph, key)
 

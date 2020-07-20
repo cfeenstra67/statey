@@ -271,6 +271,7 @@ class NativeFunctionEncoder(StructEncoder):
     """
     Encoder for native python functions
     """
+
     module: Any = pickle
 
     def encode(self, value: Any) -> Any:
@@ -278,7 +279,10 @@ class NativeFunctionEncoder(StructEncoder):
             return super().encode(value)
 
         serialized_bytes = self.module.dumps(value.func)
-        converted = {"serialized": base64.b64encode(serialized_bytes), "name": value.name}
+        converted = {
+            "serialized": base64.b64encode(serialized_bytes),
+            "name": value.name,
+        }
         return super().encode(converted)
 
     def decode(self, value: Any) -> Any:
@@ -308,7 +312,7 @@ ENCODER_CLASSES = [
     StringEncoder,
     ArrayEncoder,
     StructEncoder,
-    NativeFunctionEncoder
+    NativeFunctionEncoder,
 ]
 
 
@@ -317,13 +321,16 @@ try:
     import dill
 except ImportError:
     import warnings
-    warnings.warn('Dill is not installed', RuntimeWarning)
+
+    warnings.warn("Dill is not installed", RuntimeWarning)
 else:
+
     @dc.dataclass(frozen=True)
     class DillFunctionEncoder(NativeFunctionEncoder):
         """
         dill-based python function encoder
         """
+
         module: Any = dill
 
     ENCODER_CLASSES.append(DillFunctionEncoder)
@@ -333,13 +340,16 @@ try:
     import cloudpickle
 except ImportError:
     import warnings
-    warnings.warn('Cloudpickle is not installed', RuntimeWarning)
+
+    warnings.warn("Cloudpickle is not installed", RuntimeWarning)
 else:
+
     @dc.dataclass(frozen=True)
     class CloudPickleEncoder(NativeFunctionEncoder):
         """
         cloudpickle-based python function encoder
         """
+
         module: Any = cloudpickle
 
     ENCODER_CLASSES.append(CloudPickleEncoder)

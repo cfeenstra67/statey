@@ -144,10 +144,7 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
 
         syms = []
 
-        def collect_objects(x):
-            syms.append(x)
-
-        semantics.map_objects(collect_objects, expanded)
+        semantics.map_objects(syms.append, expanded)
         return syms
 
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
@@ -201,10 +198,7 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
 
         syms = []
 
-        def collect_objects(x):
-            syms.append(x)
-
-        semantics.map_objects(collect_objects, expanded)
+        semantics.map_objects(syms.append, expanded)
         return syms
 
     def apply_alone(self, obj: Object) -> Any:
@@ -226,6 +220,9 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         else:
             new_data = semantics.get_attr(self.value, attr)
         attr_semantics = semantics.attr_semantics(attr)
+        if attr_semantics is None:
+            raise exc.SymbolAttributeError(obj, attr)
+
         return Object(Data(new_data), attr_semantics.type, obj._registry)
 
 
@@ -259,10 +256,10 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
         for key, sym in self.arguments.items():
             arg = dag.nodes[sym._impl.id]["result"]
             arg_encoder = session.ns.registry.get_encoder(sym._type)
-            arg = arg_encoder.decode(arg)
-            if isinstance(arg, Object):
-                unknowns.append(arg)
-            kwargs[key] = arg
+            decoded_arg = arg_encoder.decode(arg)
+            semantics = obj._registry.get_semantics(sym._type)
+            semantics.map_objects(unknowns.append, arg)
+            kwargs[key] = decoded_arg
 
         if unknowns:
             raise exc.UnknownError(unknowns)
@@ -362,6 +359,7 @@ class Unknown(ObjectImplementation):
     """
     Some value that is not known
     """
+
     obj: Optional[Object] = None
     refs: Sequence[Object] = ()
     return_type: Optional[types.Type] = None
@@ -374,11 +372,13 @@ class Unknown(ObjectImplementation):
 
         if self.return_type is None:
             if return_type is not None:
-                self.__dict__['return_type'] = return_type
+                self.__dict__["return_type"] = return_type
             elif self.obj is None:
-                raise ValueError('Either an origin object or a return type are required')
+                raise ValueError(
+                    "Either an origin object or a return type are required"
+                )
             else:
-                self.__dict__['return_type'] = self.obj._type
+                self.__dict__["return_type"] = self.obj._type
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         return self.refs
@@ -406,6 +406,9 @@ class Unknown(ObjectImplementation):
         if self.obj is None:
             semantics = obj._registry.get_semantics(self.return_type)
             attr_semantics = semantics.attr_semantics(attr)
+            if attr_semantics is None:
+                raise exc.SymbolAttributeError(obj, attr)
+
             new_impl = Unknown(refs=self.refs, return_type=attr_semantics.type)
             return Object(new_impl, attr_semantics.type, obj._registry)
 

@@ -1,11 +1,14 @@
 import dataclasses as dc
+import io
 import textwrap as tw
 import traceback
 import time
-from typing import Sequence, Dict, Any, Optional, Tuple
+from typing import Sequence, Dict, Any, Optional, Tuple, Callable
 
 import click
 import networkx as nx
+from asciidag.graph import Graph as AsciiDagGraph
+from asciidag.node import Node as AsciiDagNode
 
 import statey as st
 from statey.executor import ExecutionInfo
@@ -121,7 +124,7 @@ def data_to_lines(data: Any, name_func=lambda x: x) -> Sequence[str]:
         out_lines = []
         for key in sorted(data):
             val = data[key]
-            lines = data_to_lines(val)
+            lines = data_to_lines(val, name_func=name_func)
             if len(lines) <= 1:
                 out_lines.append(f'{name_func(key)}: {"".join(lines)}')
             else:
@@ -325,6 +328,26 @@ class PlanNodeSummary:
         return "\n".join(lines)
 
 
+def ascii_dag(graph: nx.DiGraph, key: Callable[[str], str] = lambda x: x) -> str:
+    """
+    Render the given DAG as a string, showing dependencies
+    """
+    outfile = io.StringIO()
+    ascii_graph = AsciiDagGraph(outfile)
+
+    nodes = {}
+    tips = []
+
+    for node in reversed(list(nx.topological_sort(graph))):
+        parent_nodes = [nodes[path] for path in graph.succ[node]]
+        ascii_node = nodes[node] = AsciiDagNode(key(node), parents=parent_nodes)
+        if not graph.pred[node]:
+            tips.append(ascii_node)
+
+    ascii_graph.show_nodes(tips)
+    return outfile.getvalue()
+
+
 @dc.dataclass(frozen=True)
 class PlanSummary:
     """
@@ -349,6 +372,18 @@ class PlanSummary:
         if not summaries:
             return click.style("This plan is empty :)", fg="green", bold=True)
         return "\n\n".join(summaries)
+
+    def task_dag_string(self) -> str:
+        task_graph = self.plan.task_graph().task_graph
+        keep = set()
+
+        for node in task_graph:
+            task = task_graph.nodes[node]["task"]
+            if not is_metatask(task):
+                keep.add(node)
+
+        utils.subgraph_retaining_dependencies(task_graph, keep)
+        return ascii_dag(graph=task_graph, key=lambda x: click.style(x, fg="yellow"))
 
 
 @dc.dataclass(frozen=True)

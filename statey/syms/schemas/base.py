@@ -418,9 +418,13 @@ class StructSchemaFactory(SchemaFactory, utils.Cloneable):
         """
         if isinstance(schema, SchemaFactory):
             field = StructSchemaField(name, schema.schema())
-        if isinstance(schema, ComputedSchemaFactory):
+        elif isinstance(schema, ComputedSchemaFactory):
             schema = schema.schema(self.schema().input_type)
             field = StructSchemaField(name, schema, attr=False)
+        elif isinstance(schema, Schema):
+            field = StructSchemaField(name, schema)
+        else:
+            raise TypeError(f"Unknown schema type: {schema}")
         return self.clone(fields=tuple(self.fields) + (field,))
 
     def __getitem__(self, fields: Sequence[slice]) -> "ArraySchemaFactory":

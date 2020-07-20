@@ -252,8 +252,7 @@ class FunctionType(StructType):
     # Functions can never be nullable
     nullable: bool = dc.field(init=False, default=False)
     fields: Sequence[Field] = dc.field(
-        init=False,
-        default=(Field("name", StringType(False)),)
+        init=False, default=(Field("name", StringType(False)),)
     )
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:

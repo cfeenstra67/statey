@@ -15,7 +15,7 @@ from statey.resource import (
     Resource,
     ResourceGraph,
     StateConfig,
-    StateSnapshot
+    StateSnapshot,
 )
 from statey.syms import session, types, Object
 from statey.task import (
@@ -23,6 +23,7 @@ from statey.task import (
     SessionSwitch,
     GraphDeleteKey,
     GraphSetKey,
+    create_task_session,
 )
 
 
@@ -178,7 +179,9 @@ class SetValue(PlanAction):
 
     def __post_init__(self) -> None:
         if not (self.set_graph or self.set_session):
-            raise ValueError('At least one of `set_session` or `set_graph` must be true.')
+            raise ValueError(
+                "At least one of `set_session` or `set_graph` must be true."
+            )
 
     def graph_update_task(self, prefix: str) -> str:
         return f"{prefix}:graph-update"
@@ -223,7 +226,7 @@ class SetValue(PlanAction):
                 input_session=output_session,
                 input_symbol=self.output_symbol,
                 output_session=output_session,
-                output_key=self.output_key
+                output_key=self.output_key,
             )
             graph.add_node(output_task_name, task=session_task, source=prefix)
             if self.set_graph:
@@ -492,12 +495,7 @@ class DefaultMigrator(Migrator):
 	"""
 
     def create_task_session(self) -> TaskSession:
-        return TaskSession(self.create_session())
-
-    def create_session(self) -> session.Session:
-        from statey.syms.py_session import create_session
-
-        return create_session()
+        return create_task_session()
 
     def plan(
         self,
@@ -586,7 +584,9 @@ class DefaultMigrator(Migrator):
                     and current_depends_on == config_depends_on
                 ):
                     try:
-                        resolved_graph_ref = task_session.resolve(graph_ref, decode=False)
+                        resolved_graph_ref = task_session.resolve(
+                            graph_ref, decode=False
+                        )
                     # The graph reference isn't fully resolved yet, we still need
                     # to execute the task session
                     except exc.UnknownError:
@@ -596,7 +596,7 @@ class DefaultMigrator(Migrator):
                             state_obj = Object(
                                 resolved_graph_ref,
                                 config_state.state.output_type,
-                                config_session.ns.registry
+                                config_session.ns.registry,
                             )
                             # Since we are not setting this key in the graph, we can
                             # act like the configuration has no dependencies during
@@ -614,7 +614,9 @@ class DefaultMigrator(Migrator):
                                 config_type=config_state.state.output_type,
                                 config_state=config_state,
                                 config_depends_on=(),
-                                config_action=SetValue(node, state_obj, set_graph=False),
+                                config_action=SetValue(
+                                    node, state_obj, set_graph=False
+                                ),
                             )
                             plan_nodes.append(plan_node)
                             continue
@@ -688,7 +690,6 @@ class DefaultMigrator(Migrator):
                 # In theory this should _not_ allow unknowns, but keeping it less strict for now.
                 # Update: removed unknowns, they should not be needed
                 output_resolved = task_session.resolve(output_ref, decode=False)
-                output_session.set_data(node, output_resolved)
 
                 action = ExecuteTaskSession(
                     task_session=task_session,

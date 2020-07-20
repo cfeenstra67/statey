@@ -335,7 +335,33 @@ class BaseObjectMethods(SimpleObjectMethods):
         return cls(type)
 
 
-OBJECT_METHODS_PLUGINS = [CallFunctionMethod, BinaryMagicMethods, BaseObjectMethods]
+@dc.dataclass(frozen=True)
+class StringMethods(DeclarativeMethods):
+    """
+    Methods available for string objects
+    """
+
+    @method
+    def split(self: str, delim: str) -> Sequence[str]:
+        return self.split(delim)
+
+    @method
+    def strip(self: str) -> str:
+        return self.strip()
+
+    @st.hookimpl
+    def get_methods(self, type: types.Type, registry: "Registry") -> ObjectMethods:
+        if not isinstance(type, types.StringType):
+            return None
+        return self
+
+
+OBJECT_METHODS_PLUGINS = [
+    CallFunctionMethod,
+    BinaryMagicMethods,
+    BaseObjectMethods,
+    StringMethods(),
+]
 
 
 def register() -> None:

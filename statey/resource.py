@@ -66,15 +66,19 @@ class AbstractState(abc.ABC):
         Render a State from the output of to_dict()
         """
         data = StateSchema().load(data)
-        input_type_serializer = registry.get_type_serializer_from_data(data["input_type"])
+        input_type_serializer = registry.get_type_serializer_from_data(
+            data["input_type"]
+        )
         input_type = input_type_serializer.deserialize(data["input_type"])
-        output_type_serializer = registry.get_type_serializer_from_data(data["output_type"])
+        output_type_serializer = registry.get_type_serializer_from_data(
+            data["output_type"]
+        )
         output_type = output_type_serializer.deserialize(data["output_type"])
         return cls(
             name=data["name"],
             input_type=input_type,
             output_type=output_type,
-            null=data["null"]
+            null=data["null"],
         )
 
 
@@ -116,6 +120,7 @@ class ResourceState:
     """
 	A resource state is a state that is bound to some resource.
 	"""
+
     state: AbstractState
     resource: str
 
@@ -176,28 +181,32 @@ class BoundState(utils.Cloneable):
     """
     Describes an input configuration for a resource
     """
+
     state: ResourceState
     input: "Object"
     output: "Object" = dc.field(init=False, default=None)
 
     def __post_init__(self) -> None:
         input_obj = st.Object(self.input, self.state.input_type)
-        self.__dict__['input'] = input_obj
-        output_impl = impl.Unknown(refs=(input_obj,), return_type=self.state.output_type)
-        self.__dict__['output'] = st.Object(output_impl)
+        self.__dict__["input"] = input_obj
+        output_impl = impl.Unknown(
+            refs=(input_obj,), return_type=self.state.output_type
+        )
+        self.__dict__["output"] = st.Object(output_impl)
 
     def bind(self, registry: "Registry") -> None:
         """
         Bind input and output objects to the given registry
         """
-        self.__dict__['input'] = st.Object(self.input, registry=registry)
-        self.__dict__['output'] = st.Object(self.output, registry=registry)
+        self.__dict__["input"] = st.Object(self.input, registry=registry)
+        self.__dict__["output"] = st.Object(self.output, registry=registry)
 
 
 class StateTuple(abc.ABC, utils.Cloneable):
     """
     Binding a state to a value
     """
+
     data: Any
     state: ResourceState
 
@@ -223,6 +232,7 @@ class StateConfig(StateTuple):
     """
     A state configuration object, may contain unknowns
     """
+
     data: Any
     state: ResourceState
 
@@ -236,6 +246,7 @@ class StateSnapshot(StateTuple):
     """
     A fully-resolved snapshot of a resource state
     """
+
     data: Any
     state: ResourceState
 
@@ -358,13 +369,14 @@ class ResourceSession(session.Session):
                 state = self.states[key]
                 resolved = self.resolve(self.ns.ref(key), decode=False)
                 graph.set(
-                    key=key, value=resolved, type=state.state.output_type, state=state.state
+                    key=key,
+                    value=resolved,
+                    type=state.state.output_type,
+                    state=state.state,
                 )
             else:
                 resolved = self.resolve(self.ns.ref(key), decode=False)
-                graph.set(
-                    key=key, value=resolved, type=self.ns.resolve(key)
-                )
+                graph.set(key=key, value=resolved, type=self.ns.resolve(key))
 
         for node in dep_graph:
             if dep_graph.pred[node]:

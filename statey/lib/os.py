@@ -11,23 +11,32 @@ from statey import (
     TaskSession,
     task,
     StateSnapshot,
-    StateConfig
+    StateConfig,
 )
-from statey.syms import types, utils, Object
+from statey.syms import types, utils, Object, impl
 
 
-FileType = S.Struct["location" : S.String, "data" : S.String].t
+FileConfigType = S.Struct["location" : S.String, "data" : S.String].t
 
 
-class StateyOS:
-    """
-    A few statey wrappers for OS functions
-    """
+StatSchema = S.Struct[
+    "mode" : S.Integer,
+    "ino" : S.Integer,
+    "dev" : S.Integer,
+    "nlink" : S.Integer,
+    "uid" : S.Integer,
+    "gid" : S.Integer,
+    "size" : S.Integer,
+    "atime" : S.Integer,
+    "mtime" : S.Integer,
+    "ctime" : S.Integer,
+].s
 
-    class path:
-        @utils.native_function
-        def realpath(path: str) -> str:
-            return os.path.realpath(path)
+
+StatType = StatSchema.output_type
+
+
+FileType = S.Struct["location" : S.String, "data" : S.String, "stat":StatSchema].t
 
 
 class FileMachine(Machine):
@@ -35,58 +44,77 @@ class FileMachine(Machine):
     Simple file state machine
     """
 
-    UP = st.State("UP", FileType, FileType)
+    UP = st.State("UP", FileConfigType, FileType)
     DOWN = st.NullState("DOWN")
 
     async def refresh(self, current: StateSnapshot) -> StateSnapshot:
         state = current.state.state
         if state == self.null_state.state:
             return current
-        out = current.data.copy()
         if not os.path.isfile(current.data["location"]):
             return StateSnapshot({}, self.null_state)
-        out["location"] = os.path.realpath(out["location"])
-        with open(out["location"]) as f:
-            out["data"] = f.read()
-        return StateSnapshot(out, current.state)
+        data = self.get_file_info(current.data["location"])
+        return StateSnapshot(data, current.state)
 
     async def finalize(self, current: StateSnapshot) -> StateSnapshot:
-        return current.clone(data=dict(current.data, data=""))
+        return StateSnapshot(dict(current.data, data=""), current.state)
 
     @staticmethod
+    def get_file_info(path: str) -> FileType:
+        location = os.path.realpath(path)
+        with open(location) as f:
+            data = f.read()
+
+        stat_info = os.stat(path)
+        return {
+            "location": location,
+            "data": data,
+            "stat": {
+                "mode": stat_info.st_mode,
+                "ino": stat_info.st_ino,
+                "dev": stat_info.st_dev,
+                "nlink": stat_info.st_nlink,
+                "uid": stat_info.st_uid,
+                "gid": stat_info.st_gid,
+                "size": stat_info.st_size,
+                "atime": stat_info.st_atime,
+                "mtime": stat_info.st_mtime,
+                "ctime": stat_info.st_ctime,
+            },
+        }
+
+    @staticmethod
+    def get_file_expected(data: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "location": st.map(os.path.realpath, data["location"]),
+            "data": data["data"],
+            "stat": st.Object(impl.Unknown(return_type=StatType)),
+        }
+
     @task.new
-    async def remove_file(path: str) -> types.EmptyType:
+    async def remove_file(self, path: str) -> types.EmptyType:
         """
         Delete the file
         """
         os.remove(path)
         return {}
 
-    @staticmethod
     @task.new
-    async def set_file(data: FileType) -> FileType:
+    async def set_file(self, data: FileConfigType) -> FileType:
         """
         Set the file's contents
         """
         path = os.path.realpath(data["location"])
         with open(path, "w+") as f:
             f.write(data["data"])
-        return dict(data, location=path)
+        return self.get_file_info(path)
 
-    @staticmethod
     @task.new
-    async def rename_file(current: FileType, path: str) -> FileType:
-        path = os.path.realpath(path)
-        os.rename(current["location"], path)
-        return {"data": current["data"], "location": path}
-
-    def get_expected(
-        self, data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        return {
-            "location": st.map(os.path.realpath, data["location"]),
-            "data": data["data"],
-        }
+    async def rename_file(self, from_path: str, to_path: str) -> FileType:
+        from_path = os.path.realpath(from_path)
+        to_path = os.path.realpath(to_path)
+        os.rename(from_path, to_path)
+        return self.get_file_info(to_path)
 
     @transition("UP", "UP")
     def modify(
@@ -99,7 +127,7 @@ class FileMachine(Machine):
 
         differ = session.ns.registry.get_differ(current.state.input_type)
         diffconfig = differ.config()
-        expected = self.get_expected(config.data)
+        expected = self.get_file_expected(config.data)
 
         def compare_realpaths(x, y):
             return os.path.realpath(x) == os.path.realpath(y)
@@ -111,10 +139,7 @@ class FileMachine(Machine):
         diff = differ.diff(current.data, config.data)
         flat = list(diff.flatten(diffconfig))
         if not flat:
-            return st.struct[
-                "location" : StateyOS.path.realpath(input.location),
-                "data" : input.data,
-            ]
+            return current.obj(session.ns.registry)
 
         paths = {d.path for d in flat}
         loc_changed = ("location",) in paths
@@ -123,15 +148,12 @@ class FileMachine(Machine):
         # If location changes only we can just rename the file
         if loc_changed and not data_changed:
             return session["rename_file"] << (
-                self.rename_file(current_literal, input.location) >> expected
+                self.rename_file(current_literal.location, input.location) >> expected
             )
 
         if loc_changed:
-            rm_file = session["delete_file"] << self.remove_file(
-                current_literal.location
-            )
-            joined_input = st.join(input, rm_file)
-            return session["create_file"] << (self.set_file(joined_input) >> expected)
+            session["delete_file"] << self.remove_file(current_literal.location)
+            return session["create_file"] << (self.set_file(input) >> expected)
 
         return session["update_file"] << (self.set_file(input) >> expected)
 
@@ -144,7 +166,7 @@ class FileMachine(Machine):
         input: Object,
     ) -> Object:
 
-        expected = self.get_expected(config.data)
+        expected = self.get_file_expected(config.data)
         return session["create_file"] << (self.set_file(input) >> expected)
 
     @transition("UP", "DOWN")
@@ -157,7 +179,8 @@ class FileMachine(Machine):
     ) -> Object:
 
         current_literal = current.obj(session.ns.registry)
-        return session["delete_file"] << self.remove_file(current_literal.location)
+        session["delete_file"] << self.remove_file(current_literal.location)
+        return st.Object({})
 
 
 # DirectorySchema = S.Struct["location" : S.String].s

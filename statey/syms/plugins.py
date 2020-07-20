@@ -161,6 +161,28 @@ class LiteralPlugin:
 
 
 @dc.dataclass(frozen=True)
+class StructFromDictPlugin:
+    """
+    Attempts to construct a struct type given a dictionary input
+    """
+
+    @st.hookimpl
+    def infer_type(self, obj: Any, registry: "Registry") -> types.Type:
+        if not isinstance(obj, dict) or not all(isinstance(key, str) for key in obj):
+            return None
+
+        fields = []
+        for name, value in obj.items():
+            try:
+                field_type = registry.infer_type(value)
+            except st.exc.NoTypeFound:
+                return None
+            fields.append(st.Field(name, field_type))
+
+        return types.StructType(fields, False)
+
+
+@dc.dataclass(frozen=True)
 class BasicObjectBehaviors:
     """
     Basic behavior for inferring types from Objects
@@ -187,28 +209,24 @@ class BasicObjectBehaviors:
         return None
 
 
-def default_plugins() -> Sequence[Any]:
-    """
-	Generate the default predicates dictionary, optionally replacing any of the default
-	classes
-	"""
-    return [
-        AnyPlugin(),
-        HandleOptionalPlugin(),
-        ValuePredicatePlugin(float, types.FloatType),
-        ValuePredicatePlugin(int, types.IntegerType),
-        ValuePredicatePlugin(list, types.ArrayType),
-        ValuePredicatePlugin(str, types.StringType),
-        ValuePredicatePlugin(bool, types.BooleanType),
-        ParseSequencePlugin(types.ArrayType),
-        LiteralPlugin(),
-        BasicObjectBehaviors(),
-    ]
+DEFAULT_PLUGINS = [
+    AnyPlugin(),
+    HandleOptionalPlugin(),
+    ValuePredicatePlugin(float, types.FloatType),
+    ValuePredicatePlugin(int, types.IntegerType),
+    ValuePredicatePlugin(list, types.ArrayType),
+    ValuePredicatePlugin(str, types.StringType),
+    ValuePredicatePlugin(bool, types.BooleanType),
+    ParseSequencePlugin(types.ArrayType),
+    LiteralPlugin(),
+    BasicObjectBehaviors(),
+    StructFromDictPlugin(),
+]
 
 
 def register() -> None:
     """
 	Register default plugins
 	"""
-    for plugin in default_plugins():
+    for plugin in DEFAULT_PLUGINS:
         st.registry.pm.register(plugin)

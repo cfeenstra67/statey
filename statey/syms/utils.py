@@ -225,7 +225,7 @@ def infer_annotation(obj: Any) -> Any:
 def function_type(
     sig: inspect.Signature,
     return_type: "Type" = MISSING,
-    registry: "Registry" = MISSING
+    registry: "Registry" = MISSING,
 ) -> "FunctionType":
     """
     Convert a python function signature to a FunctionType object
@@ -395,7 +395,6 @@ class Location(Cloneable):
 
 
 def trace_func(func: Callable[[Any], Any], cb: Callable[[Any, Any, Any], None]) -> None:
-
     @wraps(func)
     def wrapper(*args, **kwargs):
         prev = sys.gettrace()
@@ -412,7 +411,7 @@ def trace_func(func: Callable[[Any], Any], cb: Callable[[Any, Any, Any], None]) 
             # 'done' is a fake event that we fire just to finalize
             # the namespace, so we don't want to pass it to the previous
             # tracer function
-            if prev is not None and event != 'done':
+            if prev is not None and event != "done":
                 prev(frame, event, arg)
             return tracer
 
@@ -422,7 +421,7 @@ def trace_func(func: Callable[[Any], Any], cb: Callable[[Any, Any, Any], None]) 
         finally:
             sys.settrace(prev)
             if call_frame is not None:
-                tracer(call_frame, 'done', None)
+                tracer(call_frame, "done", None)
 
     return wrapper
 
@@ -437,9 +436,9 @@ def locals_history(frame):
         new_locals = frame.f_locals.copy()
 
         updated = {
-            key: loc for key, loc in new_locals.items()
-            if key not in current_locals
-            or loc is not current_locals[key]
+            key: loc
+            for key, loc in new_locals.items()
+            if key not in current_locals or loc is not current_locals[key]
         }
         deleted = {key for key in current_locals if key not in new_locals}
         current_locals = new_locals
@@ -479,7 +478,6 @@ def locals_diff_tracer(diff_cb: Callable[[Any, Any, Any], None]):
 
 
 def scope_update_handler(handler: Callable[[Any, str, Any], None]):
-
     @locals_diff_tracer
     def differ(frame, updated, deleted):
         for key, val in updated.items():
