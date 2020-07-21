@@ -1,4 +1,5 @@
 import copy
+import sys
 from itertools import chain, product
 from typing import Any, Union, Iterator
 
@@ -9,7 +10,7 @@ from networkx.algorithms.dag import (
 )
 
 from statey import exc
-from statey.syms import types, utils, session, impl, Object
+from statey.syms import types, utils, session, impl, Object, stack
 
 
 class PythonNamespace(session.Namespace):
@@ -136,9 +137,12 @@ class PythonSession(session.Session):
 
         return graph
 
+    @stack.internalcode
     def _process_symbol_dag(
         self, dag: nx.DiGraph, allow_unknowns: bool = False
     ) -> None:
+
+        @stack.internalcode
         def handle_symbol_id(symbol_id):
 
             sym = dag.nodes[symbol_id]["symbol"]
@@ -164,17 +168,27 @@ class PythonSession(session.Session):
 
                     ancestors = set(nx.ancestors(dag, x._impl.id))
                     for sym_id in topological_sort(dag.subgraph(ancestors).copy()):
-                        handle_symbol_id(sym_id)
+                        wrapped_handle_symbol_id(sym_id)
 
-                    return handle_symbol_id(x._impl.id)
+                    return wrapped_handle_symbol_id(x._impl.id)
 
                 result = semantics.map_objects(resolve_child, expanded_result)
 
             dag.nodes[symbol_id]["result"] = result
             return result
 
+        @stack.internalcode
+        def wrapped_handle_symbol_id(symbol_id):
+            exception, tb = None, None
+            try:
+                return handle_symbol_id(symbol_id)
+            except Exception as err:
+                _, _, tb = sys.exc_info()
+                exception = exc.ResolutionError(dag.nodes[symbol_id]["symbol"], err)
+            raise exception.with_traceback(tb)
+
         for symbol_id in list(topological_sort(dag)):
-            handle_symbol_id(symbol_id)
+            wrapped_handle_symbol_id(symbol_id)
 
     def resolve(
         self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
@@ -182,10 +196,16 @@ class PythonSession(session.Session):
 
         graph = nx.DiGraph()
         dag = self._build_symbol_dag(symbol, graph)
-        self._process_symbol_dag(dag, allow_unknowns)
+
+        try:
+            self._process_symbol_dag(dag, allow_unknowns)
+        except Exception:
+            stack.rewrite_tb(*sys.exc_info())
+
         encoded = dag.nodes[symbol._impl.id]["result"]
         if not decode:
             return encoded
+
         encoder = self.ns.registry.get_encoder(symbol._type)
         return encoder.decode(encoded)
 
@@ -198,7 +218,10 @@ class PythonSession(session.Session):
             ref = self.ns.ref(key)
             self._build_symbol_dag(ref, dag)
 
-        self._process_symbol_dag(dag, allow_unknowns=True)
+        try:
+            self._process_symbol_dag(dag, allow_unknowns=True)
+        except Exception:
+            stack.rewrite_tb(*sys.exc_info())
 
         ref_symbol_ids = set()
 

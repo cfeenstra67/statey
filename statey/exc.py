@@ -115,16 +115,6 @@ class NoTypeSerializerFoundForData(NoTypeSerializerFound):
         super().__init__(f"No resource registered for data: {data}.")
 
 
-class NoInterfaceFactoryFound(SymsError):
-    """
-    Error to indicate that no interface factory could be found for the given type
-    """
-
-    def __init__(self, type: "Type") -> None:
-        self.type = type
-        super().__init__(f"No interface factory found for type: {type}.")
-
-
 class NamespaceError(SymsError):
     """
 	Error raised from a namespace
@@ -166,6 +156,16 @@ class SymbolAttributeError(SymsError, AttributeError):
         super().__init__(f'Could not resolve attribute "{attr}" of value {value}.')
 
 
+class NoSuchMethodError(SymsError):
+    """
+    Error to indicate a method could not be found
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f'Unable to find method: {name}')
+
+
 class FutureError(SymsError):
     """
 	impl.Future-related errors
@@ -202,6 +202,16 @@ class SessionError(SymsError):
 	"""
 
 
+class ResolutionError(SessionError):
+    """
+    Error indicating that some exception was encountered during resolution
+    """
+    def __init__(self, obj: "Object", exception: Exception) -> None:
+        self.obj = obj
+        self.exception = exception
+        super().__init__(f'Encountered exception while resolving {obj}: {type(exception).__name__}: {exception}')
+
+
 class UnknownError(SessionError):
     """
     Error to short-circuit resolution when an unknown value is encountered
@@ -212,7 +222,7 @@ class UnknownError(SessionError):
     ) -> None:
         self.refs = refs
         self.expected = expected
-        super().__init__(f"Unknowns, found, refs: {self.refs}")
+        super().__init__(f"Unknowns found, refs: {refs}; expected: {expected}")
 
 
 class MissingDataError(SessionError):

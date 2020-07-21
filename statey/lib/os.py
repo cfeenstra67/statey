@@ -27,9 +27,9 @@ StatSchema = S.Struct[
     "uid" : S.Integer,
     "gid" : S.Integer,
     "size" : S.Integer,
-    "atime" : S.Integer,
-    "mtime" : S.Integer,
-    "ctime" : S.Integer,
+    "atime" : S.Float,
+    "mtime" : S.Float,
+    "ctime" : S.Float,
 ].s
 
 

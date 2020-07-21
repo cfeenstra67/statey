@@ -79,7 +79,10 @@ class ObjectMethods(base.AttributeAccess):
         raise NotImplementedError
 
     def get_attr(self, obj: Object, attr: str) -> Object:
-        method = self.get_method(attr)
+        try:
+            method = self.get_method(attr)
+        except st.exc.NoSuchMethodError as err:
+            raise st.exc.SymbolAttributeError(obj, attr) from err
         return method.bind(obj)
 
 
@@ -96,7 +99,10 @@ class SimpleObjectMethods(ObjectMethods):
         raise NotImplementedError
 
     def get_method(self, name: str) -> Method:
-        return self.methods()[name]
+        try:
+            return self.methods()[name]
+        except KeyError as err:
+            raise st.exc.NoSuchMethodError(name) from err
 
 
 @dc.dataclass(frozen=True)
@@ -126,9 +132,9 @@ class CompositeObjectMethods(ObjectMethods):
         for methods in self.object_methods:
             try:
                 return methods.get_method(name)
-            except KeyError:
+            except st.exc.NoSuchMethodError:
                 pass
-        raise KeyError(name)
+        raise st.exc.NoSuchMethodError(name)
 
 
 def method_from_function(
@@ -290,7 +296,10 @@ class BinaryMagicMethods(ObjectMethods):
     )
 
     def get_method(self, name: str) -> Method:
-        method = self.method_map[name]
+        try:
+            method = self.method_map[name]
+        except KeyError as err:
+            raise st.exc.NoSuchMethodError(name) from err
         return BinaryMagicMethod(
             name=name,
             operation=method,

@@ -3,10 +3,12 @@ Base classes for basic functionality used in several different types of objects
 """
 import abc
 import dataclasses as dc
+import sys
 from functools import partial
 from typing import Any, Sequence
 
 from statey import exc
+from statey.syms.stack import internalcode, rewrite_tb
 
 
 class AttributeAccess(abc.ABC):
@@ -30,6 +32,7 @@ class OrderedAttributeAccess(AttributeAccess):
 
     accessors: Sequence[AttributeAccess]
 
+    @internalcode
     def get_attr(self, obj: Any, attr: str) -> Any:
         for accessor in self.accessors:
             try:
@@ -47,6 +50,7 @@ class GetattrBasedAttributeAccess(AttributeAccess):
 
     obj: Any
 
+    @internalcode
     def get_attr(self, obj: Any, attr: str) -> Any:
         return partial(getattr(self.obj, attr), obj)
 
@@ -71,18 +75,26 @@ class Proxy(abc.ABC):
 		"""
         raise NotImplementedError
 
+    @internalcode
     def __getitem__(self, attr: Any) -> Any:
         """
 		Main API method for accessing attributes. Test all accessors in order.
 		"""
-        return self._accessor.get_attr(self._instance, attr)
+        try:
+            return self._accessor.get_attr(self._instance, attr)
+        except Exception:
+            rewrite_tb(*sys.exc_info())
 
+    @internalcode
     def __getattr__(self, attr: Any) -> Any:
         try:
             return getattr(super(), attr)
         except AttributeError:
             pass
-        return self[attr]
+        try:
+            return self[attr]
+        except Exception:
+            rewrite_tb(*sys.exc_info())
 
 
 @dc.dataclass(frozen=True)

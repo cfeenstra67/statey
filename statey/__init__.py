@@ -23,6 +23,8 @@ from statey.syms.api import F, join, struct, function, map, declarative
 
 from statey.syms.func import Function
 
+from statey.syms.impl import Unknown
+
 from statey.syms.object_ import Object
 
 from statey.syms.schemas import builder as S
