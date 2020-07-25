@@ -17,6 +17,23 @@ class PlanError(StateyError):
     """
 
 
+class ErrorDuringPlanning(PlanError):
+    """
+    Error to indicate that an error was raised while calling a resource's
+    plan() method
+    """
+    def __init__(self, path: str, current: Any, config: Any, exception: Exception) -> None:
+        self.path = path
+        self.current = current
+        self.config = config
+        self.exception = exception
+        super().__init__(
+            f'Exception raised during planning {current.state.resource}[{path}]'
+            f' {current.state.name} => {config.state.name}:'
+            f' {type(exception).__name__}: {exception}.'
+        )
+
+
 class SymsError(StateyError):
     """
 	Base class for errors in the syms package
@@ -255,3 +272,19 @@ class NonEncodeableTypeError(SymsTypeError):
         super().__init__(
             f"Encountered non-serializable type: {type} while attempting to serialize or deserialize."
         )
+
+
+class ResourceError(StateyError):
+    """
+    Error indicating some issue with a resource or resource code
+    """
+
+
+class InvalidModificationAction(ResourceError):
+    """
+    Error indicating that get_action() returned an invalid modification action
+    in a SimpleMachine
+    """
+    def __init__(self, modification_type: "ModificationAction") -> None:
+        self.modification_type = modification_type
+        super().__init__(f"Encountered unhandled modification action {modification_type}.")

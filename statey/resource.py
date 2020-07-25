@@ -144,6 +144,12 @@ class ResourceState:
     def null(self) -> bool:
         return self.state.null
 
+    def snapshot(self, data: Any) -> "StateSnapshot":
+        """
+        Create a StateSnapshot from this resource state and the given data
+        """
+        return StateSnapshot(data, self)
+
     def __call__(self, arg=utils.MISSING, **kwargs) -> "BoundState":
         """
 		Factory method for creating bound states for this resource state.
@@ -218,7 +224,7 @@ class StateTuple(abc.ABC, utils.Cloneable):
         """
         raise NotImplementedError
 
-    def obj(self, registry: Optional["Registry"] = None) -> "Object":
+    def get_obj(self, registry: Optional["Registry"] = None) -> "Object":
         """
         Obtain an object representation of this StateTuple
         """
@@ -226,13 +232,17 @@ class StateTuple(abc.ABC, utils.Cloneable):
             registry = st.registry
         return st.Object(self.data, self.type, registry)
 
+    @property
+    def obj(self) -> "Object":
+        return self.get_obj()
+
 
 @dc.dataclass(frozen=True)
 class StateConfig(StateTuple):
     """
     A state configuration object, may contain unknowns
     """
-
+    ref: "Object"
     data: Any
     state: ResourceState
 
@@ -297,8 +307,7 @@ class Resource(abc.ABC):
         self,
         current: StateSnapshot,
         config: StateConfig,
-        session: TaskSession,
-        input: Object,
+        session: TaskSession
     ) -> Object:
         """
 		Given a task session, the current state of a resource, and a task session with
@@ -508,6 +517,7 @@ class ResourceGraph:
             state_dict = None
             if data["state"]:
                 state_dict = data["state"].to_dict(registry)
+                del state_dict["state"]["output_type"]
 
             nodes[node] = {
                 "data": data["value"],
@@ -531,6 +541,7 @@ class ResourceGraph:
                 type_dict = node["type"]
                 state_dict_copy = node["state"].copy()
                 state_dict_copy["state"] = state_dict_copy["state"].copy()
+                state_dict_copy["state"]["output_type"] = type_dict
                 state = ResourceState.from_dict(state_dict_copy, registry)
                 typ = state.state.type
                 instance.set(key, node["data"], typ, state)

@@ -1,3 +1,4 @@
+import collections
 import dataclasses as dc
 from typing import Type as PyType, Dict, Any, Union, Callable, Sequence
 
@@ -72,8 +73,14 @@ class ParseSequencePlugin:
     def get_type(
         self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]
     ) -> types.Type:
-        if not isinstance(annotation, type) or not issubclass(annotation, Sequence):
+        # Sort of hacky, will behave differently in different python versions (3.7 works)
+        if (
+            not hasattr(annotation, 'mro')
+            or not callable(annotation.mro)
+            or collections.abc.Sequence not in annotation.mro()
+        ):
             return None
+
         inner = utils.extract_inner_annotation(annotation)
         # Optionals are subtypes of themselves I guess?
         if utils.extract_optional_annotation(annotation) is not None:
@@ -212,12 +219,12 @@ class BasicObjectBehaviors:
 DEFAULT_PLUGINS = [
     AnyPlugin(),
     HandleOptionalPlugin(),
+    ParseSequencePlugin(types.ArrayType),
     ValuePredicatePlugin(float, types.FloatType),
     ValuePredicatePlugin(int, types.IntegerType),
     ValuePredicatePlugin(list, types.ArrayType),
     ValuePredicatePlugin(str, types.StringType),
     ValuePredicatePlugin(bool, types.BooleanType),
-    ParseSequencePlugin(types.ArrayType),
     LiteralPlugin(),
     BasicObjectBehaviors(),
     StructFromDictPlugin(),

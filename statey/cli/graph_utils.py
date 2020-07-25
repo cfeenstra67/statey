@@ -23,8 +23,9 @@ class ExecutorLoggingPlugin:
 	Plugin to log signals when caught
 	"""
 
-    def __init__(self) -> None:
+    def __init__(self, show_metatasks: bool = False) -> None:
         self.task_starts = {}
+        self.show_metatasks = show_metatasks
 
     @st.hookimpl
     def caught_signal(
@@ -54,7 +55,7 @@ class ExecutorLoggingPlugin:
         duration = time.time() - self.task_starts[key]
         color = color_for_status(status)
         styled_status = click.style(status.name, fg=color, bold=True)
-        if not is_metatask(task):
+        if self.show_metatasks or not is_metatask(task):
             click.echo(
                 f'Task {click.style(key, fg="yellow")} finished after {duration:.2f}s with status {styled_status}.'
             )
@@ -317,9 +318,16 @@ class PlanNodeSummary:
             [f'- {style_key("data")}:', tw.indent(data_string, indent_str * 2)]
         )
 
+        resource = (
+            self.plan_node.config_state.resource
+            if self.plan_node.config_state
+            else self.plan_node.current_state.resource
+        )
+
         data_string = tw.indent(data_string, indent_str * 2)
         lines = [
-            f"- {style_key(self.plan_node.key)}:",
+            f'- {style_key(self.plan_node.key)}{click.style("[", fg="yellow")}'
+            f'{click.style(resource, fg="cyan")}{click.style("]", fg="yellow")}:',
             tw.indent(tasks_string, indent_str),
             tw.indent(type_string, indent_str),
             tw.indent(state_string, indent_str),
@@ -356,6 +364,7 @@ class PlanSummary:
 
     plan: Plan
     node_summaries: Sequence[PlanNodeSummary]
+    show_metatasks: bool
 
     def non_empty_summaries(
         self, max_width: int, indent: int = 2
@@ -379,7 +388,7 @@ class PlanSummary:
 
         for node in task_graph:
             task = task_graph.nodes[node]["task"]
-            if not is_metatask(task):
+            if self.show_metatasks or not is_metatask(task):
                 keep.add(node)
 
         utils.subgraph_retaining_dependencies(task_graph, keep)
@@ -393,6 +402,7 @@ class ExecutionSummary:
 	"""
 
     exec_info: ExecutionInfo
+    show_metatasks: bool
 
     def tasks_by_status(self) -> Dict[TaskStatus, Sequence[str]]:
         """
@@ -402,7 +412,7 @@ class ExecutionSummary:
         for node in self.exec_info.task_graph.task_graph.nodes:
             status = self.exec_info.task_graph.get_info(node).status
             task = self.exec_info.task_graph.get_task(node)
-            if is_metatask(task) and status == TaskStatus.SUCCESS:
+            if not self.show_metatasks and is_metatask(task) and status == TaskStatus.SUCCESS:
                 continue
             out.setdefault(status, []).append(node)
         return out
@@ -478,7 +488,7 @@ class Inspector:
 	Utilities for visualizing plans in a human-readable manner.
 	"""
 
-    def plan_summary(self, plan: Plan) -> PlanSummary:
+    def plan_summary(self, plan: Plan, show_metatasks: bool = False) -> PlanSummary:
         nodes = []
 
         for node in plan.nodes:
@@ -487,7 +497,7 @@ class Inspector:
             remove = set()
             for sub_node in task_graph.nodes:
                 task = task_graph.nodes[sub_node]["task"]
-                if is_metatask(task):
+                if not show_metatasks and is_metatask(task):
                     remove.add(sub_node)
 
             keep = set(task_graph.nodes) - remove
@@ -496,13 +506,13 @@ class Inspector:
             summary = PlanNodeSummary(task_graph, node)
             nodes.append(summary)
 
-        return PlanSummary(plan, nodes)
+        return PlanSummary(plan, nodes, show_metatasks)
 
-    def execution_summary(self, exec_info: ExecutionInfo) -> ExecutionSummary:
+    def execution_summary(self, exec_info: ExecutionInfo, show_metatasks: bool = False) -> ExecutionSummary:
         """
 		Get a summary for an exec_info instance
 		"""
-        return ExecutionSummary(exec_info)
+        return ExecutionSummary(exec_info, show_metatasks)
 
 
 def simple_print_graph(graph: nx.DiGraph, print_func=print) -> None:

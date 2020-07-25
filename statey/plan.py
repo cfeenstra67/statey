@@ -1,5 +1,6 @@
 import abc
 import dataclasses as dc
+import sys
 from functools import reduce
 from itertools import chain
 from typing import Optional, Sequence, Dict, Tuple, Any
@@ -17,7 +18,7 @@ from statey.resource import (
     StateConfig,
     StateSnapshot,
 )
-from statey.syms import session, types, Object
+from statey.syms import session, types, Object, stack
 from statey.task import (
     TaskSession,
     SessionSwitch,
@@ -555,15 +556,31 @@ class DefaultMigrator(Migrator):
                     config_bound_state.input, decode=False, allow_unknowns=True
                 )
                 previous_snapshot = StateSnapshot(previous_resolved, previous_state)
-                bound_config = StateConfig(config_partial_resolved, config_state)
 
                 task_session = self.create_task_session()
                 input_ref = task_session.ns.new("input", config_state.state.input_type)
                 task_session.set_data("input", config_partial_resolved)
 
-                plan_output = resource.plan(
-                    previous_snapshot, bound_config, task_session, input_ref
-                )
+                bound_config = StateConfig(input_ref, config_partial_resolved, config_state)
+
+                # A bunch of junk to handle errors nicely
+                error, tb = None, None
+                try:
+                    plan_output = resource.plan(
+                        previous_snapshot, bound_config, task_session
+                    )
+                except Exception as err:
+                    error = exc.ErrorDuringPlanning(
+                        node, previous_snapshot, bound_config, err
+                    )
+                    _, _, tb = sys.exc_info()
+                if error:
+                    try:
+                        raise error.with_traceback(tb)
+                    except Exception:
+                        stack.rewrite_tb(*sys.exc_info())
+                # End error junk
+
                 # Allow different refs for graph vs. session by returning a tuple of refs
                 if isinstance(plan_output, tuple) and len(plan_output) == 2:
                     output_ref, graph_ref = plan_output
@@ -672,24 +689,53 @@ class DefaultMigrator(Migrator):
                 previous_snapshot = StateSnapshot(previous_resolved, previous_state)
 
                 null_state = resource.s.null_state
-                config_bound = StateConfig({}, null_state)
 
                 task_session = self.create_task_session()
-                input_ref = task_session.ns.new("input", config_bound.type)
+                input_ref = task_session.ns.new("input", null_state.input_type)
+
+                config_bound = StateConfig(input_ref, {}, null_state)
                 task_session.set_data("input", config_bound.data)
 
-                plan_output = resource.plan(
-                    previous_snapshot, config_bound, task_session, input_ref
-                )
+                # A bunch of junk to handle errors nicely
+                error, tb = None, None
+                try:
+                    plan_output = resource.plan(
+                        previous_snapshot, config_bound, task_session
+                    )
+                except Exception as err:
+                    error = exc.ErrorDuringPlanning(
+                        node, previous_snapshot, config_bound, err
+                    )
+                    _, _, tb = sys.exc_info()
+                if error:
+                    try:
+                        raise error.with_traceback(tb)
+                    except Exception:
+                        stack.rewrite_tb(*sys.exc_info())
+                # End error junk
+
                 # Allow different refs for graph vs. session by returning a tuple of refs
                 if isinstance(plan_output, tuple) and len(plan_output) == 2:
                     output_ref, graph_ref = plan_output
                 else:
                     output_ref, graph_ref = plan_output, plan_output
 
-                # In theory this should _not_ allow unknowns, but keeping it less strict for now.
-                # Update: removed unknowns, they should not be needed
-                output_resolved = task_session.resolve(output_ref, decode=False)
+                error, tb = None, None
+                try:
+                    # In theory this should _not_ allow unknowns, but keeping it less strict for now.
+                    # Update: removed unknowns, they should not be needed
+                    # Update2: These are needed for now
+                    output_resolved = task_session.resolve(output_ref, decode=False, allow_unknowns=True)
+                except Exception as err:
+                    error = exc.ErrorDuringPlanning(
+                        node, previous_snapshot, config_bound, err
+                    )
+                    _, _, tb = sys.exc_info()
+                if error:
+                    try:
+                        raise error.with_traceback(tb)
+                    except Exception:
+                        stack.rewrite_tb(*sys.exc_info())
 
                 action = ExecuteTaskSession(
                     task_session=task_session,
@@ -734,15 +780,30 @@ class DefaultMigrator(Migrator):
                 )
 
                 previous_snapshot = StateSnapshot({}, resource.s.null_state)
-                config_bound = StateConfig(config_partial_resolved, config_state)
 
                 task_session = self.create_task_session()
                 input_ref = task_session.ns.new("input", config_state.state.input_type)
                 task_session.set_data("input", config_partial_resolved)
 
-                plan_output = resource.plan(
-                    previous_snapshot, config_bound, task_session, input_ref
-                )
+                config_bound = StateConfig(input_ref, config_partial_resolved, config_state)
+
+                # A bunch of junk to handle errors nicely
+                error, tb = None, None
+                try:
+                    plan_output = resource.plan(
+                        previous_snapshot, config_bound, task_session
+                    )
+                except Exception as err:
+                    error = exc.ErrorDuringPlanning(
+                        node, previous_snapshot, config_bound, err
+                    )
+                    _, _, tb = sys.exc_info()
+                if error:
+                    try:
+                        raise error.with_traceback(tb)
+                    except Exception:
+                        stack.rewrite_tb(*sys.exc_info())
+                # End error junk
                 # Allow different refs for graph vs. session by returning a tuple of refs
                 if isinstance(plan_output, tuple) and len(plan_output) == 2:
                     output_ref, graph_ref = plan_output

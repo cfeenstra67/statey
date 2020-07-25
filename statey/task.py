@@ -226,6 +226,7 @@ class SessionTask(Task):
     output_type: types.Type
     description: Optional[str] = None
     is_always_eager: bool = False
+    description: Optional[str] = None
 
     def always_eager(self) -> bool:
         return self.is_always_eager
@@ -254,6 +255,7 @@ class SessionSwitch(Task):
     output_session: session.Session
     output_key: str
     allow_unknowns: bool = True
+    description: Optional[str] = None
 
     def always_eager(self) -> bool:
         return False
@@ -297,6 +299,7 @@ class GraphSetKey(ResourceGraphOperation):
     remove_dependencies: bool = True
     state: Optional["ResourceState"] = None
     finalize: Callable[[Any], Coroutine] = async_identity
+    description: Optional[str] = None
 
     async def run(self) -> None:
         from statey.resource import StateSnapshot
@@ -316,10 +319,12 @@ class GraphSetKey(ResourceGraphOperation):
             self.resource_graph.add_dependencies(self.key, self.dependencies)
 
 
+@dc.dataclass(frozen=True)
 class GraphDeleteKey(ResourceGraphOperation):
     """
 	Delete some key in a resource graph.
 	"""
+    description: Optional[str] = None
 
     async def run(self) -> None:
         self.resource_graph.delete(self.key)
@@ -337,24 +342,24 @@ class TaskSession(session.Session):
         self.tasks = {}
         self.pm.register(self)
 
-    # @st.hookimpl
-    # def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
-    #     from statey.resource import BoundState
+    def before_set_checkpoint(self, key: str, value: "StateSnapshot") -> Tuple[Any, types.Type]:
+        self.checkpoints[key] = value
+        return value.data, value.state.output_type
 
-    #     if not isinstance(value, BoundState):
-    #         return None
-    #     self.checkpoints[key] = value
-    #     return value.data, value.state.state.type
-
-    @st.hookimpl
-    def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
-        if not isinstance(value, SessionTaskSpec):
-            return None
+    def before_set_bind_task(self, key: str, value: SessionTaskSpec) -> Tuple[Any, types.Type]:
         self.tasks[key] = bound = value.bind(self)
         out_sym = Object(bound.output_future, bound.output_type, self.ns.registry)
         if value.expected is not utils.MISSING:
             out_sym >>= value.expected
         return out_sym, out_sym._type
+
+    @st.hookimpl
+    def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
+        if isinstance(value, SessionTaskSpec):
+            return self.before_set_bind_task(key, value)
+        if isinstance(value, st.StateSnapshot):
+            return self.before_set_checkpoint(key, value)
+        return None
 
     def resolve(
         self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
@@ -373,6 +378,11 @@ class TaskSession(session.Session):
     def task_graph(
         self, resource_graph: "ResourceGraph", checkpoint_key: str
     ) -> nx.DiGraph:
+        """
+        Creates a graph with only tasks as the nodes. If executed in order
+        each task's input will be fully resolved and the entire graph of tasks
+        has a deterministic output
+        """
         task_subgraph = self.dependency_graph()
         keep = list(self.tasks) + list(self.checkpoints)
         utils.subgraph_retaining_dependencies(task_subgraph, keep)
@@ -385,9 +395,7 @@ class TaskSession(session.Session):
                 resource = self.ns.registry.get_resource(state.state.resource)
                 task = GraphSetKey(
                     input_session=self,
-                    input_symbol=st.Object(
-                        state.data, state.state.output_type, self.ns.registry
-                    ),
+                    input_symbol=state.obj,
                     remove_dependencies=False,
                     state=state.state,
                     key=checkpoint_key,
@@ -402,6 +410,7 @@ class TaskSession(session.Session):
         cloned_session = self.session.clone()
         new_inst = type(self)(cloned_session)
         new_inst.tasks = self.tasks.copy()
+        new_inst.checkpoints = self.checkpoints.copy()
         new_inst.pm = self.pm
         return new_inst
 

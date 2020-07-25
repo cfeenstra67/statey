@@ -14,6 +14,8 @@ from statey import NS, exc
 
 LRU_MAX_SIZE = 100
 
+STRING_TYPES = (str, bytes)
+
 
 @dc.dataclass(frozen=True)
 class Global:
@@ -215,6 +217,7 @@ def infer_annotation(obj: Any) -> Any:
     obj_type = type(obj)
     if (
         isinstance(obj, Sequence)
+        and not isinstance(obj, STRING_TYPES)
         and obj
         and reduce(lambda x, y: x is y, map(type, obj))
     ):
@@ -427,7 +430,10 @@ def trace_func(func: Callable[[Any], Any], cb: Callable[[Any, Any, Any], None]) 
 
 
 def locals_history(frame):
-
+    """
+    Yield a function that, each time it is called, will return the "updated"
+    members of the scope of the given frame vs. the previous call
+    """
     current_locals = frame.f_locals.copy()
 
     def diff():
@@ -451,7 +457,9 @@ def locals_history(frame):
 
 
 def make_tracer(diff_cb: Callable[[Any, Any, Any], None]):
-
+    """
+    Wrap the given handler function as a tracing function
+    """
     current_history = None
 
     def tracer(frame, event, arg):
@@ -468,7 +476,9 @@ def make_tracer(diff_cb: Callable[[Any, Any, Any], None]):
 
 
 def locals_diff_tracer(diff_cb: Callable[[Any, Any, Any], None]):
-
+    """
+    Decorator to wrap the given function as a trace function
+    """
     tracer = make_tracer(diff_cb)
 
     def dec(func):
@@ -478,6 +488,9 @@ def locals_diff_tracer(diff_cb: Callable[[Any, Any, Any], None]):
 
 
 def scope_update_handler(handler: Callable[[Any, str, Any], None]):
+    """
+    Handle updates to the locals scope using a tracing function
+    """
     @locals_diff_tracer
     def differ(frame, updated, deleted):
         for key, val in updated.items():

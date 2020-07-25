@@ -11,12 +11,14 @@ from statey.registry import DefaultRegistry, Registry
 
 registry = DefaultRegistry()
 
-from statey import task, syms
+from statey import task, syms, exc
 
 from statey.fsm import (
     Machine,
     transition,
     MachineResource,
+    SingleStateMachine,
+    SimpleMachine,
 )
 
 from statey.syms.api import F, join, struct, function, map, declarative
@@ -42,6 +44,7 @@ from statey.syms.types import (
     ArrayType,
     BooleanType,
     Field,
+    EmptyType
 )
 
 from statey.resource import (

@@ -223,7 +223,10 @@ class DeclarativeMethods(ObjectMethods, metaclass=DeclarativeMethodsMeta):
     """
 
     def get_method(self, name: str) -> Method:
-        return self.__methods__[name]
+        try:
+            return self.__methods__[name]
+        except KeyError as err:
+            raise st.exc.NoSuchMethodError(name) from err
 
 
 @dc.dataclass(frozen=True)

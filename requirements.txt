@@ -7,3 +7,6 @@ dill==0.3.2
 cloudpickle==1.4.1
 # Only required for the CLI
 click==7.1.2
+git+https://github.com/sambrightman/asciidag.git
+# AWS
+boto3==1.14.24
