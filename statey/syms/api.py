@@ -138,7 +138,69 @@ def join(head: Object, *tail: Sequence[Any]) -> Object:
     def join_func(left: head._type, right: tail_type) -> head._type:
         return left
 
-    return utils.wrap_function_call(join_func, (head, tail))
+    return utils.wrap_function_call(join_func, (head, tail)) >> head
+
+
+def replace(obj: Object, **kwargs: Dict[str, Any]) -> Object:
+    """
+    Replace the given attributes in `object`
+    """
+    if not hasattr(obj._type, "fields"):
+        raise TypeError(f"Invalid input type for replace(): {obj._type}")
+
+    out = {}
+    for field in obj._type.fields:
+        if field.name in kwargs:
+            out[field.name] = kwargs[field.name]
+        else:
+            out[field.name] = obj[field.name]
+
+    return Object(out, obj._type, obj._registry)
+
+
+def fill(
+    obj: Object, output_type: types.StructType, get_value: Callable[[str], Any]
+) -> Object:
+    """
+    Convert `obj` to `output_type` by filling missing fields with values resolved from get_value
+    """
+    if not hasattr(obj._type, "fields"):
+        raise TypeError(f"Invalid input type for replace(): {obj._type}")
+
+    fields = {field.name: field for field in obj._type.fields}
+
+    out = {}
+    for field in output_type.fields:
+        if field.name in fields:
+            out[field.name] = obj[field.name]
+        else:
+            out[field.name] = get_value(field.name)
+
+    return Object(out, output_type, obj._registry)
+
+
+def filter_struct(obj: Object, output_type: types.StructType):
+    """
+    fill() which will raise an error if any exist that appears in output_type
+    doesn't appear in `obj`
+    """
+
+    def getter(name):
+        raise ValueError(f"Unknown field {name}.")
+
+    return fill(obj, output_type, getter)
+
+
+def fill_unknowns(obj: Object, output_type: types.StructType) -> Object:
+    """
+    Convert `obj` to `output_type` by filling missing values with unknowns
+    """
+    unknown = Object(impl.Unknown(return_type=output_type), output_type, obj._registry)
+
+    def get_value(name):
+        return unknown[name]
+
+    return fill(obj, output_type, get_value)
 
 
 class _StructSymbolFactory:

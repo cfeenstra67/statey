@@ -213,7 +213,7 @@ class StateTuple(abc.ABC, utils.Cloneable):
     Binding a state to a value
     """
 
-    data: Any
+    obj: "Object"
     state: ResourceState
 
     @property
@@ -224,17 +224,12 @@ class StateTuple(abc.ABC, utils.Cloneable):
         """
         raise NotImplementedError
 
+    @abc.abstractmethod
     def get_obj(self, registry: Optional["Registry"] = None) -> "Object":
         """
         Obtain an object representation of this StateTuple
         """
-        if registry is None:
-            registry = st.registry
-        return st.Object(self.data, self.type, registry)
-
-    @property
-    def obj(self) -> "Object":
-        return self.get_obj()
+        raise NotImplementedError
 
 
 @dc.dataclass(frozen=True)
@@ -242,13 +237,18 @@ class StateConfig(StateTuple):
     """
     A state configuration object, may contain unknowns
     """
-    ref: "Object"
-    data: Any
+
+    obj: "Object"
     state: ResourceState
 
     @property
     def type(self) -> types.Type:
         return self.state.input_type
+
+    def get_obj(self, registry: Optional["Registry"] = None) -> "Object":
+        if registry is None:
+            registry = st.registry
+        return st.Object(self.obj._impl, self.obj._type, registry)
 
 
 @dc.dataclass(frozen=True)
@@ -263,6 +263,15 @@ class StateSnapshot(StateTuple):
     @property
     def type(self) -> types.Type:
         return self.state.output_type
+
+    def get_obj(self, registry: Optional["Registry"] = None) -> "Object":
+        if registry is None:
+            registry = st.registry
+        return st.Object(self.data, self.type, registry)
+
+    @property
+    def obj(self) -> "Object":
+        return self.get_obj()
 
 
 class States(abc.ABC):
@@ -303,11 +312,8 @@ class Resource(abc.ABC):
         return self._s
 
     @abc.abstractmethod
-    def plan(
-        self,
-        current: StateSnapshot,
-        config: StateConfig,
-        session: TaskSession
+    async def plan(
+        self, current: StateSnapshot, config: StateConfig, session: TaskSession
     ) -> Object:
         """
 		Given a task session, the current state of a resource, and a task session with

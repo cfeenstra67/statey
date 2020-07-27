@@ -491,6 +491,7 @@ def scope_update_handler(handler: Callable[[Any, str, Any], None]):
     """
     Handle updates to the locals scope using a tracing function
     """
+
     @locals_diff_tracer
     def differ(frame, updated, deleted):
         for key, val in updated.items():

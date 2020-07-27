@@ -141,7 +141,6 @@ class PythonSession(session.Session):
     def _process_symbol_dag(
         self, dag: nx.DiGraph, allow_unknowns: bool = False
     ) -> None:
-
         @stack.internalcode
         def handle_symbol_id(symbol_id):
 
@@ -154,10 +153,12 @@ class PythonSession(session.Session):
             except exc.UnknownError as err:
                 if not allow_unknowns:
                     raise
-                if err.expected is not utils.MISSING:
-                    result = err.expected
-                else:
+                if err.expected is utils.MISSING:
                     result = Object(impl.Unknown(sym))
+                else:
+                    result = self.resolve(
+                        err.expected, decode=False, allow_unknowns=True
+                    )
             else:
                 semantics = self.ns.registry.get_semantics(sym._type)
                 expanded_result = semantics.expand(result)

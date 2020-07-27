@@ -75,7 +75,7 @@ class ParseSequencePlugin:
     ) -> types.Type:
         # Sort of hacky, will behave differently in different python versions (3.7 works)
         if (
-            not hasattr(annotation, 'mro')
+            not hasattr(annotation, "mro")
             or not callable(annotation.mro)
             or collections.abc.Sequence not in annotation.mro()
         ):

@@ -324,6 +324,7 @@ class GraphDeleteKey(ResourceGraphOperation):
     """
 	Delete some key in a resource graph.
 	"""
+
     description: Optional[str] = None
 
     async def run(self) -> None:
@@ -342,11 +343,15 @@ class TaskSession(session.Session):
         self.tasks = {}
         self.pm.register(self)
 
-    def before_set_checkpoint(self, key: str, value: "StateSnapshot") -> Tuple[Any, types.Type]:
+    def before_set_checkpoint(
+        self, key: str, value: "StateSnapshot"
+    ) -> Tuple[Any, types.Type]:
         self.checkpoints[key] = value
         return value.data, value.state.output_type
 
-    def before_set_bind_task(self, key: str, value: SessionTaskSpec) -> Tuple[Any, types.Type]:
+    def before_set_bind_task(
+        self, key: str, value: SessionTaskSpec
+    ) -> Tuple[Any, types.Type]:
         self.tasks[key] = bound = value.bind(self)
         out_sym = Object(bound.output_future, bound.output_type, self.ns.registry)
         if value.expected is not utils.MISSING:

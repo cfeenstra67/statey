@@ -478,7 +478,7 @@ class Migrator(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def plan(
+    async def plan(
         self,
         config_session: ResourceSession,
         state_session: Optional[ResourceSession] = None,
@@ -498,7 +498,7 @@ class DefaultMigrator(Migrator):
     def create_task_session(self) -> TaskSession:
         return create_task_session()
 
-    def plan(
+    async def plan(
         self,
         config_session: ResourceSession,
         state_graph: Optional[ResourceGraph] = None,
@@ -561,12 +561,12 @@ class DefaultMigrator(Migrator):
                 input_ref = task_session.ns.new("input", config_state.state.input_type)
                 task_session.set_data("input", config_partial_resolved)
 
-                bound_config = StateConfig(input_ref, config_partial_resolved, config_state)
+                bound_config = StateConfig(input_ref, config_state)
 
                 # A bunch of junk to handle errors nicely
                 error, tb = None, None
                 try:
-                    plan_output = resource.plan(
+                    plan_output = await resource.plan(
                         previous_snapshot, bound_config, task_session
                     )
                 except Exception as err:
@@ -693,13 +693,13 @@ class DefaultMigrator(Migrator):
                 task_session = self.create_task_session()
                 input_ref = task_session.ns.new("input", null_state.input_type)
 
-                config_bound = StateConfig(input_ref, {}, null_state)
-                task_session.set_data("input", config_bound.data)
+                config_bound = StateConfig(input_ref, null_state)
+                task_session.set_data("input", {})
 
                 # A bunch of junk to handle errors nicely
                 error, tb = None, None
                 try:
-                    plan_output = resource.plan(
+                    plan_output = await resource.plan(
                         previous_snapshot, config_bound, task_session
                     )
                 except Exception as err:
@@ -725,7 +725,9 @@ class DefaultMigrator(Migrator):
                     # In theory this should _not_ allow unknowns, but keeping it less strict for now.
                     # Update: removed unknowns, they should not be needed
                     # Update2: These are needed for now
-                    output_resolved = task_session.resolve(output_ref, decode=False, allow_unknowns=True)
+                    output_resolved = task_session.resolve(
+                        output_ref, decode=False, allow_unknowns=True
+                    )
                 except Exception as err:
                     error = exc.ErrorDuringPlanning(
                         node, previous_snapshot, config_bound, err
@@ -746,8 +748,8 @@ class DefaultMigrator(Migrator):
                     config_state=resource.s.null_state,
                     previous_state=previous_state,
                     resource=resource,
-                    input_symbol=config_session.ns.registry.object(
-                        config_bound.data, config_bound.type
+                    input_symbol=Object(
+                        {}, config_bound.type, task_session.ns.registry
                     ),
                 )
 
@@ -785,12 +787,12 @@ class DefaultMigrator(Migrator):
                 input_ref = task_session.ns.new("input", config_state.state.input_type)
                 task_session.set_data("input", config_partial_resolved)
 
-                config_bound = StateConfig(input_ref, config_partial_resolved, config_state)
+                config_bound = StateConfig(input_ref, config_state)
 
                 # A bunch of junk to handle errors nicely
                 error, tb = None, None
                 try:
-                    plan_output = resource.plan(
+                    plan_output = await resource.plan(
                         previous_snapshot, config_bound, task_session
                     )
                 except Exception as err:

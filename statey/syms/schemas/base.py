@@ -6,6 +6,22 @@ import statey as st
 from statey.syms import types, utils, encoders, impl, Object
 
 
+def get_schema(obj: Any) -> "Schema":
+    """
+    Handle basic types that can be transformed into schemas
+    """
+    if isinstance(obj, Schema):
+        return obj
+
+    if isinstance(obj, SchemaFactory):
+        return obj.schema()
+
+    if isinstance(obj, types.Type):
+        return ValueSchema(obj)
+
+    raise TypeError(f"Unable to convert to schema: {obj}")
+
+
 class Mapper(abc.ABC):
     """
     A mapper is a "protected" execution of a function. The input and output
@@ -378,9 +394,8 @@ class ArraySchemaFactory(SchemaFactory, utils.Cloneable):
         schema = self.element_schema
         if schema is utils.MISSING:
             schema = EmptySchema
-        if isinstance(schema, SchemaFactory):
-            schema = schema.schema()
 
+        schema = get_schema(schema)
         return ArraySchema(
             element_schema=schema, validator=self.validator, metadata=self.metadata
         )
@@ -388,8 +403,7 @@ class ArraySchemaFactory(SchemaFactory, utils.Cloneable):
     def __getitem__(
         self, element_schema: Union[Schema, "SchemaFactory"]
     ) -> "ArraySchemaFactory":
-        if isinstance(element_schema, SchemaFactory):
-            element_schema = element_schema.schema()
+        element_schema = get_schema(element_schema)
         return self.clone(element_schema=element_schema)
 
 
@@ -416,15 +430,11 @@ class StructSchemaFactory(SchemaFactory, utils.Cloneable):
         """
         Add a field to this schema factory
         """
-        if isinstance(schema, SchemaFactory):
-            field = StructSchemaField(name, schema.schema())
-        elif isinstance(schema, ComputedSchemaFactory):
+        if isinstance(schema, ComputedSchemaFactory):
             schema = schema.schema(self.schema().input_type)
             field = StructSchemaField(name, schema, attr=False)
-        elif isinstance(schema, Schema):
-            field = StructSchemaField(name, schema)
         else:
-            raise TypeError(f"Unknown schema type: {schema}")
+            field = StructSchemaField(name, get_schema(schema))
         return self.clone(fields=tuple(self.fields) + (field,))
 
     def __getitem__(self, fields: Sequence[slice]) -> "ArraySchemaFactory":

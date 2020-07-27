@@ -41,7 +41,9 @@ async def refresh_graph(graph):
     "--show-dag", is_flag=True, help="Show the task graph DAG as part of planning."
 )
 @click.option(
-    "--show-metatasks", is_flag=True, help="Show internal 'meta' tasks like graph and session update opterations.",
+    "--show-metatasks",
+    is_flag=True,
+    help="Show internal 'meta' tasks like graph and session update opterations.",
 )
 @click.argument("module")
 @click.pass_context
@@ -49,7 +51,10 @@ def plan(ctx, module, session_name, show_dag, show_metatasks):
     try:
         module_obj = importlib.import_module(module)
     except ImportError as err:
-        click.secho(f'Unable to load module "{module}" with error: {type(err).__name__}: {err}.', fg='red')
+        click.secho(
+            f'Unable to load module "{module}" with error: {type(err).__name__}: {err}.',
+            fg="red",
+        )
         raise click.Abort from err
 
     if session_name.endswith("()"):
@@ -69,7 +74,7 @@ def plan(ctx, module, session_name, show_dag, show_metatasks):
     )
 
     migrator = DefaultMigrator()
-    plan = migrator.plan(session, resource_graph)
+    plan = loop.run_until_complete(migrator.plan(session, resource_graph))
 
     click.secho(f"Planning completed successfully.", fg="green")
     click.echo()
@@ -79,7 +84,7 @@ def plan(ctx, module, session_name, show_dag, show_metatasks):
     ctx.obj["module"] = module_obj
     ctx.obj["session_name"] = session_name
     ctx.obj["session"] = session
-    ctx.obj['show_metatasks'] = show_metatasks
+    ctx.obj["show_metatasks"] = show_metatasks
 
     plan_summary = inspector.plan_summary(plan, show_metatasks)
 
@@ -121,7 +126,7 @@ def up(ctx, yes):
         raise click.Abort
 
     executor = AsyncIOGraphExecutor()
-    executor.pm.register(ExecutorLoggingPlugin(ctx.obj['show_metatasks']))
+    executor.pm.register(ExecutorLoggingPlugin(ctx.obj["show_metatasks"]))
 
     task_graph = plan.task_graph()
 
@@ -130,7 +135,7 @@ def up(ctx, yes):
         exec_info = executor.execute(task_graph)
         click.echo()
 
-        exec_summary = inspector.execution_summary(exec_info, ctx.obj['show_metatasks'])
+        exec_summary = inspector.execution_summary(exec_info, ctx.obj["show_metatasks"])
 
         exec_summary_string = exec_summary.to_string()
 
@@ -144,7 +149,9 @@ def up(ctx, yes):
     "--show-dag", is_flag=True, help="Show the task graph DAG as part of planning."
 )
 @click.option(
-    "--show-metatasks", is_flag=True, help="Show internal 'meta' tasks like graph and session update opterations.",
+    "--show-metatasks",
+    is_flag=True,
+    help="Show internal 'meta' tasks like graph and session update opterations.",
 )
 @click.option(
     "-y",
@@ -162,7 +169,8 @@ def down(ctx, show_dag, show_metatasks, yes):
     migrator = DefaultMigrator()
     # Run plan w/ an empty session
     session = st.create_resource_session()
-    plan = migrator.plan(session, resource_graph)
+    loop = asyncio.get_event_loop()
+    plan = loop.run_until_complete(migrator.plan(session, resource_graph))
 
     click.secho(f"Planning completed successfully.", fg="green")
     click.echo()
@@ -223,7 +231,7 @@ def refresh(ctx):
     loop = asyncio.get_event_loop()
     loop.run_until_complete(refresh_graph(resource_graph))
 
-    click.secho('State refreshed successfully.', fg='green', bold=True)
+    click.secho("State refreshed successfully.", fg="green", bold=True)
 
     ctx.obj["state_manager"].dump(resource_graph, st.registry)
 

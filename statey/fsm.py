@@ -24,11 +24,11 @@ class Transition(abc.ABC):
     name: str
 
     @abc.abstractmethod
-    def plan(
+    async def plan(
         self,
         current: resource.BoundState,
         config: resource.BoundState,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Object:
         """
         Same as Resource.plan(), except for planning
@@ -48,13 +48,13 @@ class FunctionTransition(Transition):
     name: str
     func: Callable[[Any], Any]
 
-    def plan(
+    async def plan(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Object:
-        return self.func(current=current, config=config, session=session)
+        return await self.func(current=current, config=config, session=session)
 
 
 def transition(from_name: str, to_name: str, name: str = utils.MISSING) -> Any:
@@ -142,11 +142,11 @@ class Machine(resource.States, metaclass=MachineMeta):
         state = next((s for s in self.__states__ if s.null))
         return resource.ResourceState(state, self.resource_name)
 
-    def plan(
+    async def plan(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Object:
 
         from_name = current.state.name
@@ -167,7 +167,7 @@ class Machine(resource.States, metaclass=MachineMeta):
                 f"Unable to find transition from {from_name} to {to_name}."
             )
 
-        return transition.plan(current, config, session)
+        return await transition.plan(current, config, session)
 
     def __call__(self, *args, **kwargs) -> resource.ResourceState:
         states = [state for state in self.__states__ if state != self.null_state.state]
@@ -190,9 +190,10 @@ class ModificationAction(enum.Enum):
     """
     Actions to control simple machine behavior
     """
-    NONE = 'none'
-    MODIFY = 'modify'
-    DELETE_AND_RECREATE = 'delete_and_recreate'
+
+    NONE = "none"
+    MODIFY = "modify"
+    DELETE_AND_RECREATE = "delete_and_recreate"
 
 
 class SingleStateMachine(Machine):
@@ -202,6 +203,7 @@ class SingleStateMachine(Machine):
     Note that a SimpleMachine's UP state should have all of the same fields available
     in its output type as its input type.
     """
+
     UP: resource.State
     DOWN: resource.NullState = resource.NullState("DOWN")
 
@@ -213,22 +215,37 @@ class SingleStateMachine(Machine):
         """
         raise NotImplementedError
 
+    async def refresh_config(self, config: "Object") -> "Object":
+        """
+        Transform a configuration before planning
+        """
+        return config
+
     @abc.abstractmethod
-    def create(self, session: task.TaskSession, config: resource.StateConfig) -> "Object":
+    async def create(
+        self, session: task.TaskSession, config: resource.StateConfig
+    ) -> "Object":
         """
         Create this resource with the given configuration
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def delete(self, session: task.TaskSession, current: resource.StateSnapshot) -> "Object":
+    async def delete(
+        self, session: task.TaskSession, current: resource.StateSnapshot
+    ) -> "Object":
         """
         Delete the resource with the given data
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def modify(self, session: task.TaskSession, current: resource.StateSnapshot, config: resource.StateConfig) -> "Object":
+    async def modify(
+        self,
+        session: task.TaskSession,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+    ) -> "Object":
         """
         Modify the resource from `data` to the given config. Default implementation
         is always to delete and recreate the resource.
@@ -261,15 +278,19 @@ class SingleStateMachine(Machine):
         return resource.StateSnapshot(info, current.state)
 
     @transition("UP", "UP")
-    def modify_resource(
+    async def modify_resource(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Object:
 
+        config = config.clone(obj=await self.refresh_config(config.obj))
+
         differ = session.ns.registry.get_differ(config.state.input_type)
-        diff = differ.diff(current.data, config.data)
+
+        current_as_config = st.filter_struct(current.obj, config.type)
+        diff = differ.diff(current_as_config, config.obj, session)
 
         action = self.get_action(diff)
 
@@ -277,35 +298,36 @@ class SingleStateMachine(Machine):
             return current.obj
 
         if action == ModificationAction.MODIFY:
-            return self.modify(session, current, config)
+            return await self.modify(session, current, config)
 
         if action == ModificationAction.DELETE_AND_RECREATE:
-            ref = self.delete(session, current)
+            ref = await self.delete(session, current)
             snapshotted = session["post_deletion_snapshot"] << self.DOWN.snapshot(ref)
-            joined_config = config.clone(ref=st.join(config.ref, snapshotted))
-            return self.create(session, joined_config)
+            joined_config = config.clone(obj=st.join(config.obj, snapshotted))
+            return await self.create(session, joined_config)
 
         raise exc.InvalidModificationAction(action)
 
     @transition("DOWN", "UP")
-    def create_resource(
+    async def create_resource(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Object:
 
-        return self.create(session, config)
+        config = config.clone(obj=await self.refresh_config(config.obj))
+        return await self.create(session, config)
 
     @transition("UP", "DOWN")
-    def delete_resource(
+    async def delete_resource(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Object:
 
-        return self.delete(session, current)
+        return await self.delete(session, current)
 
 
 class SimpleMachine(SingleStateMachine):
@@ -313,12 +335,13 @@ class SimpleMachine(SingleStateMachine):
     A simple machine has only a single state and each transition only consists
     of a single task
     """
-    @abc.abstractmethod
-    def get_expected(self, config: resource.StateConfig) -> Any:
+
+    async def get_expected(self, config: resource.StateConfig) -> Any:
         """
-        Get the expected output for the given configuration
+        Get the expected output for the given configuration. Default implementation
+        is just passing through config fields and setting the rest as unknown
         """
-        raise NotImplementedError
+        return st.fill_unknowns(config.obj, config.state.output_type)
 
     # Not defined as abstract methods because subclasses may want to just override
     # the top-level methods instead
@@ -342,23 +365,34 @@ class SimpleMachine(SingleStateMachine):
 
     def _get_optional_method(self, name: str) -> Callable[[Any], Any]:
         if getattr(type(self), name) is getattr(SimpleMachine, name):
-            raise NotImplementedError(f'{name} has not been defined in this class.')
+            raise NotImplementedError(f"{name} has not been defined in this class.")
         return getattr(self, name)
 
-    def create(self, session: task.TaskSession, config: resource.StateConfig) -> "Object":
-        expected = self.get_expected(config)
-        create_task = self._get_optional_method('create_task')
-        return session["create"] << (task.new(create_task)(config.ref) >> expected)
+    async def create(
+        self, session: task.TaskSession, config: resource.StateConfig
+    ) -> "Object":
+        expected = await self.get_expected(config)
+        create_task = self._get_optional_method("create_task")
+        return session["create"] << (task.new(create_task)(config.obj) >> expected)
 
-    def delete(self, session: task.TaskSession, current: resource.StateSnapshot) -> "Object":
-        delete_task = self._get_optional_method('delete_task')
+    async def delete(
+        self, session: task.TaskSession, current: resource.StateSnapshot
+    ) -> "Object":
+        delete_task = self._get_optional_method("delete_task")
         ref = session["delete"] << task.new(delete_task)(current.obj)
         return st.join(st.Object({}, st.EmptyType, session.ns.registry), ref)
 
-    def modify(self, session: task.TaskSession, current: resource.StateSnapshot, config: resource.StateConfig) -> "Object":
-        expected = self.get_expected(config)
-        modify_task = self._get_optional_method('modify_task')
-        return session["modify"] << (task.new(modify_task)(current.obj, config.ref) >> expected)
+    async def modify(
+        self,
+        session: task.TaskSession,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+    ) -> "Object":
+        expected = await self.get_expected(config)
+        modify_task = self._get_optional_method("modify_task")
+        return session["modify"] << (
+            task.new(modify_task)(current.obj, config.obj) >> expected
+        )
 
 
 class MachineResource(resource.Resource):
@@ -378,13 +412,13 @@ class MachineResource(resource.Resource):
         self.name = name
         super().__init__()
 
-    def plan(
+    async def plan(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Object:
-        return self.s.plan(current, config, session)
+        return await self.s.plan(current, config, session)
 
     async def refresh(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
         return await self.s.refresh(current)

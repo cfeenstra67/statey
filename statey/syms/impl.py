@@ -489,13 +489,13 @@ class ExpectedValue(ObjectImplementation):
     """
 
     obj: Object
-    expected: Any
+    expected: Object
+
+    def __post_init__(self) -> None:
+        assert isinstance(self.expected, Object)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-        semantics = obj._registry.get_semantics(obj._type)
-        obj_attr = self.obj[attr]
-        expected_attr = semantics.get_attr(self.expected, attr)
-        new_impl = ExpectedValue(obj_attr, expected_attr)
+        new_impl = ExpectedValue(self.obj[attr], self.expected[attr])
         return Object(new_impl)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
@@ -530,8 +530,8 @@ class ExpectedValue(ObjectImplementation):
             raise exc.UnknownError(refs, expected=self.expected) from err
 
     def map(self, obj: Object, function: func.Function) -> Object:
-        mapped_obj = self.obj._impl.map(self.obj, function)
-        mapped_expected = function.apply(self.expected)
+        mapped_obj = self.obj._inst.map(function)
+        mapped_expected = self.expected._inst.map(function)
         new_impl = ExpectedValue(mapped_obj, mapped_expected)
         return Object(new_impl, function.type.return_type, obj._registry)
 

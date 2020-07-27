@@ -102,6 +102,8 @@ class Differ(abc.ABC):
     complex nested object
     """
 
+    type: types.Type
+
     def config(self) -> DiffConfig:
         """
         Helper function to grab a fresh
@@ -117,10 +119,16 @@ class Differ(abc.ABC):
         """
         raise NotImplementedError
 
-    def diff(self, left: Any, right: Any) -> Diff:
+    def diff(self, left: Any, right: Any, session: Optional["Session"] = None) -> Diff:
         """
         Construct a Diff object from this differ and the given data
         """
+        if session is not None:
+            left_obj = Object(left, self.type, session.ns.registry)
+            left = session.resolve(left_obj, decode=False, allow_unknowns=True)
+            right_obj = Object(right, self.type, session.ns.registry)
+            right = session.resolve(right_obj, decode=False, allow_unknowns=True)
+
         return Diff(left, right, self)
 
 
@@ -129,6 +137,8 @@ class ValueDiffer(Differ):
     """
     Differ for a single value
     """
+
+    type: types.Type
 
     def is_empty(self, diff: "Diff", config: DiffConfig) -> bool:
         if diff.left_is_unknown() or diff.right_is_unknown():
@@ -153,7 +163,7 @@ class ValueDiffer(Differ):
             (types.IntegerType, types.FloatType, types.BooleanType, types.StringType),
         ):
             return None
-        return cls()
+        return cls(type)
 
 
 @dc.dataclass(frozen=True)
@@ -162,6 +172,7 @@ class ArrayDiffer(Differ):
     Differ for arrays
     """
 
+    type: types.Type
     element_differ: Differ
 
     def element_diffs(self, diff: Diff) -> Sequence[Diff]:
@@ -184,7 +195,7 @@ class ArrayDiffer(Differ):
                 sub_diff = Diff(
                     differ=self.element_differ,
                     left=left_item,
-                    right=utils.MISSING,
+                    right=None,
                     path=tuple(diff.path) + (idx + len(diff.right),),
                 )
                 out.append(sub_diff)
@@ -193,7 +204,7 @@ class ArrayDiffer(Differ):
             for idx, right_item in enumerate(diff.right[len(diff.left) :]):
                 sub_diff = Diff(
                     differ=self.element_differ,
-                    left=utils.MISSING,
+                    left=None,
                     right=right_item,
                     path=tuple(diff.path) + (idx + len(diff.left),),
                 )
@@ -230,7 +241,7 @@ class ArrayDiffer(Differ):
         if not isinstance(type, types.ArrayType):
             return None
         element_differ = registry.get_differ(type.element_type)
-        return cls(element_differ)
+        return cls(type, element_differ)
 
 
 @dc.dataclass(frozen=True)
@@ -239,6 +250,7 @@ class StructDiffer(Differ):
     Differ for arrays
     """
 
+    type: types.Type
     field_differs: Dict[str, Differ]
 
     def field_diffs(self, diff: Diff) -> Dict[str, Diff]:
@@ -286,7 +298,7 @@ class StructDiffer(Differ):
         field_differs = {}
         for field in type.fields:
             field_differs[field.name] = registry.get_differ(field.type)
-        return cls(field_differs)
+        return cls(type, field_differs)
 
 
 DIFFER_HOOKS = [ValueDiffer, ArrayDiffer, StructDiffer]

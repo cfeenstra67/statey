@@ -324,8 +324,8 @@ class ExpectedValueMethod(Method):
 
     def bind(self, obj: Object) -> Any:
         def expect(value: Any) -> Object:
-            out_obj = Object(impl.ExpectedValue(obj, value))
-            return out_obj
+            expected_obj = Object(value, obj._type, obj._registry)
+            return Object(impl.ExpectedValue(obj, expected_obj))
 
         return expect
 

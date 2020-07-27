@@ -21,7 +21,18 @@ from statey.fsm import (
     SimpleMachine,
 )
 
-from statey.syms.api import F, join, struct, function, map, declarative
+from statey.syms.api import (
+    F,
+    join,
+    struct,
+    function,
+    map,
+    declarative,
+    replace,
+    fill,
+    fill_unknowns,
+    filter_struct,
+)
 
 from statey.syms.func import Function
 
@@ -44,7 +55,7 @@ from statey.syms.types import (
     ArrayType,
     BooleanType,
     Field,
-    EmptyType
+    EmptyType,
 )
 
 from statey.resource import (

@@ -39,6 +39,14 @@ StatType = StatSchema.output_type
 FileType = S.Struct["location" : S.String, "data" : S.String, "stat":StatSchema].t
 
 
+@st.function
+def realpath(path: str) -> str:
+    """
+    Wrapper for os.path.realpath
+    """
+    return os.path.realpath(path)
+
+
 class FileMachine(Machine):
     """
     Simple file state machine
@@ -85,12 +93,8 @@ class FileMachine(Machine):
 
     @staticmethod
     def get_file_expected(config: st.StateConfig) -> Dict[str, Any]:
-        data = config.data
-        return {
-            "location": st.map(os.path.realpath, data["location"]),
-            "data": data["data"],
-            "stat": st.Object(impl.Unknown(return_type=StatType)),
-        }
+        with_realpath = st.replace(config.obj, location=realpath(config.obj.location))
+        return st.fill_unknowns(with_realpath, FileType)
 
     @task.new
     async def remove_file(self, path: str) -> types.EmptyType:
@@ -118,11 +122,8 @@ class FileMachine(Machine):
         return self.get_file_info(to_path)
 
     @transition("UP", "UP")
-    def modify(
-        self,
-        current: StateSnapshot,
-        config: StateConfig,
-        session: TaskSession
+    async def modify(
+        self, current: StateSnapshot, config: StateConfig, session: TaskSession
     ) -> Object:
 
         differ = session.ns.registry.get_differ(current.state.input_type)
@@ -134,7 +135,8 @@ class FileMachine(Machine):
 
         diffconfig.set_comparison("location", compare_realpaths)
 
-        diff = differ.diff(current.data, config.data)
+        current_as_config = st.filter_struct(current.obj, config.type)
+        diff = differ.diff(current_as_config, config.obj, session)
         flat = list(diff.flatten(diffconfig))
         if not flat:
             return current.obj
@@ -146,32 +148,26 @@ class FileMachine(Machine):
         # If location changes only we can just rename the file
         if loc_changed and not data_changed:
             return session["rename_file"] << (
-                self.rename_file(current.obj.location, config.ref.location) >> expected
+                self.rename_file(current.obj.location, config.obj.location) >> expected
             )
 
         if loc_changed:
             session["delete_file"] << self.remove_file(current.obj.location)
-            return session["create_file"] << (self.set_file(config.ref) >> expected)
+            return session["create_file"] << (self.set_file(config.obj) >> expected)
 
-        return session["update_file"] << (self.set_file(config.ref) >> expected)
+        return session["update_file"] << (self.set_file(config.obj) >> expected)
 
     @transition("DOWN", "UP")
-    def create(
-        self,
-        current: StateSnapshot,
-        config: StateConfig,
-        session: TaskSession
+    async def create(
+        self, current: StateSnapshot, config: StateConfig, session: TaskSession
     ) -> Object:
 
         expected = self.get_file_expected(config)
-        return session["create_file"] << (self.set_file(config.ref) >> expected)
+        return session["create_file"] << (self.set_file(config.obj) >> expected)
 
     @transition("UP", "DOWN")
-    def delete(
-        self,
-        current: StateSnapshot,
-        config: StateConfig,
-        session: TaskSession
+    async def delete(
+        self, current: StateSnapshot, config: StateConfig, session: TaskSession
     ) -> Object:
 
         session["delete_file"] << self.remove_file(current.obj.location)
@@ -186,9 +182,7 @@ file_resource = MachineResource("file", FileMachine)
 File = file_resource.s
 
 
-RESOURCES = [
-    file_resource
-]
+RESOURCES = [file_resource]
 
 
 def register() -> None:

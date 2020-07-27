@@ -22,15 +22,18 @@ class ErrorDuringPlanning(PlanError):
     Error to indicate that an error was raised while calling a resource's
     plan() method
     """
-    def __init__(self, path: str, current: Any, config: Any, exception: Exception) -> None:
+
+    def __init__(
+        self, path: str, current: Any, config: Any, exception: Exception
+    ) -> None:
         self.path = path
         self.current = current
         self.config = config
         self.exception = exception
         super().__init__(
-            f'Exception raised during planning {current.state.resource}[{path}]'
-            f' {current.state.name} => {config.state.name}:'
-            f' {type(exception).__name__}: {exception}.'
+            f"Exception raised during planning {current.state.resource}[{path}]"
+            f" {current.state.name} => {config.state.name}:"
+            f" {type(exception).__name__}: {exception}."
         )
 
 
@@ -180,7 +183,7 @@ class NoSuchMethodError(SymsError):
 
     def __init__(self, name: str) -> None:
         self.name = name
-        super().__init__(f'Unable to find method: {name}')
+        super().__init__(f"Unable to find method: {name}")
 
 
 class FutureError(SymsError):
@@ -223,10 +226,13 @@ class ResolutionError(SessionError):
     """
     Error indicating that some exception was encountered during resolution
     """
+
     def __init__(self, obj: "Object", exception: Exception) -> None:
         self.obj = obj
         self.exception = exception
-        super().__init__(f'Encountered exception while resolving {obj}: {type(exception).__name__}: {exception}')
+        super().__init__(
+            f"Encountered exception while resolving {obj}: {type(exception).__name__}: {exception}"
+        )
 
 
 class UnknownError(SessionError):
@@ -285,6 +291,9 @@ class InvalidModificationAction(ResourceError):
     Error indicating that get_action() returned an invalid modification action
     in a SimpleMachine
     """
+
     def __init__(self, modification_type: "ModificationAction") -> None:
         self.modification_type = modification_type
-        super().__init__(f"Encountered unhandled modification action {modification_type}.")
+        super().__init__(
+            f"Encountered unhandled modification action {modification_type}."
+        )

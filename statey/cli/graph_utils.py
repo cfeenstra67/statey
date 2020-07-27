@@ -211,7 +211,7 @@ class PlanNodeSummary:
                 else:
                     current_lines.append(f"{self._style_current_name(path_str)}:")
                     current_lines.extend(
-                        map(lambda x: tr.indent(x, "  "), current_diff_lines)
+                        map(lambda x: tw.indent(x, "  "), current_diff_lines)
                     )
 
                 config_diff_lines = data_to_lines(
@@ -225,7 +225,19 @@ class PlanNodeSummary:
                 else:
                     config_lines.append(f"{self._style_config_name(path_str)}:")
                     config_lines.extend(
-                        map(lambda x: tr.indent(x, "  "), config_diff_lines)
+                        map(lambda x: tw.indent(x, "  "), config_diff_lines)
+                    )
+
+                if len(config_lines) > len(current_lines):
+                    current_lines.extend(
+                        [click.style("", bold=True)]
+                        * (len(config_lines) - len(current_lines))
+                    )
+
+                if len(current_lines) > len(config_lines):
+                    config_lines.extend(
+                        [click.style("", bold=True)]
+                        * (len(current_lines) - len(config_lines))
                     )
 
         else:
@@ -265,7 +277,10 @@ class PlanNodeSummary:
         return "\n".join(out_lines)
 
     def to_string(self, max_width: int, indent: int = 2) -> str:
-        if len(self.show_tasks.nodes) == 0:
+        if all(
+            is_metatask(self.show_tasks.nodes[node]["task"])
+            for node in self.show_tasks.nodes
+        ):
             return ""
 
         style_key = lambda x: click.style(x, fg="green", bold=True)
@@ -412,7 +427,11 @@ class ExecutionSummary:
         for node in self.exec_info.task_graph.task_graph.nodes:
             status = self.exec_info.task_graph.get_info(node).status
             task = self.exec_info.task_graph.get_task(node)
-            if not self.show_metatasks and is_metatask(task) and status == TaskStatus.SUCCESS:
+            if (
+                not self.show_metatasks
+                and is_metatask(task)
+                and status == TaskStatus.SUCCESS
+            ):
                 continue
             out.setdefault(status, []).append(node)
         return out
@@ -508,7 +527,9 @@ class Inspector:
 
         return PlanSummary(plan, nodes, show_metatasks)
 
-    def execution_summary(self, exec_info: ExecutionInfo, show_metatasks: bool = False) -> ExecutionSummary:
+    def execution_summary(
+        self, exec_info: ExecutionInfo, show_metatasks: bool = False
+    ) -> ExecutionSummary:
         """
 		Get a summary for an exec_info instance
 		"""
