@@ -295,12 +295,12 @@ class FutureResult(utils.Cloneable):
             raise exc.FutureResultNotSet(self)
         return self.result
 
-    def set(self, result: Any) -> None:
+    def set(self, result: Any, overwrite: bool = False) -> None:
         """
         Set the result, raising exc.FutureResultAlreadySet if it has
         already been set
         """
-        if self.result is not utils.MISSING:
+        if self.result is not utils.MISSING and not overwrite:
             raise exc.FutureResultAlreadySet(self)
         self.__dict__["result"] = result
 
@@ -322,12 +322,12 @@ class Future(FunctionalBehaviorMixin, ObjectImplementation):
         """
         return self.result.get()
 
-    def set_result(self, result: Any) -> None:
+    def set_result(self, result: Any, overwrite: bool = False) -> None:
         """
         Set the result, raising exc.FutureResultAlreadySet if it has
         already been set
         """
-        self.result.set(result)
+        self.result.set(result, overwrite)
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         return self.refs

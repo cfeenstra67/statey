@@ -31,23 +31,44 @@ async def refresh_graph(graph):
             bar.update(1)
 
 
-@cli.group(invoke_without_command=True)
-@click.option(
+session_name_opt = click.option(
     "--session-name",
     help="Set a module attribute other than `session` to use for planning.",
     default="session()",
 )
-@click.option(
-    "--show-dag", is_flag=True, help="Show the task graph DAG as part of planning."
+
+task_dag_opt = click.option(
+    "--task-dag", is_flag=True, help="Show the task graph DAG as part of planning."
 )
-@click.option(
-    "--show-metatasks",
+
+metatasks_opt = click.option(
+    "--metatasks",
     is_flag=True,
     help="Show internal 'meta' tasks like graph and session update opterations.",
 )
+
+yes_opt = click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    help="Do not prompt to confirm we want to apply the plan.",
+)
+
+task_heartbeat_opt = click.option(
+    "--task-heartbeat",
+    type=float,
+    default=15.0,
+    help="Specify a heartbeat interval to use when executing tasks.",
+)
+
+
+@cli.group(invoke_without_command=True)
+@session_name_opt
+@task_dag_opt
+@metatasks_opt
 @click.argument("module")
 @click.pass_context
-def plan(ctx, module, session_name, show_dag, show_metatasks):
+def plan(ctx, module, session_name, task_dag, metatasks):
     try:
         module_obj = importlib.import_module(module)
     except ImportError as err:
@@ -84,16 +105,16 @@ def plan(ctx, module, session_name, show_dag, show_metatasks):
     ctx.obj["module"] = module_obj
     ctx.obj["session_name"] = session_name
     ctx.obj["session"] = session
-    ctx.obj["show_metatasks"] = show_metatasks
+    ctx.obj["metatasks"] = metatasks
 
-    plan_summary = inspector.plan_summary(plan, show_metatasks)
+    plan_summary = inspector.plan_summary(plan, metatasks)
 
     summary_string = plan_summary.to_string(ctx.obj["terminal_size"].columns)
 
     click.echo(summary_string)
     click.echo()
 
-    if show_dag and plan_summary.non_empty_summaries(ctx.obj["terminal_size"].columns):
+    if task_dag and plan_summary.non_empty_summaries(ctx.obj["terminal_size"].columns):
         task_dag_string = plan_summary.task_dag_string()
         click.secho(f"Task DAG:", fg="green")
         click.echo(task_dag_string)
@@ -101,14 +122,10 @@ def plan(ctx, module, session_name, show_dag, show_metatasks):
 
 
 @plan.command()
-@click.option(
-    "-y",
-    "--yes",
-    is_flag=True,
-    help="Do not prompt to confirm we want to apply the plan.",
-)
+@yes_opt
+@task_heartbeat_opt
 @click.pass_context
-def up(ctx, yes):
+def up(ctx, yes, task_heartbeat):
     plan = ctx.obj["plan"]
 
     # Sort of hacky way to check if the plan is empty--executing would only update the state.
@@ -126,7 +143,7 @@ def up(ctx, yes):
         raise click.Abort
 
     executor = AsyncIOGraphExecutor()
-    executor.pm.register(ExecutorLoggingPlugin(ctx.obj["show_metatasks"]))
+    executor.pm.register(ExecutorLoggingPlugin(ctx.obj["metatasks"], task_heartbeat))
 
     task_graph = plan.task_graph()
 
@@ -135,7 +152,7 @@ def up(ctx, yes):
         exec_info = executor.execute(task_graph)
         click.echo()
 
-        exec_summary = inspector.execution_summary(exec_info, ctx.obj["show_metatasks"])
+        exec_summary = inspector.execution_summary(exec_info, ctx.obj["metatasks"])
 
         exec_summary_string = exec_summary.to_string()
 
@@ -145,22 +162,12 @@ def up(ctx, yes):
 
 
 @cli.command()
-@click.option(
-    "--show-dag", is_flag=True, help="Show the task graph DAG as part of planning."
-)
-@click.option(
-    "--show-metatasks",
-    is_flag=True,
-    help="Show internal 'meta' tasks like graph and session update opterations.",
-)
-@click.option(
-    "-y",
-    "--yes",
-    is_flag=True,
-    help="Do not prompt to confirm we want to apply the plan.",
-)
+@task_dag_opt
+@metatasks_opt
+@yes_opt
+@task_heartbeat_opt
 @click.pass_context
-def down(ctx, show_dag, show_metatasks, yes):
+def down(ctx, task_dag, metatasks, yes, task_heartbeat):
     resource_graph = ctx.obj["state_manager"].load(st.registry)
 
     loop = asyncio.get_event_loop()
@@ -178,7 +185,7 @@ def down(ctx, show_dag, show_metatasks, yes):
     ctx.obj["plan"] = plan
     ctx.obj["session"] = session
 
-    plan_summary = inspector.plan_summary(plan, show_metatasks)
+    plan_summary = inspector.plan_summary(plan, metatasks)
 
     summary_string = plan_summary.to_string(ctx.obj["terminal_size"].columns)
 
@@ -190,7 +197,7 @@ def down(ctx, show_dag, show_metatasks, yes):
     if is_null:
         return
 
-    if show_dag:
+    if task_dag:
         task_dag_string = plan_summary.task_dag_string()
         click.secho(f"Task DAG:", fg="green")
         click.echo(task_dag_string)
@@ -205,7 +212,7 @@ def down(ctx, show_dag, show_metatasks, yes):
         raise click.Abort
 
     executor = AsyncIOGraphExecutor()
-    executor.pm.register(ExecutorLoggingPlugin(show_metatasks))
+    executor.pm.register(ExecutorLoggingPlugin(metatasks, task_heartbeat))
 
     task_graph = plan.task_graph()
 
@@ -214,7 +221,7 @@ def down(ctx, show_dag, show_metatasks, yes):
         exec_info = executor.execute(task_graph)
         click.echo()
 
-        exec_summary = inspector.execution_summary(exec_info, show_metatasks)
+        exec_summary = inspector.execution_summary(exec_info, metatasks)
 
         exec_summary_string = exec_summary.to_string()
 

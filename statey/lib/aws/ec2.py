@@ -89,7 +89,11 @@ class EC2InstanceMachine(SimpleMachine):
                 MinCount=1,
                 MaxCount=1,
             )
-            return await self.convert_instance(instance)
+            # Checkpoint after creation
+            yield await self.convert_instance(instance)
+            await instance.wait_until_running()
+            await instance.load()
+            yield await self.convert_instance(instance)
 
     async def delete_task(self, current: EC2InstanceType) -> st.EmptyType:
         """
@@ -98,16 +102,8 @@ class EC2InstanceMachine(SimpleMachine):
         async with self.resource_ctx() as ec2:
             instance = await ec2.Instance(current["id"])
             await instance.terminate()
-            return {}
-
-    async def modify_task(
-        self, current: EC2InstanceType, config: EC2InstanceConfigType
-    ) -> EC2InstanceType:
-        """
-        Modify the EC2 Instance
-        """
-        # Should not be called
-        raise NotImplementedError
+            yield {}
+            await instance.wait_until_terminated()
 
 
 ec2_instance_resource = MachineResource("ec2_instance", EC2InstanceMachine)

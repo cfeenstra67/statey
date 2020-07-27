@@ -237,11 +237,30 @@ class SessionTask(Task):
             ref = self.arguments[arg.name]
             args.append(self.session.resolve(ref))
 
-        output = await self.func(*args)
-        output_symbol = Object(output, self.output_type, self.session.ns.registry)
-        resolved_output = self.session.resolve(output_symbol, decode=False)
+        result = self.func(*args)
 
-        self.output_future.set_result(resolved_output)
+        def handle_result(output, idx=0):
+            output_symbol = Object(output, self.output_type, self.session.ns.registry)
+            resolved_output = self.session.resolve(output_symbol, decode=False)
+            self.output_future.set_result(resolved_output, overwrite=idx > 0)
+
+        # Handle all types of functions:
+        # - async generators
+        # - async functions
+        # - regular generators
+        # - regular functions
+        if inspect.isasyncgen(result):
+            idx = 0
+            async for output in result:
+                handle_result(output, idx)
+                idx += 1
+        elif inspect.iscoroutine(result):
+            handle_result(await result)
+        elif inspect.isgenerator(result):
+            for idx, output in enumerate(result):
+                handle_result(output, idx)
+        else:
+            handle_result(result)
 
 
 @dc.dataclass(frozen=True)

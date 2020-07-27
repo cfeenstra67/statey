@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses as dc
 import io
 import textwrap as tw
@@ -18,14 +19,62 @@ from statey.syms.path import PathParser
 from statey.task import Task, SessionSwitch, ResourceGraphOperation, TaskStatus
 
 
+class TaskWrapper(Task):
+    """
+    Base class for tasks. A task is a unit of computation
+    """
+
+    task: Task
+
+    @property
+    def description(self) -> Optional[str]:
+        return self.task.description
+
+    def always_eager(self) -> bool:
+        return self.task.always_eager()
+
+
+@dc.dataclass(frozen=True)
+class TaskLogger(TaskWrapper):
+    """
+    Log events and heartbeats for tasks
+    """
+
+    task: Task
+    key: str
+    heartbeat_interval: float = 15.0
+
+    async def run(self) -> None:
+        start = time.time()
+        asyncio_task = asyncio.ensure_future(self.task.run())
+
+        while True:
+            shielded = asyncio.shield(asyncio_task)
+            try:
+                await asyncio.wait_for(shielded, timeout=self.heartbeat_interval)
+            except asyncio.TimeoutError:
+                click.echo(
+                    f"Task {click.style(self.key, fg='yellow')} still running "
+                    f"({time.time() - start:.2f}s elapsed)."
+                )
+                continue
+            except asyncio.CancelledError:
+                asyncio_task.cancel()
+                raise
+            return
+
+
 class ExecutorLoggingPlugin:
     """
 	Plugin to log signals when caught
 	"""
 
-    def __init__(self, show_metatasks: bool = False) -> None:
+    def __init__(
+        self, show_metatasks: bool = False, heartbeat_interval: float = 15.0
+    ) -> None:
         self.task_starts = {}
         self.show_metatasks = show_metatasks
+        self.heartbeat_interval = heartbeat_interval
 
     @st.hookimpl
     def caught_signal(
@@ -44,9 +93,14 @@ class ExecutorLoggingPlugin:
                 fg=color,
             )
 
+    def should_show(self, task: Task) -> bool:
+        return self.show_metatasks or not is_metatask(task)
+
     @st.hookimpl
     def before_run(self, key: str, task: Task, executor: "TaskGraphExecutor") -> None:
         self.task_starts[key] = time.time()
+        if self.should_show(task):
+            click.echo(f'Task {click.style(key, fg="yellow")} is running.')
 
     @st.hookimpl
     def after_run(
@@ -55,10 +109,18 @@ class ExecutorLoggingPlugin:
         duration = time.time() - self.task_starts[key]
         color = color_for_status(status)
         styled_status = click.style(status.name, fg=color, bold=True)
-        if self.show_metatasks or not is_metatask(task):
+        if self.should_show(task):
             click.echo(
                 f'Task {click.style(key, fg="yellow")} finished after {duration:.2f}s with status {styled_status}.'
             )
+
+    @st.hookimpl
+    def task_wrapper(
+        self, key: str, task: Task, executor: "TaskGraphExecutor"
+    ) -> Callable[[Task], Task]:
+        if not self.should_show(task):
+            return None
+        return lambda input_task: TaskLogger(input_task, key, self.heartbeat_interval)
 
 
 def color_for_status(status: TaskStatus) -> Optional[str]:
@@ -117,7 +179,7 @@ def data_to_lines(data: Any, name_func=lambda x: x) -> Sequence[str]:
         for item in data:
             lines = [
                 tw.indent(line, "- " if idx == 0 else "  ")
-                for idx, line in enumerate(data_to_lines(item))
+                for idx, line in enumerate(data_to_lines(item, name_func=name_func))
             ]
             out_lines.extend(lines)
         return out_lines
@@ -197,7 +259,10 @@ class PlanNodeSummary:
             config_lines = []
             path_parser = PathParser()
 
-            for subdiff in diff.flatten():
+            if not diff:
+                return click.style("<no diff>", bold=True)
+
+            for subdiff in diff:
                 current_diff_lines = data_to_lines(
                     subdiff.left, name_func=self._style_current_name
                 )

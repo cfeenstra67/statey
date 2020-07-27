@@ -209,11 +209,20 @@ class FutureResultAlreadySet(FutureError):
 	result was not set yet
 	"""
 
-    def __init__(self, future: "Future") -> None:
-        self.future = future
-        super().__init__(
-            f"Result has already been set for future: {future} as {future.get_result()}."
-        )
+    def __init__(self, future_or_result: Any) -> None:
+        from statey.syms.impl import Future, FutureResult
+
+        self.future_or_result = future_or_result
+
+        if isinstance(future_or_result, FutureResult):
+            msg = f"Result has already been set: {future_or_result}."
+        elif isinstance(future_or_result, Future):
+            future = future_or_result
+            msg = f"Result has already been set for future: {future} as {future.get_result()}."
+        else:
+            msg = f"Result has already been set."
+
+        super().__init__(msg)
 
 
 class SessionError(SymsError):

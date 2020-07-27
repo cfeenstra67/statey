@@ -21,6 +21,12 @@ from statey.syms.path import PathParser
 PathLike = Union[Sequence[Any], str]
 
 
+def get_path_from_pathlike(path_like: PathLike, path_parser: PathParser) -> str:
+    if isinstance(path_like, str):
+        path_like = path_parser.split(path_like)
+    return path_like
+
+
 @dc.dataclass
 class DiffConfig(utils.Cloneable):
     """
@@ -32,29 +38,24 @@ class DiffConfig(utils.Cloneable):
     )
     path_parser: PathParser = dc.field(default_factory=PathParser)
 
-    def _get_path(self, path_like: PathLike) -> Sequence[Any]:
-        if isinstance(path_like, str):
-            path_like = self.path_parser.split(path_like)
-        return path_like
-
     def set_comparison(self, path: PathLike, func: Callable[[Any, Any], bool]) -> None:
         """
         Modify this config in place, setting the comparison for the given path
         """
-        self.path_comparisons[self._get_path(path)] = func
+        self.path_comparisons[get_path_from_pathlike(path, self.path_parser)] = func
 
     def get_comparison(self, path: PathLike) -> Callable[[Any, Any], bool]:
         """
         Get the comparison function for a given path
         """
-        path = self._get_path(path)
+        path = get_path_from_pathlike(path, self.path_parser)
         if path in self.path_comparisons:
             return self.path_comparisons[path]
         return operator.eq
 
 
 @dc.dataclass(frozen=True)
-class Diff:
+class DiffComponent:
     """
     A diff represents the differences between two values. Either left or right can contain unknowns, 
     however neither should contain objects (i.e. they should be either fully resolve or the result of
@@ -89,11 +90,58 @@ class Diff:
             self.right._impl, impl.Unknown
         )
 
-    def flatten(self, config: Optional[DiffConfig] = None) -> Iterator["Diff"]:
+    def flatten(self, config: Optional[DiffConfig] = None) -> Iterator["DiffComponent"]:
         """
         Flatten this diff into any non-empty sub-diffs
         """
         return self.differ.flatten(self, config)
+
+
+@dc.dataclass(frozen=True)
+class Diff:
+    """
+    A flattened out diff object, suitable for actual inspection
+    """
+
+    components: Sequence[DiffComponent]
+    path_parser: PathParser
+
+    def _get_path(self, path_like: PathLike) -> Sequence[Any]:
+        if isinstance(path_like, str):
+            path_like = self.path_parser.split(path_like)
+        return path_like
+
+    def __iter__(self) -> Iterator[DiffComponent]:
+        """
+        Iterate through component diffs
+        """
+        return iter(self.components)
+
+    def __bool__(self) -> bool:
+        """
+        Indicate whether this flat diff is empty
+        """
+        return bool(self.components)
+
+    def __getitem__(self, path_like: PathLike) -> DiffComponent:
+        """
+        Get a diff by path
+        """
+        comps = get_path_from_pathlike(path_like, self.path_parser)
+        for diff in self.components:
+            if comps == tuple(diff.path):
+                return diff
+        raise KeyError(comps)
+
+    def __contains__(self, path_like: PathLike) -> bool:
+        """
+        Indicate whether a diff at the given path exists
+        """
+        try:
+            self[path_like]
+        except KeyError:
+            return False
+        return True
 
 
 class Differ(abc.ABC):
@@ -112,14 +160,20 @@ class Differ(abc.ABC):
 
     @abc.abstractmethod
     def flatten(
-        self, diff: Diff, config: Optional[DiffConfig] = None
-    ) -> Iterator[Diff]:
+        self, diff: DiffComponent, config: Optional[DiffConfig] = None
+    ) -> Iterator[DiffComponent]:
         """
         Flatten this diff into any non-empty sub-diffs
         """
         raise NotImplementedError
 
-    def diff(self, left: Any, right: Any, session: Optional["Session"] = None) -> Diff:
+    def diff(
+        self,
+        left: Any,
+        right: Any,
+        session: Optional["Session"] = None,
+        config: Optional[DiffConfig] = None,
+    ) -> Diff:
         """
         Construct a Diff object from this differ and the given data
         """
@@ -129,7 +183,13 @@ class Differ(abc.ABC):
             right_obj = Object(right, self.type, session.ns.registry)
             right = session.resolve(right_obj, decode=False, allow_unknowns=True)
 
-        return Diff(left, right, self)
+        if config is None:
+            config = self.config()
+
+        diff = DiffComponent(left, right, self)
+        diffs = list(diff.flatten(config))
+
+        return Diff(diffs, config.path_parser)
 
 
 @dc.dataclass(frozen=True)
@@ -147,8 +207,8 @@ class ValueDiffer(Differ):
         return comp(diff.left, diff.right)
 
     def flatten(
-        self, diff: Diff, config: Optional[DiffConfig] = None
-    ) -> Iterator[Diff]:
+        self, diff: DiffComponent, config: Optional[DiffConfig] = None
+    ) -> Iterator[DiffComponent]:
         if config is None:
             config = self.config()
 
@@ -175,14 +235,14 @@ class ArrayDiffer(Differ):
     type: types.Type
     element_differ: Differ
 
-    def element_diffs(self, diff: Diff) -> Sequence[Diff]:
+    def element_diffs(self, diff: DiffComponent) -> Sequence[DiffComponent]:
         """
         Construct diffs for each of the elements of the givn diff
         """
         out = []
 
         for idx, (left_item, right_item) in enumerate(zip(diff.left, diff.right)):
-            sub_diff = Diff(
+            sub_diff = DiffComponent(
                 differ=self.element_differ,
                 left=left_item,
                 right=right_item,
@@ -192,7 +252,7 @@ class ArrayDiffer(Differ):
 
         if len(diff.left) > len(diff.right):
             for idx, left_item in enumerate(diff.left[len(diff.right) :]):
-                sub_diff = Diff(
+                sub_diff = DiffComponent(
                     differ=self.element_differ,
                     left=left_item,
                     right=None,
@@ -202,7 +262,7 @@ class ArrayDiffer(Differ):
 
         if len(diff.right) > len(diff.left):
             for idx, right_item in enumerate(diff.right[len(diff.left) :]):
-                sub_diff = Diff(
+                sub_diff = DiffComponent(
                     differ=self.element_differ,
                     left=None,
                     right=right_item,
@@ -213,8 +273,8 @@ class ArrayDiffer(Differ):
         return out
 
     def flatten(
-        self, diff: Diff, config: Optional[DiffConfig] = None
-    ) -> Iterator[Diff]:
+        self, diff: DiffComponent, config: Optional[DiffConfig] = None
+    ) -> Iterator[DiffComponent]:
         """
         Yield the diffs for each element in left and right. This assumes these arrays are of the
         same length
@@ -253,7 +313,7 @@ class StructDiffer(Differ):
     type: types.Type
     field_differs: Dict[str, Differ]
 
-    def field_diffs(self, diff: Diff) -> Dict[str, Diff]:
+    def field_diffs(self, diff: DiffComponent) -> Dict[str, DiffComponent]:
         """
         Construct diffs for each field given the input diff
         """
@@ -262,7 +322,7 @@ class StructDiffer(Differ):
         for key, differ in self.field_differs.items():
             left_value = diff.left[key]
             right_value = diff.right[key]
-            out[key] = Diff(
+            out[key] = DiffComponent(
                 differ=differ,
                 left=left_value,
                 right=right_value,
@@ -272,8 +332,8 @@ class StructDiffer(Differ):
         return out
 
     def flatten(
-        self, diff: "Diff", config: Optional[DiffConfig] = None
-    ) -> Iterator[Diff]:
+        self, diff: DiffComponent, config: Optional[DiffConfig] = None
+    ) -> Iterator[DiffComponent]:
         if config is None:
             config = self.config()
 

@@ -208,20 +208,6 @@ class SingleStateMachine(Machine):
     DOWN: resource.NullState = resource.NullState("DOWN")
 
     @abc.abstractmethod
-    async def refresh_state(self, data: Any) -> Optional[Any]:
-        """
-        Get a refreshed version of `data` (which is in the state UP). Return None
-        to indicate the resource no longer exists.
-        """
-        raise NotImplementedError
-
-    async def refresh_config(self, config: "Object") -> "Object":
-        """
-        Transform a configuration before planning
-        """
-        return config
-
-    @abc.abstractmethod
     async def create(
         self, session: task.TaskSession, config: resource.StateConfig
     ) -> "Object":
@@ -257,6 +243,20 @@ class SingleStateMachine(Machine):
         """
         raise NotImplementedError
 
+    @abc.abstractmethod
+    async def refresh_state(self, data: Any) -> Optional[Any]:
+        """
+        Get a refreshed version of `data` (which is in the state UP). Return None
+        to indicate the resource no longer exists.
+        """
+        raise NotImplementedError
+
+    async def refresh_config(self, config: "Object") -> "Object":
+        """
+        Transform a configuration before planning
+        """
+        return config
+
     def get_action(self, diff: diff.Diff) -> ModificationAction:
         """
         With the given diff, determine which action must be taken to get to the configured
@@ -265,9 +265,15 @@ class SingleStateMachine(Machine):
         Overriding this method is optional, by default it will always delete and recreate
         the resource.
         """
-        if not list(diff.flatten()):
+        if not diff:
             return ModificationAction.NONE
         return ModificationAction.DELETE_AND_RECREATE
+
+    def get_diffconfig(self, differ: diff.Differ) -> diff.DiffConfig:
+        """
+        Get the DiffConfig object to use for diffing this machine
+        """
+        return differ.config()
 
     async def refresh(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
         if current.state == self.null_state:
@@ -288,9 +294,10 @@ class SingleStateMachine(Machine):
         config = config.clone(obj=await self.refresh_config(config.obj))
 
         differ = session.ns.registry.get_differ(config.state.input_type)
+        diffconfig = self.get_diffconfig(differ)
 
         current_as_config = st.filter_struct(current.obj, config.type)
-        diff = differ.diff(current_as_config, config.obj, session)
+        diff = differ.diff(current_as_config, config.obj, session, diffconfig)
 
         action = self.get_action(diff)
 

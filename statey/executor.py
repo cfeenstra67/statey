@@ -3,7 +3,8 @@ import asyncio
 import dataclasses as dc
 import enum
 from datetime import datetime
-from typing import Sequence, Coroutine, Dict, Optional, Any
+from functools import reduce
+from typing import Sequence, Coroutine, Dict, Optional, Any, Callable
 
 import networkx as nx
 import pluggy
@@ -69,10 +70,10 @@ class TaskGraph:
         """
 		Get the tasks that are ready to schedule
 		"""
-        success_tasks = {
+        done_tasks = {
             node
             for node in self.task_graph.nodes
-            if self.get_info(node).status == TaskStatus.SUCCESS
+            if self.get_info(node).status.value > TaskStatus.SKIPPED.value
         }
         not_started_tasks = {
             node
@@ -81,8 +82,9 @@ class TaskGraph:
         }
         out = []
         for task_key in not_started_tasks:
-            # If all predecessors are not "SUCCESS" we can't schedule yet
-            if set(self.task_graph.pred[task_key]) - success_tasks:
+            # We will mark tasks as ready if all their predecessors are done;
+            # it's left to the executor to skip other tasks as needed
+            if set(self.task_graph.pred[task_key]) - done_tasks:
                 continue
             out.append(task_key)
         return out
@@ -142,6 +144,14 @@ class TaskGraphHooks:
 		Register side effects when a signal is caught, indicating whether the program
 		is going to exit
 		"""
+
+    @hookspec
+    def task_wrapper(
+        self, key: str, task: Task, executor: "TaskGraphExecutor"
+    ) -> Callable[[Task], Task]:
+        """
+        Return a callable that wraps the given task with some additional behavior
+        """
 
 
 def create_executor_plugin_manager() -> pluggy.PluginManager:
@@ -246,12 +256,30 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 		"""
         exec_info.task_graph.set_status(key, TaskStatus.FAILED, error=error)
 
+        always_eager_coros = []
+
+        ready_tasks = exec_info.task_graph.get_ready_tasks()
+
         for task_key in exec_info.task_graph.get_descendants(key):
-            exec_info.task_graph.set_status(
-                task_key, TaskStatus.SKIPPED, skipped_by=key
-            )
+            task = exec_info.task_graph.get_task(task_key)
+            if task.always_eager():
+                # If the task is always eager we won't skip it, and if it's ready to
+                # run we will actually trigger it here. If this is something like a graph
+                # operation it's alright for it to fail, that simply means the graph
+                # won't be mutated. It supports partial checkpoints for tasks
+                if task_key in ready_tasks:
+                    coro = self.task_wrapper(task_key, task, exec_info)
+                    always_eager_coros.append(coro)
+            else:
+                exec_info.task_graph.set_status(
+                    task_key, TaskStatus.SKIPPED, skipped_by=key
+                )
+
         if exec_info.cancelled_by is None:
             exec_info.cancelled_by = key
+
+        if always_eager_coros:
+            await asyncio.wait(always_eager_coros)
 
     async def task_wrapper(
         self, key: str, task: Task, exec_info: ExecutionInfo
@@ -265,7 +293,11 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 
         self.pm.hook.before_run(key=key, task=task, executor=self)
 
-        asyncio_task = asyncio.ensure_future(task.run())
+        wrappers = self.pm.hook.task_wrapper(key=key, task=task, executor=self)
+        wrappers = [wrapper for wrapper in wrappers if wrapper is not None]
+        wrapped_task = reduce(lambda x, y: y(x), wrappers, task)
+
+        asyncio_task = asyncio.ensure_future(wrapped_task.run())
         exec_info.tasks[key] = asyncio_task
         exec_info.task_graph.set_status(key, TaskStatus.PENDING)
         try:
@@ -298,10 +330,12 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 		"""
         signals = 0
         loop = asyncio.get_event_loop()
+        coro_as_task = asyncio.ensure_future(coro)
 
         while True:
             try:
-                return loop.run_until_complete(coro)
+                loop.run_until_complete(coro_as_task)
+                break
             except Exception:
                 raise
             # Catch anything else (e.g. SystemExit, KeyboardInterrupt) and handle it
@@ -319,7 +353,6 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
 
                 if will_cancel:
                     self.hard_cancel(exec_info)
-                    raise
 
     def execute(
         self,

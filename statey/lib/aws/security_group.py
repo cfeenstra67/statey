@@ -52,10 +52,6 @@ class SecurityGroupMachine(st.SingleStateMachine):
         async with aioboto3.client("ec2") as client:
             yield client
 
-    @staticmethod
-    async def get_expected(config: st.StateConfig) -> Dict[str, Any]:
-        return st.fill_unknowns(config.obj, SecurityGroupType)
-
     async def convert_instance(self, instance: "SecurityGroup") -> Dict[str, Any]:
         out = {"id": instance.id}
         (
@@ -86,6 +82,10 @@ class SecurityGroupMachine(st.SingleStateMachine):
             "to_port": rule.get("ToPort"),
             "protocol": rule["IpProtocol"],
         }
+
+    @staticmethod
+    async def get_expected(config: st.StateConfig) -> Dict[str, Any]:
+        return st.fill_unknowns(config.obj, SecurityGroupType)
 
     async def refresh_state(self, data: Any) -> Optional[Any]:
         async with self.resource_ctx() as ec2:

@@ -136,14 +136,12 @@ class FileMachine(Machine):
         diffconfig.set_comparison("location", compare_realpaths)
 
         current_as_config = st.filter_struct(current.obj, config.type)
-        diff = differ.diff(current_as_config, config.obj, session)
-        flat = list(diff.flatten(diffconfig))
-        if not flat:
+        diff = differ.diff(current_as_config, config.obj, session, diffconfig)
+        if not diff:
             return current.obj
 
-        paths = {d.path for d in flat}
-        loc_changed = ("location",) in paths
-        data_changed = ("data",) in paths
+        loc_changed = "location" in diff
+        data_changed = "data" in diff
 
         # If location changes only we can just rename the file
         if loc_changed and not data_changed:
