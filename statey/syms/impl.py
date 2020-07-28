@@ -194,7 +194,9 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         semantics = obj._registry.get_semantics(obj._type)
-        expanded = semantics.expand(self.value)
+        encoder = obj._registry.get_encoder(obj._type)
+        encoded_value = encoder.encode(self.value)
+        expanded = semantics.expand(encoded_value)
 
         syms = []
 
@@ -265,7 +267,8 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
             raise exc.UnknownError(unknowns)
 
         result = self.func.apply(kwargs)
-        encoder = session.ns.registry.get_encoder(self.func.type.return_type)
+        # Not using return type to account for casting
+        encoder = session.ns.registry.get_encoder(obj._type)
         return encoder.encode(result)
 
     def type(self) -> types.Type:
@@ -373,11 +376,7 @@ class Unknown(ObjectImplementation):
         if self.return_type is None:
             if return_type is not None:
                 self.__dict__["return_type"] = return_type
-            elif self.obj is None:
-                raise ValueError(
-                    "Either an origin object or a return type are required"
-                )
-            else:
+            elif self.obj is not None:
                 self.__dict__["return_type"] = self.obj._type
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
@@ -404,7 +403,7 @@ class Unknown(ObjectImplementation):
             raise TypeError(f"Unhandled attribute result type {result}! Failing")
 
         if self.obj is None:
-            semantics = obj._registry.get_semantics(self.return_type)
+            semantics = obj._registry.get_semantics(obj._type)
             attr_semantics = semantics.attr_semantics(attr)
             if attr_semantics is None:
                 raise exc.SymbolAttributeError(obj, attr)
@@ -425,6 +424,8 @@ class Unknown(ObjectImplementation):
         return Object(new_impl, mapped_object._type, mapped_object._registry)
 
     def type(self) -> types.Type:
+        if self.return_type is None:
+            return NotImplementedError
         return self.return_type
 
     def registry(self) -> "Registry":
@@ -433,7 +434,7 @@ class Unknown(ObjectImplementation):
         return self.obj._registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f"{type(self).__name__}[{self.return_type}]({self.obj})"
+        return f"{type(self).__name__}[{obj._type}]({self.obj})"
 
 
 @dc.dataclass(frozen=True)

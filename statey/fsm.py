@@ -173,6 +173,8 @@ class Machine(resource.States, metaclass=MachineMeta):
         states = [state for state in self.__states__ if state != self.null_state.state]
         if len(states) > 1:
             raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
+        if len(states) < 1:
+            raise TypeError(f'"{self.resource_name}" does not have any non-null states.')
         return resource.ResourceState(states[0], self.resource_name)(*args, **kwargs)
 
     @abc.abstractmethod
@@ -276,7 +278,7 @@ class SingleStateMachine(Machine):
         return differ.config()
 
     async def refresh(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
-        if current.state == self.null_state:
+        if current.state.name == self.null_state.name:
             return current
         info = await self.refresh_state(current.data)
         if info is None:

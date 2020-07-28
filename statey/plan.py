@@ -503,7 +503,20 @@ class DefaultMigrator(Migrator):
         config_session: ResourceSession,
         state_graph: Optional[ResourceGraph] = None,
     ) -> Plan:
-        config_dep_graph = config_session.dependency_graph()
+
+        # Ugly error handling :(
+        error, tb = None, None
+        try:
+            config_dep_graph = config_session.dependency_graph()
+        except Exception as err:
+            error = exc.ErrorDuringPlanning(err)
+            _, _, tb = sys.exc_info()
+        if error:
+            try:
+                raise error.with_traceback(tb)
+            except Exception:
+                stack.rewrite_tb(*sys.exc_info())
+
         state_dep_graph = state_graph.graph
 
         # For planning we need a copy of the config session that we will partially resolve
@@ -570,7 +583,7 @@ class DefaultMigrator(Migrator):
                         previous_snapshot, bound_config, task_session
                     )
                 except Exception as err:
-                    error = exc.ErrorDuringPlanning(
+                    error = exc.ErrorDuringPlanningNode(
                         node, previous_snapshot, bound_config, err
                     )
                     _, _, tb = sys.exc_info()
@@ -703,7 +716,7 @@ class DefaultMigrator(Migrator):
                         previous_snapshot, config_bound, task_session
                     )
                 except Exception as err:
-                    error = exc.ErrorDuringPlanning(
+                    error = exc.ErrorDuringPlanningNode(
                         node, previous_snapshot, config_bound, err
                     )
                     _, _, tb = sys.exc_info()
@@ -729,7 +742,7 @@ class DefaultMigrator(Migrator):
                         output_ref, decode=False, allow_unknowns=True
                     )
                 except Exception as err:
-                    error = exc.ErrorDuringPlanning(
+                    error = exc.ErrorDuringPlanningNode(
                         node, previous_snapshot, config_bound, err
                     )
                     _, _, tb = sys.exc_info()
@@ -796,7 +809,7 @@ class DefaultMigrator(Migrator):
                         previous_snapshot, config_bound, task_session
                     )
                 except Exception as err:
-                    error = exc.ErrorDuringPlanning(
+                    error = exc.ErrorDuringPlanningNode(
                         node, previous_snapshot, config_bound, err
                     )
                     _, _, tb = sys.exc_info()

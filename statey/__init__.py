@@ -7,9 +7,9 @@ from statey.hooks import (
     register_default_plugins,
 )
 
-from statey.registry import DefaultRegistry, Registry
+from statey.registry import Registry, create_registry, RegistryCachingWrapper
 
-registry = DefaultRegistry()
+registry = create_registry()
 
 from statey import task, syms, exc
 
@@ -76,12 +76,12 @@ from statey.resource import (
 from statey.task import TaskSession, create_task_session
 
 
-register_default_plugins()
-
-
 def set_registry(new_registry: Registry) -> None:
     """
     Set st.registry
     """
     global registry
     registry = new_registry
+
+
+register_default_plugins(registry)

@@ -19,6 +19,18 @@ class PlanError(StateyError):
 
 class ErrorDuringPlanning(PlanError):
     """
+    Generic error wrapping during plan()
+    """
+    def __init__(self, exception: Exception) -> None:
+        self.exception = exception
+        super().__init__(
+            f"Exception raised during planning: {type(exception).__name__}:"
+            f" {exception}."
+        )
+
+
+class ErrorDuringPlanningNode(PlanError):
+    """
     Error to indicate that an error was raised while calling a resource's
     plan() method
     """
@@ -99,12 +111,6 @@ class NoDifferFound(SymsError):
         super().__init__(f"No differ found for type: {type}.")
 
 
-class NoTypeSerializerFound(SymsError):
-    """
-	Base class for NoTypeSerializerFound errors
-	"""
-
-
 class NoObjectFound(SymsError):
     """
     Error indicating we could not create an object from an arbitrary value
@@ -113,6 +119,23 @@ class NoObjectFound(SymsError):
     def __init__(self, value: Any) -> None:
         self.value = value
         super().__init__(f"Unable to create an object from {value}.")
+
+
+class NoCasterFound(SymsError):
+    """
+    Error indicating we could not create an object from an arbitrary value
+    """
+
+    def __init__(self, from_type: "Type", to_type: "Type") -> None:
+        self.from_type = from_type
+        self.to_type = to_type
+        super().__init__(f"Unable to find caster from {from_type} to {to_type}.")
+
+
+class NoTypeSerializerFound(SymsError):
+    """
+	Base class for NoTypeSerializerFound errors
+	"""
 
 
 class NoTypeSerializerFoundForType(NoTypeSerializerFound):

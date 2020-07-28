@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import statey as st
 from statey import (
@@ -183,9 +183,12 @@ File = file_resource.s
 RESOURCES = [file_resource]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
 	Register default resources in this module
 	"""
+    if registry is None:
+        registry = st.registry
+
     for resource in RESOURCES:
-        st.registry.register_resource(resource)
+        registry.register_resource(resource)

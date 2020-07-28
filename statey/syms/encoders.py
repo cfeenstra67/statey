@@ -6,6 +6,7 @@ from typing import (
     Type as PyType,
     Any,
     Dict,
+    Optional
 )
 
 import marshmallow as ma
@@ -105,6 +106,7 @@ class MarshmallowEncoder(DefaultEncoder):
 	"""
 
     type: types.Type
+    registry: "Registry"
     pm: pluggy.PluginManager = dc.field(
         init=False,
         compare=False,
@@ -122,7 +124,7 @@ class MarshmallowEncoder(DefaultEncoder):
     def marshmallow_field(self, encoding: bool) -> ma.fields.Field:
         kws = self._marshmallow_field_kws(self.type.nullable)
         base = self.base_marshmallow_field(encoding)
-        return utils.PossiblySymbolicField(base, self.type, **kws)
+        return utils.PossiblySymbolicField(base, self.type, self.registry, **kws)
 
     def encode(self, data: Any) -> Any:
         # Allow pre-encoding hooks
@@ -168,7 +170,7 @@ class MarshmallowValueEncoder(MarshmallowEncoder):
     @st.hookimpl
     def get_encoder(cls, type: types.Type, registry: "Registry") -> Encoder:
         if isinstance(type, cls.type_cls):
-            instance = cls(type)
+            instance = cls(type, registry)
             for plugin in type.pm.get_plugins():
                 instance.pm.register(plugin)
             return instance
@@ -225,7 +227,7 @@ class ArrayEncoder(MarshmallowEncoder):
         if not isinstance(type, types.ArrayType):
             return None
         element_encoder = registry.get_encoder(type.element_type)
-        instance = cls(type, element_encoder)
+        instance = cls(type, registry, element_encoder)
         for plugin in type.pm.get_plugins():
             instance.pm.register(plugin)
         return instance
@@ -260,7 +262,7 @@ class StructEncoder(MarshmallowEncoder):
         encoders = {}
         for field in type.fields:
             encoders[field.name] = registry.get_encoder(field.type)
-        instance = cls(type, encoders)
+        instance = cls(type, registry, encoders)
         for plugin in type.pm.get_plugins():
             instance.pm.register(plugin)
         return instance
@@ -301,7 +303,7 @@ class NativeFunctionEncoder(StructEncoder):
             return None
         as_struct = types.StructType(type.fields, False)
         struct_encoder = registry.get_encoder(as_struct)
-        return cls(type, struct_encoder.field_encoders)
+        return cls(type, registry, struct_encoder.field_encoders)
 
 
 # Intentionally a list--this can be mutated
@@ -355,9 +357,12 @@ else:
     ENCODER_CLASSES.append(CloudPickleEncoder)
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
 	Replace default encoder with encoders defined here
 	"""
+    if registry is None:
+        registry = st.registry
+
     for cls in ENCODER_CLASSES:
-        st.registry.pm.register(cls)
+        registry.register(cls)

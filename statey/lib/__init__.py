@@ -1,17 +1,25 @@
 from typing import Optional
 
 # Exports
-from statey.lib import os
+from statey.lib import sos
+
+try:
+    from statey.lib import aws
+except RuntimeError:
+    pass
 
 
-def register(os: bool = True, aws: Optional[bool] = None) -> None:
+def register(registry: Optional["Registry"] = None, os: bool = True, aws: Optional[bool] = None) -> None:
     """
     Register all default library resources
     """
-    if os:
-        from statey.lib.os import register as register_os
+    if registry is None:
+        from statey import registry
 
-        register_os()
+    if os:
+        from statey.lib.sos import register as register_os
+
+        register_os(registry)
 
     # By default, register AWS resources only if dependencies are installed
     if aws is None:
@@ -25,4 +33,4 @@ def register(os: bool = True, aws: Optional[bool] = None) -> None:
     if aws:
         from statey.lib.aws import register as register_aws
 
-        register_aws()
+        register_aws(registry)

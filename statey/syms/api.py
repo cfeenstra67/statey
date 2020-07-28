@@ -106,8 +106,8 @@ def autoencode(cls: Type[Any]) -> Type[Any]:
 	it will be deserialized properly when bieng added to the session
 	"""
     if isinstance(cls, type) and dc.is_dataclass(cls):
-        st.registry.pm.register(ParseDataClassPlugin(cls))
-        st.registry.pm.register(EncodeDataClassPlugin(cls))
+        st.registry.register(ParseDataClassPlugin(cls))
+        st.registry.register(EncodeDataClassPlugin(cls))
         return cls
     raise NotImplementedError(f"No known encoding plugin implemented for {cls}.")
 

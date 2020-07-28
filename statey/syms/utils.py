@@ -118,10 +118,11 @@ class PossiblySymbolicField(ma.fields.Field):
 	A field that will validate the type if given a symbol or the value if given anything else
 	"""
 
-    def __init__(self, field: ma.fields.Field, type: "Type", *args, **kwargs) -> None:
+    def __init__(self, field: ma.fields.Field, type: "Type", registry: "Registry", *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.field = field
         self.type = type
+        self.registry = registry
 
     def _serialize(self, value: Any, attr: str, obj: str, **kwargs) -> Any:
         from statey.syms import Object
@@ -144,9 +145,13 @@ class PossiblySymbolicField(ma.fields.Field):
             return self.field._deserialize(value, attr, data, **kwargs)
 
         if self.type != value._type:
-            raise ma.ValidationError(
-                f"Invalid symbol type (expected {self.type}, got {value._type})."
-            )
+            try:
+                caster = self.registry.get_caster(value._type, self.type)
+            except exc.NoCasterFound as err:
+                raise ma.ValidationError(
+                    f"Invalid symbol type (expected {self.type}, got {value._type})."
+                ) from err
+            return caster.cast(value)
         return value
 
     def __repr__(self) -> str:

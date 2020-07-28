@@ -230,9 +230,12 @@ class StructSemantics(Semantics):
 SEMANTICS_CLASSES = [ValueSemantics, ArraySemantics, StructSemantics]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
     Replace default encoder with encoders defined here
     """
+    if registry is None:
+        registry = st.registry
+
     for cls in SEMANTICS_CLASSES:
-        st.registry.pm.register(cls)
+        registry.register(cls)

@@ -229,7 +229,7 @@ class SecurityGroupMachine(st.SingleStateMachine):
         return await self.create(session, joined_config) >> expected
 
 
-security_group_resource = st.MachineResource("security_group", SecurityGroupMachine)
+security_group_resource = st.MachineResource("aws_security_group", SecurityGroupMachine)
 
 # Resource State Factory
 SecurityGroup = security_group_resource.s
@@ -238,9 +238,12 @@ SecurityGroup = security_group_resource.s
 RESOURCES = [security_group_resource]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
     Register resources in this module
     """
+    if registry is None:
+        registry = st.registry
+
     for resource in RESOURCES:
-        st.registry.register_resource(resource)
+        registry.register_resource(resource)

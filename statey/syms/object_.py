@@ -124,10 +124,13 @@ class Object(base.Proxy):
 		return self. This is useful to resolve something "as much as possible" without
 		having to reason about whether something is an Object vs. a regular Python object
 		"""
-        try:
-            return self._inst.apply_alone()
-        except NotImplementedError:
-            return self
+        obj = self
+        while isinstance(obj, Object):
+            try:
+                obj = obj._inst.apply_alone()
+            except NotImplementedError:
+                return obj
+        return obj
 
     # Magic methods need to be defined on the type itself
     # http://docs.python.org/3/reference/datamodel.html#special-method-lookup

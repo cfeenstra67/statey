@@ -69,8 +69,25 @@ class Type(abc.ABC):
         )
         return f"{name_rendered}{suffix}"
 
+    @abc.abstractmethod
+    def to_nullable(self, nullable: bool) -> "Type":
+        """
+        Return a copy of this type with the given `nullable` value
+        """
+        raise NotImplementedError
+
     def __repr__(self) -> str:
         return self.render_type_string()
+
+
+class DataClassWithNullableFieldMixin:
+    """
+    Mixin to define to_nullable() by using dc.replace(...)
+    """
+    def to_nullable(self, nullable: bool) -> Type:
+        inst = dc.replace(self, nullable=nullable)
+        inst.__dict__['pm'] = self.pm
+        return inst
 
 
 class ValueType(Type):
@@ -105,52 +122,42 @@ class AnyType(Type):
     def name(self) -> str:
         return "any"
 
+    def to_nullable(self, nullable: bool) -> Type:
+        return self
+
 
 class NumberType(ValueType, AnyType):
     """
 	Base class for numeric types
 	"""
 
-    @abc.abstractmethod
-    def value_from_number(self, original: Any) -> Any:
-        raise NotImplementedError
-
 
 @dc.dataclass(frozen=True, repr=False)
-class IntegerType(NumberType):
+class IntegerType(DataClassWithNullableFieldMixin, NumberType):
     nullable: bool = True
     name: str = dc.field(init=False, repr=False, default="integer")
 
-    def value_from_number(self, original: Any) -> Any:
-        return int(original)
-
 
 @dc.dataclass(frozen=True, repr=False)
-class FloatType(NumberType):
+class FloatType(DataClassWithNullableFieldMixin, NumberType):
     nullable: bool = True
     name: str = dc.field(init=False, repr=False, default="float")
 
-    def value_from_number(self, original: Any) -> Any:
-        return float(original)
-
 
 @dc.dataclass(frozen=True, repr=False)
-class BooleanType(NumberType):
+class BooleanType(DataClassWithNullableFieldMixin, NumberType):
     nullable: bool = True
     name: str = dc.field(init=False, repr=False, default="boolean")
 
-    def value_from_number(self, original: Any) -> Any:
-        return bool(original)
-
 
 @dc.dataclass(frozen=True, repr=False)
-class StringType(ValueType, AnyType):
+class StringType(DataClassWithNullableFieldMixin, ValueType, AnyType):
     nullable: bool = True
     name: str = dc.field(init=False, repr=False, default="string")
 
 
 @dc.dataclass(frozen=True, repr=False)
-class ArrayType(AnyType):
+class ArrayType(DataClassWithNullableFieldMixin, AnyType):
     """
 	An array with some element type
 	"""
@@ -186,7 +193,7 @@ class Field:
 
 
 @dc.dataclass(frozen=True, repr=False)
-class StructType(AnyType):
+class StructType(DataClassWithNullableFieldMixin, AnyType):
     """
 	A struct contains an ordered sequence of named fields, any of which
 	may or may not be null
@@ -249,11 +256,16 @@ class FunctionType(StructType):
 
     args: Sequence[Field]
     return_type: Type
-    # Functions can never be nullable
     nullable: bool = dc.field(init=False, default=False)
     fields: Sequence[Field] = dc.field(
         init=False, default=(Field("name", StringType(False)),)
     )
+
+    def to_nullable(self, nullable: bool) -> Type:
+        new_inst = dc.replace(self)
+        new_inst.__dict__['nullable'] = nullable
+        new_inst.__dict__['pm'] = self.pm
+        return new_inst
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
         if renderer is None:

@@ -376,9 +376,12 @@ OBJECT_METHODS_PLUGINS = [
 ]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
     Replace default object methods classes
     """
+    if registry is None:
+        registry = st.registry
+
     for cls in OBJECT_METHODS_PLUGINS:
-        st.registry.pm.register(cls)
+        registry.register(cls)

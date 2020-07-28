@@ -1,6 +1,6 @@
 import abc
 import dataclasses as dc
-from typing import Any, Type as PyType, Dict
+from typing import Any, Type as PyType, Dict, Optional
 
 import statey as st
 from statey.syms import types
@@ -211,9 +211,12 @@ TYPE_SERIALIZER_CLASSES = [
 ]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
 	Replace default encoder with encoders defined here
 	"""
+    if registry is None:
+        registry = st.registry
+
     for cls in TYPE_SERIALIZER_CLASSES:
-        st.registry.pm.register(cls)
+        registry.register(cls)

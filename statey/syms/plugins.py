@@ -1,6 +1,6 @@
 import collections
 import dataclasses as dc
-from typing import Type as PyType, Dict, Any, Union, Callable, Sequence
+from typing import Type as PyType, Dict, Any, Union, Callable, Sequence, Optional
 
 import statey as st
 from statey.syms import types, utils, impl
@@ -231,9 +231,12 @@ DEFAULT_PLUGINS = [
 ]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
 	Register default plugins
 	"""
+    if registry is None:
+        registry = st.registry
+
     for plugin in DEFAULT_PLUGINS:
-        st.registry.pm.register(plugin)
+        registry.register(plugin)

@@ -9,12 +9,12 @@ import statey as st
 from statey.fsm import transition, MachineResource, SimpleMachine
 
 
-EC2InstanceConfigType = st.S.Struct[
+InstanceConfigType = st.S.Struct[
     "ami" : st.S.String, "instance_type" : st.S.String, "key_name" : st.S.String
 ].t
 
 
-EC2InstanceType = st.S.Struct[
+InstanceType = st.S.Struct[
     "ami" : st.S.String,
     "instance_type" : st.S.String,
     "key_name" : st.S.String,
@@ -29,12 +29,12 @@ EC2InstanceType = st.S.Struct[
 ].t
 
 
-class EC2InstanceMachine(SimpleMachine):
+class InstanceMachine(SimpleMachine):
     """
     Machine for an EC2 Instance
     """
 
-    UP = st.State("UP", EC2InstanceConfigType, EC2InstanceType)
+    UP = st.State("UP", InstanceConfigType, InstanceType)
 
     @contextlib.asynccontextmanager
     async def resource_ctx(self):
@@ -77,7 +77,7 @@ class EC2InstanceMachine(SimpleMachine):
                 return None
             return await self.convert_instance(instance)
 
-    async def create_task(self, config: EC2InstanceConfigType) -> EC2InstanceType:
+    async def create_task(self, config: InstanceConfigType) -> InstanceType:
         """
         Create a new EC2 Instance
         """
@@ -95,7 +95,7 @@ class EC2InstanceMachine(SimpleMachine):
             await instance.load()
             yield await self.convert_instance(instance)
 
-    async def delete_task(self, current: EC2InstanceType) -> st.EmptyType:
+    async def delete_task(self, current: InstanceType) -> st.EmptyType:
         """
         Delete the EC2 Instance
         """
@@ -106,18 +106,21 @@ class EC2InstanceMachine(SimpleMachine):
             await instance.wait_until_terminated()
 
 
-ec2_instance_resource = MachineResource("ec2_instance", EC2InstanceMachine)
+instance_resource = MachineResource("aws_instance", InstanceMachine)
 
 # Resource state factory
-EC2Instance = ec2_instance_resource.s
+Instance = instance_resource.s
 
 
-RESOURCES = [ec2_instance_resource]
+RESOURCES = [instance_resource]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
     """
     Register resources in this module
     """
+    if registry is None:
+        registry = st.registry
+
     for resource in RESOURCES:
-        st.registry.register_resource(resource)
+        registry.register_resource(resource)

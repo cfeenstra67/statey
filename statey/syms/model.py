@@ -25,7 +25,7 @@
 # def model(cls: PyType[Any], dataclass_kwargs: Optional[Dict[str, Any]] = None) -> PyType[Any]:
 # 	"""
 # 	Wrap the given class to be a statey model whose hooks can be registered via
-# 	registry.pm.register(model_cls)
+# 	registry.register(model_cls)
 # 	"""
 # 	if dataclass_kwargs is None:
 # 		dataclass_kwargs = {}

@@ -364,6 +364,9 @@ class StructDiffer(Differ):
 DIFFER_HOOKS = [ValueDiffer, ArrayDiffer, StructDiffer]
 
 
-def register() -> None:
+def register(registry: Optional["Registry"] = None) -> None:
+    if registry is None:
+        registry = st.registry
+
     for plugin in DIFFER_HOOKS:
-        st.registry.pm.register(plugin)
+        registry.register(plugin)

@@ -22,12 +22,12 @@ def cli(ctx, state):
     ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
 
 
-async def refresh_graph(graph):
+async def refresh_graph(graph, finalize: bool = False):
     with click.progressbar(
         length=len(graph.graph.nodes),
         label=click.style("Refreshing state...", fg="yellow"),
     ) as bar:
-        async for key in graph.refresh(st.registry):
+        async for key in graph.refresh(st.registry, finalize):
             bar.update(1)
 
 
@@ -236,7 +236,7 @@ def refresh(ctx):
     resource_graph = ctx.obj["state_manager"].load(st.registry)
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(refresh_graph(resource_graph))
+    loop.run_until_complete(refresh_graph(resource_graph, True))
 
     click.secho("State refreshed successfully.", fg="green", bold=True)
 
