@@ -61,6 +61,12 @@ class ErrorInfo:
             traceback.format_exception(self.exc_type, self.exc_value, self.exc_tb)
         )
 
+    def format_error_message(self) -> str:
+        """
+        Return a single-line error message from this exception.
+        """
+        return f'{self.exc_type.__name__}: {self.exc_value}'
+
 
 @dc.dataclass(frozen=True)
 class TaskInfo:
@@ -431,11 +437,12 @@ class TaskSession(session.Session):
         return task_subgraph
 
     def clone(self) -> "TaskSession":
-        cloned_session = self.session.clone()
-        new_inst = type(self)(cloned_session)
+        new_inst = TaskSession(self.session.clone())
         new_inst.tasks = self.tasks.copy()
         new_inst.checkpoints = self.checkpoints.copy()
-        new_inst.pm = self.pm
+        for plugin in self.pm.get_plugins():
+            if plugin is not self:
+                new_inst.pm.register(plugin)
         return new_inst
 
 

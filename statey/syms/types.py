@@ -5,6 +5,7 @@ from typing import (
     Sequence,
     Any,
     Optional,
+    Dict
 )
 
 import pluggy
@@ -55,6 +56,7 @@ class Type(abc.ABC):
 
     name: str
     nullable: bool
+    meta: Dict[str, Any]
     pm: pluggy.PluginManager
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
@@ -70,22 +72,54 @@ class Type(abc.ABC):
         return f"{name_rendered}{suffix}"
 
     @abc.abstractmethod
-    def to_nullable(self, nullable: bool) -> "Type":
+    def with_nullable(self, nullable: bool) -> "Type":
         """
         Return a copy of this type with the given `nullable` value
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def with_meta(self, meta: Dict[str, Any]) -> "Type":
+        """
+        Return a copy of this type with the given `meta` value
         """
         raise NotImplementedError
 
     def __repr__(self) -> str:
         return self.render_type_string()
 
+    # API methods to building types more easily
+    def __call__(self, **meta: Dict[str, Any]) -> "Type":
+        """
+        Call method on a type modifies its attributes
 
-class DataClassWithNullableFieldMixin:
+        e.g. IntegerType(True)(nullable=False)
+        """
+        obj = self
+        if 'nullable' in meta:
+            obj = obj.with_nullable(meta.pop('nullable'))
+        current = self.meta.copy()
+        current.update(meta)
+        return obj.with_meta(current)
+
+    def __invert__(self) -> "Type":
+        """
+        Returns a copy of this type with nullable set to True
+        """
+        return self.with_nullable(True)
+
+
+class DataClassMixin(abc.ABC):
     """
-    Mixin to define to_nullable() by using dc.replace(...)
+    Mixin to define with_nullable() and with_meta() by using dc.replace(...)
     """
-    def to_nullable(self, nullable: bool) -> Type:
+    def with_nullable(self, nullable: bool) -> Type:
         inst = dc.replace(self, nullable=nullable)
+        inst.__dict__['pm'] = self.pm
+        return inst
+
+    def with_meta(self, meta: Dict[str, Any]) -> Type:
+        inst = dc.replace(self, meta=meta)
         inst.__dict__['pm'] = self.pm
         return inst
 
@@ -96,6 +130,7 @@ class ValueType(Type):
 	"""
 
     nullable: bool
+    meta: Dict[str, Any]
     pm: pluggy.PluginManager
 
     @property
@@ -105,7 +140,7 @@ class ValueType(Type):
 
 
 @dc.dataclass(frozen=True, repr=False)
-class AnyType(Type):
+class AnyType(DataClassMixin, Type):
     """
 	Type that applies to any value. Not a regular dataclass to avoid issues w/ defaults :(
 	"""
@@ -113,57 +148,75 @@ class AnyType(Type):
     pm: pluggy.PluginManager = dc.field(
         init=False, default_factory=create_type_plugin_manager, compare=False
     )
-
-    @property
-    def nullable(self) -> bool:
-        return True
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
 
     @property
     def name(self) -> str:
         return "any"
 
-    def to_nullable(self, nullable: bool) -> Type:
-        return self
 
-
-class NumberType(ValueType, AnyType):
+class NumberType(ValueType):
     """
 	Base class for numeric types
 	"""
 
 
 @dc.dataclass(frozen=True, repr=False)
-class IntegerType(DataClassWithNullableFieldMixin, NumberType):
-    nullable: bool = True
+class IntegerType(DataClassMixin, NumberType):
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="integer")
-
+    pm: pluggy.PluginManager = dc.field(
+        init=False, default_factory=create_type_plugin_manager, compare=False
+    )
 
 @dc.dataclass(frozen=True, repr=False)
-class FloatType(DataClassWithNullableFieldMixin, NumberType):
-    nullable: bool = True
+class FloatType(DataClassMixin, NumberType):
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="float")
-
+    pm: pluggy.PluginManager = dc.field(
+        init=False, default_factory=create_type_plugin_manager, compare=False
+    )
 
 @dc.dataclass(frozen=True, repr=False)
-class BooleanType(DataClassWithNullableFieldMixin, NumberType):
-    nullable: bool = True
+class BooleanType(DataClassMixin, NumberType):
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="boolean")
-
+    pm: pluggy.PluginManager = dc.field(
+        init=False, default_factory=create_type_plugin_manager, compare=False
+    )
 
 @dc.dataclass(frozen=True, repr=False)
-class StringType(DataClassWithNullableFieldMixin, ValueType, AnyType):
-    nullable: bool = True
+class StringType(DataClassMixin, ValueType):
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="string")
-
+    pm: pluggy.PluginManager = dc.field(
+        init=False, default_factory=create_type_plugin_manager, compare=False
+    )
 
 @dc.dataclass(frozen=True, repr=False)
-class ArrayType(DataClassWithNullableFieldMixin, AnyType):
+class ArrayType(DataClassMixin, Type):
     """
 	An array with some element type
 	"""
+    def __class_getitem__(cls, item: Any) -> Type:
+        """
+        Create array types
+        """
+        import statey as st
+        typ = st.registry.get_type(item)
+        return cls(typ)
 
     element_type: Type
-    nullable: bool = True
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
+    pm: pluggy.PluginManager = dc.field(
+        init=False, default_factory=create_type_plugin_manager, compare=False
+    )
 
     @property
     def name(self) -> str:
@@ -181,6 +234,14 @@ class ArrayType(DataClassWithNullableFieldMixin, AnyType):
         rbrace = renderer.render("]", TypeStringToken.RIGHT_BRACE)
         return "".join([type_name, lbrace, element_string, rbrace, suffix])
 
+    def with_element_type(self, element_type: Type) -> Type:
+        """
+        Return a copy of this type with the given element type
+        """
+        new_inst = dc.replace(self, element_type=element_type)
+        new_inst.__dict__['pm'] = self.pm
+        return new_inst
+
 
 @dc.dataclass(frozen=True)
 class Field:
@@ -193,14 +254,42 @@ class Field:
 
 
 @dc.dataclass(frozen=True, repr=False)
-class StructType(DataClassWithNullableFieldMixin, AnyType):
+class StructType(DataClassMixin, Type):
     """
 	A struct contains an ordered sequence of named fields, any of which
 	may or may not be null
 	"""
+    def __class_getitem__(cls, value: Sequence[slice]) -> "Type":
+        """
+        Ability to use syntax like StructType["a": 1]
+        """
+        import statey as st
+
+        if not isinstance(value, tuple):
+            value = value,
+
+        fields = []
+        for item in value:
+
+            if not isinstance(item, slice):
+                raise TypeError(f'{item} is not a slice.')
+            if not isinstance(item.start, str):
+                raise TypeError(f'{item.start} is not a string.')
+            if item.step is not None:
+                raise ValueError(f'{item} contains a non-null step, this is not allowed.')
+
+            name = item.start
+            typ = st.registry.get_type(item.stop)
+            fields.append(Field(name, typ))
+
+        return cls(fields)
 
     fields: Sequence[Field]
-    nullable: bool = True
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
+    pm: pluggy.PluginManager = dc.field(
+        init=False, default_factory=create_type_plugin_manager, compare=False
+    )
 
     def __post_init__(self) -> None:
         self.__dict__["fields"] = tuple(self.fields)
@@ -244,8 +333,17 @@ class StructType(DataClassWithNullableFieldMixin, AnyType):
 		"""
         return any(field.name == name for field in self.fields)
 
+    def with_fields(self, fields: Sequence[Field]) -> Type:
+        """
+        Return a copy of this type with the fields replaced
+        """
+        new_inst = dc.replace(self)
+        new_inst.__dict__['fields'] = tuple(fields)
+        new_inst.__dict__['pm'] = self.pm
+        return new_inst
 
-EmptyType = StructType(())
+
+EmptyType = StructType((), True)
 
 
 @dc.dataclass(frozen=True, repr=False)
@@ -257,13 +355,20 @@ class FunctionType(StructType):
     args: Sequence[Field]
     return_type: Type
     nullable: bool = dc.field(init=False, default=False)
+    meta: Dict[str, Any] = dc.field(init=False, default_factory=dict)
     fields: Sequence[Field] = dc.field(
         init=False, default=(Field("name", StringType(False)),)
     )
 
-    def to_nullable(self, nullable: bool) -> Type:
+    def with_nullable(self, nullable: bool) -> Type:
         new_inst = dc.replace(self)
         new_inst.__dict__['nullable'] = nullable
+        new_inst.__dict__['pm'] = self.pm
+        return new_inst
+
+    def with_meta(self, meta: Dict[str, Any]) -> Type:
+        new_inst = dc.replace(self)
+        new_inst.__dict__['meta'] = meta
         new_inst.__dict__['pm'] = self.pm
         return new_inst
 
@@ -330,3 +435,19 @@ class NativeFunctionType(FunctionType):
     @property
     def name(self) -> str:
         return "native_function"
+
+
+# Some exported objects
+Struct = StructType # Alias
+
+Array = ArrayType # Alias
+
+Integer = IntegerType()
+
+Float = FloatType()
+
+Boolean = BooleanType()
+
+Any = AnyType()
+
+String = StringType()

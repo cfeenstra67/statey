@@ -152,6 +152,8 @@ class ArraySemantics(Semantics):
         from statey.syms import api
 
         def func(x):
+            if x is None:
+                return None
             return [self.element_semantics.expand(val) for val in x]
 
         return api.map(func, value)

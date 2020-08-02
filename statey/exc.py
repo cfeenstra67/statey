@@ -17,6 +17,22 @@ class PlanError(StateyError):
     """
 
 
+class NullRequired(PlanError):
+    """
+    Error to raise indicating that we need to recreate the planning given resource
+    """
+
+
+class NotADagError(StateyError):
+    """
+    Error indicating that some graph is not a DAG
+    """
+    def __init__(self, graph: "DiGraph", path: Sequence[str]) -> None:
+        self.graph = graph
+        self.path = path
+        super().__init__(f'Graph {repr(graph)} is not a DAG! Cycle found: {" -> ".join(path)}.')
+
+
 class ErrorDuringPlanning(PlanError):
     """
     Generic error wrapping during plan()

@@ -409,10 +409,11 @@ class ResourceSession(session.Session):
         return self.states[name]
 
     def clone(self) -> "ResourceSession":
-        cloned_session = self.session.clone()
-        new_inst = type(self)(cloned_session)
+        new_inst = ResourceSession(self.session.clone())
         new_inst.states = self.states.copy()
-        new_inst.pm = self.pm
+        for plugin in self.pm.get_plugins():
+            if plugin is not self:
+                new_inst.pm.register(plugin)
         return new_inst
 
 

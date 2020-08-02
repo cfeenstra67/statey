@@ -400,4 +400,6 @@ def create_registry() -> Registry:
     """
     Create a registry using the default implementation
     """
-    return RegistryCachingWrapper(HookBasedRegistry())
+    # Need to make types hashable again in order for this to work
+    # return RegistryCachingWrapper(HookBasedRegistry())
+    return HookBasedRegistry()

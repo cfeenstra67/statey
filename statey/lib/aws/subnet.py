@@ -8,27 +8,28 @@ import botocore
 import statey as st
 
 
-SubnetConfigType = st.S.Struct[
-    "vpc_id": st.S.String,
-    "cidr_block": st.S.String,
-    "ipv6_cidr_block": ~st.S.String,
-    "map_public_ip_on_launch": st.S.Boolean,
-    "assign_ipv6_address_on_creation": st.S.Boolean,
+SubnetConfigType = st.Struct[
+    "vpc_id": st.String,
+    "cidr_block": st.String,
+    # Optional args
+    "ipv6_cidr_block": ~st.String,
+    "map_public_ip_on_launch": st.Boolean(default=False),
+    "assign_ipv6_address_on_creation": st.Boolean(default=False),
     # Missing: tags
-].t
+]
 
 
-SubnetType = st.S.Struct[
-    "vpc_id": st.S.String,
-    "cidr_block": st.S.String,
-    "ipv6_association_id": ~st.S.String,
-    "ipv6_cidr_block": ~st.S.String,
-    "map_public_ip_on_launch": st.S.Boolean,
-    "assign_ipv6_address_on_creation": st.S.Boolean,
+SubnetType = st.Struct[
+    "vpc_id": st.String,
+    "cidr_block": st.String,
+    "ipv6_association_id": ~st.String,
+    "ipv6_cidr_block": ~st.String,
+    "map_public_ip_on_launch": st.Boolean,
+    "assign_ipv6_address_on_creation": st.Boolean,
     # Missing: tags
-    "id": st.S.String,
-    "owner_id": st.S.Integer
-].t
+    "id": st.String,
+    "owner_id": st.Integer
+]
 
 
 class SubnetMachine(st.SimpleMachine):

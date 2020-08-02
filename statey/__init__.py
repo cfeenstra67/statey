@@ -32,6 +32,9 @@ from statey.syms.api import (
     fill,
     fill_unknowns,
     filter_struct,
+    ifnull,
+    struct_drop,
+    struct_add
 )
 
 from statey.syms.diff import Diff, DiffConfig, Differ
@@ -42,9 +45,9 @@ from statey.syms.impl import Unknown
 
 from statey.syms.object_ import Object
 
-from statey.syms.schemas import builder as S
-
 from statey.syms.session import Session
+
+from statey.syms.path import PathParser
 
 from statey.syms.py_session import create_session
 
@@ -58,6 +61,13 @@ from statey.syms.types import (
     BooleanType,
     Field,
     EmptyType,
+    Integer,
+    String,
+    Float,
+    Struct,
+    Array,
+    Boolean,
+    Any
 )
 
 from statey.resource import (

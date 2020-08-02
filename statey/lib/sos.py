@@ -7,7 +7,6 @@ from statey import (
     Machine,
     transition,
     MachineResource,
-    S,
     TaskSession,
     task,
     StateSnapshot,
@@ -16,27 +15,24 @@ from statey import (
 from statey.syms import types, utils, Object, impl
 
 
-FileConfigType = S.Struct["location" : S.String, "data" : S.String].t
+FileConfigType = st.Struct["location" : str, "data" : str]
 
 
-StatSchema = S.Struct[
-    "mode" : S.Integer,
-    "ino" : S.Integer,
-    "dev" : S.Integer,
-    "nlink" : S.Integer,
-    "uid" : S.Integer,
-    "gid" : S.Integer,
-    "size" : S.Integer,
-    "atime" : S.Float,
-    "mtime" : S.Float,
-    "ctime" : S.Float,
-].s
+StatType = st.Struct[
+    "mode" : int,
+    "ino" : int,
+    "dev" : int,
+    "nlink" : int,
+    "uid" : int,
+    "gid" : int,
+    "size" : int,
+    "atime" : float,
+    "mtime" : float,
+    "ctime" : float,
+]
 
 
-StatType = StatSchema.output_type
-
-
-FileType = S.Struct["location" : S.String, "data" : S.String, "stat":StatSchema].t
+FileType = st.Struct["location" : str, "data" : str, "stat": StatType]
 
 
 @st.function
@@ -150,8 +146,7 @@ class FileMachine(Machine):
             )
 
         if loc_changed:
-            session["delete_file"] << self.remove_file(current.obj.location)
-            return session["create_file"] << (self.set_file(config.obj) >> expected)
+            raise st.exc.NullRequired
 
         return session["update_file"] << (self.set_file(config.obj) >> expected)
 

@@ -14,6 +14,13 @@ class Caster(abc.ABC):
     type: types.Type
 
     @abc.abstractmethod
+    def cast_value(self, value: Any) -> Any:
+        """
+        Cast a concrete value between types rather than an object
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def cast(self, obj: Object) -> Object:
         """
         Cast the given object to this caster's type
@@ -26,13 +33,6 @@ class ValueCaster(Caster):
     Cast from one type to another using a native python function
     """
     type: types.Type
-
-    @abc.abstractmethod
-    def cast_value(self, value: Any) -> Any:
-        """
-        Cast the given non-object value to `type`
-        """
-        raise NotImplementedError
 
     def cast(self, obj: Object) -> Object:
         func_type = utils.single_arg_function_type(obj._type, self.type)
@@ -61,8 +61,46 @@ class ForceCaster(Caster):
     """
     type: types.Type
 
+    def cast_value(self, value: Any) -> Any:
+        return value
+
     def cast(self, obj: Object) -> Object:
         return Object(obj._impl, self.type, obj._registry)
+
+
+@dc.dataclass(frozen=True)
+class ArrayElementCaster(ValueCaster):
+    """
+
+    """
+    type: types.ArrayType
+    element_caster: Caster
+
+    def cast_value(self, value: Any) -> Any:
+        if value is None:
+            return None
+        return [self.element_caster.cast_value(item) for item in value]
+
+
+@dc.dataclass(frozen=True)
+class StructCaster(Caster):
+    """
+
+    """
+    type: types.StructType
+    field_casters: Dict[str, Caster]
+
+    def cast_value(self, value: Any) -> Any:
+        if value is None:
+            return None
+        return {field: caster.cast_value(value[field]) for field, caster in value.items()}
+
+    def cast(self, obj: Object) -> Object:
+        out = {}
+        for field in self.type.fields:
+            caster = self.field_casters[field.name]
+            out[field.name] = caster.cast(obj[field.name])
+        return Object(out, self.type, obj._registry)
 
 
 @dc.dataclass(frozen=True)
@@ -70,22 +108,88 @@ class PredicateCastingPlugin:
     """
     Provide a (from_type, to_type) => bool predicate and a caster factory
     """
-    predicate: Callable[[types.Type, types.Type], bool]
-    factory: Callable[[types.Type], Caster]
+    factory: Callable[[types.Type, types.Type, "Registry"], Optional[Caster]]
 
     @st.hookimpl
     def get_caster(self, from_type: types.Type, to_type: types.Type, registry: "Registry") -> Caster:
-        if not self.predicate(from_type, to_type):
+        return self.factory(from_type, to_type, registry)
+
+
+def quasi_equal_cast(from_type: types.Type, to_type: types.Type, registry: "Registry") -> Optional[Caster]:
+    """
+    Predicate returning True when the types are the same other than metadata
+    """
+    if (
+        from_type == to_type.with_meta(from_type.meta)
+        or from_type == to_type.with_nullable(False).with_meta(from_type.meta)
+    ):
+        return ForceCaster(to_type)
+    return None
+
+
+def array_cast(from_type: types.Type, to_type: types.Type, registry: "Registry") -> Optional[Caster]:
+    """
+
+    """
+    if not isinstance(from_type, types.ArrayType) or not isinstance(to_type, types.ArrayType):
+        return None
+
+    element_caster = None
+    if from_type.element_type != to_type.element_type:
+        try:
+            element_caster = registry.get_caster(from_type.element_type, to_type.element_type)
+        except st.exc.NoCasterFound:
             return None
-        return self.factory(to_type)
+
+    with_from_element = to_type.with_element_type(from_type.element_type)
+    if (
+        from_type == with_from_element.with_meta(from_type.meta)
+        or from_type == with_from_element.with_nullable(False).with_meta(from_type.meta)
+    ):
+        if element_caster is None or isinstance(element_caster, ForceCaster):
+            return ForceCaster(to_type)
+
+        return ArrayElementCaster(to_type, element_caster)
+
+    return None
+
+
+def struct_cast(from_type: types.Type, to_type: types.Type, registry: "Registry") -> Optional[Caster]:
+    """
+
+    """
+    if not isinstance(from_type, types.StructType) or not isinstance(to_type, types.StructType):
+        return None
+    if {field.name for field in from_type.fields} != {field.name for field in to_type.fields}:
+        return None
+
+    field_casters = None
+    if {field.name: field for field in from_type.fields} != {field.name: field for field in to_type.fields}:
+        field_casters = {}
+        for field in to_type.fields:
+            try:
+                field_caster = registry.get_caster(from_type[field.name].type, field.type)
+            except st.exc.NoCasterFound:
+                return None
+            field_casters[field.name] = field_caster
+
+    with_from_fields = to_type.with_fields(from_type.fields)
+    if (
+        from_type == with_from_fields.with_meta(from_type.meta)
+        or from_type == with_from_fields.with_nullable(False).with_meta(from_type.meta)
+    ):
+        if field_casters is None or all(isinstance(caster, ForceCaster) for caster in field_casters.values()):
+            return ForceCaster(to_type)
+
+        return StructCaster(to_type, field_casters)
+
+    return None
 
 
 PLUGINS = [
-    # Cast non-nullable to nullable, can force this
-    PredicateCastingPlugin(
-        predicate=lambda from_type, to_type: from_type == to_type.to_nullable(False),
-        factory=ForceCaster
-    )
+    PredicateCastingPlugin(quasi_equal_cast),
+    PredicateCastingPlugin(array_cast),
+    PredicateCastingPlugin(struct_cast)
 ]
 
 

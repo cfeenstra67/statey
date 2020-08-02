@@ -44,14 +44,22 @@ class DiffConfig(utils.Cloneable):
         """
         self.path_comparisons[get_path_from_pathlike(path, self.path_parser)] = func
 
-    def get_comparison(self, path: PathLike) -> Callable[[Any, Any], bool]:
+    def get_explicit_comparison(self, path: PathLike) -> Optional[Callable[[Any, Any], bool]]:
         """
-        Get the comparison function for a given path
+        Get the comparison function for a given path, _only_ if it has been explicitly
+        set using set_comparison(). Otherwise, return None
         """
         path = get_path_from_pathlike(path, self.path_parser)
         if path in self.path_comparisons:
             return self.path_comparisons[path]
-        return operator.eq
+        return None
+
+    def get_comparison(self, path: PathLike) -> Callable[[Any, Any], bool]:
+        """
+        Get the comparison function for a given path
+        """
+        comp = self.get_explicit_comparison(path)
+        return operator.eq if comp is None else comp
 
 
 @dc.dataclass(frozen=True)
@@ -286,6 +294,14 @@ class ArrayDiffer(Differ):
             yield diff
             return
 
+        explicit_comp = config.get_explicit_comparison(diff.path)
+        if explicit_comp is not None:
+            res = explicit_comp(diff.left, diff.right)
+            if not res:
+                yield diff
+            if res is not NotImplemented:
+                return
+
         if diff.left is None or diff.right is None:
             if diff.left is None and diff.right is None:
                 return
@@ -340,6 +356,14 @@ class StructDiffer(Differ):
         if diff.left_is_unknown() or diff.right_is_unknown():
             yield diff
             return
+
+        explicit_comp = config.get_explicit_comparison(diff.path)
+        if explicit_comp is not None:
+            res = explicit_comp(diff.left, diff.right)
+            if not res:
+                yield diff
+            if res is not NotImplemented:
+                return
 
         if diff.left is None or diff.right is None:
             if diff.left is None and diff.right is None:

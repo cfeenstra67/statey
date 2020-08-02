@@ -6,7 +6,7 @@ contained in the the other modules in this package
 import dataclasses as dc
 import inspect
 from functools import wraps
-from typing import Any, Sequence, Dict, Callable, Type, Tuple
+from typing import Any, Sequence, Dict, Callable, Type, Tuple, Union
 
 import statey as st
 from statey.syms import utils, types, func, impl, Object
@@ -141,21 +141,21 @@ def join(head: Object, *tail: Sequence[Any]) -> Object:
     return utils.wrap_function_call(join_func, (head, tail)) >> head
 
 
-def replace(obj: Object, **kwargs: Dict[str, Any]) -> Object:
+def replace(obj: Object, _keep_type=True, **kwargs: Dict[str, Any]) -> Object:
     """
     Replace the given attributes in `object`
     """
     if not hasattr(obj._type, "fields"):
         raise TypeError(f"Invalid input type for replace(): {obj._type}")
 
-    out = {}
+    out = []
     for field in obj._type.fields:
         if field.name in kwargs:
-            out[field.name] = kwargs[field.name]
+            out.append((field.name, kwargs[field.name]))
         else:
-            out[field.name] = obj[field.name]
+            out.append((field.name, obj[field.name]))
 
-    return Object(out, obj._type, obj._registry)
+    return Object(dict(out), obj._type) if _keep_type else struct.new(out)
 
 
 def fill(
@@ -203,11 +203,109 @@ def fill_unknowns(obj: Object, output_type: types.StructType) -> Object:
     return fill(obj, output_type, get_value)
 
 
+def ifnull(obj: Object, otherwise: Any) -> Object:
+    """
+    If the object is None, substitute the value from the other object
+    """
+    non_nullable = obj._type.with_nullable(False)
+
+    def _ifnull(first: obj._type) -> non_nullable:
+        return otherwise if first is None else first
+
+    _ifnull.__name__ = 'ifnull'
+    return function(_ifnull)(obj, otherwise)
+
+
+def struct_drop(obj: Union[Object, types.Type], *fields: str) -> Object:
+    """
+    Drop the fields with the given names from `obj`
+    """
+    if isinstance(obj, types.Type):
+        type_fields = []
+
+        if not hasattr(obj, "fields"):
+            raise TypeError(f"Invalid input type for replace(): {obj}")
+
+        for field in obj.fields:
+            if field.name in fields:
+                continue
+            type_fields.append(field)
+
+        return st.StructType(
+            type_fields,
+            nullable=obj.nullable,
+            meta=obj.meta
+        )
+
+    if not hasattr(obj._type, "fields"):
+        raise TypeError(f"Invalid input type for replace(): {obj._type}")
+
+    out = {}
+
+    new_type = struct_drop(obj._type, *fields)
+    for field in new_type.fields:
+        out[field.name] = obj[field.name]
+
+    res = Object(out, new_type)
+    return res
+
+
+def struct_add(obj: Union[Object, types.Type], *fields: Sequence[Tuple[str, Any, types.Type]]) -> Object:
+    """
+    Add the given fields to `obj`
+    """
+    if isinstance(obj, types.Type):
+
+        if not hasattr(obj, "fields"):
+            raise TypeError(f"Invalid input type for replace(): {obj}")
+
+        type_fields = list(obj.fields)
+
+        for tup in fields:
+            if len(tup) == 2:
+                name, typ = tup
+                typ = st.registry.get_type(typ)
+                type_fields.append(types.Field(name, typ))
+            else:
+                raise ValueError(f'Invalid tuple length: {len(tup)} for {tup}.')
+
+        return st.StructType(
+            type_fields,
+            nullable=obj.nullable,
+            meta=obj.meta
+        )
+
+    if not hasattr(obj._type, "fields"):
+        raise TypeError(f"Invalid input type for replace(): {obj._type}")
+
+    type_fields = list(obj._type.fields)
+    values = {field.name: obj[field.name] for field in fields}
+
+    for tup in fields:
+        if len(tup) == 2:
+            name, obj = tup
+            obj = st.registry.get_object(obj)
+        elif len(tup) == 3:
+            name, obj, typ = tup
+            obj = Object(obj, typ)
+        else:
+            ValueError(f'Invalid tuple length: {len(tup)} for {tup}.')
+
+        type_fields.append(types.Field(name, obj._type))
+        values[name] = obj
+
+    new_type = st.StructType(
+        type_fields,
+        nullable=obj._type.nullable,
+        meta=obj._type.meta
+    )
+    return Object(values, new_type)
+
+
 class _StructSymbolFactory:
     """
     Utility for simply create struct objects
     """
-
     def new(self, fields: Sequence[Tuple[str, Any]]) -> Object:
         out_fields = []
         for name, value in fields:

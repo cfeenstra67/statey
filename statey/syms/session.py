@@ -68,6 +68,13 @@ class Namespace(abc.ABC):
 		"""
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def clone(self) -> "Namespace":
+        """
+        Return a copy of this namespace
+        """
+        raise NotImplementedError
+
 
 @dc.dataclass(frozen=True)
 class NamedSessionSetter:

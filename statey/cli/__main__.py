@@ -1,5 +1,6 @@
 import asyncio
 import click
+import json
 import importlib
 import shutil
 
@@ -59,6 +60,12 @@ task_heartbeat_opt = click.option(
     type=float,
     default=15.0,
     help="Specify a heartbeat interval to use when executing tasks.",
+)
+
+full_trace_opt = click.option(
+    '--fulltrace',
+    is_flag=True,
+    help="Print full stack traces for task errors."
 )
 
 
@@ -124,8 +131,9 @@ def plan(ctx, module, session_name, task_dag, metatasks):
 @plan.command()
 @yes_opt
 @task_heartbeat_opt
+@full_trace_opt
 @click.pass_context
-def up(ctx, yes, task_heartbeat):
+def up(ctx, yes, task_heartbeat, fulltrace):
     plan = ctx.obj["plan"]
 
     # Sort of hacky way to check if the plan is empty--executing would only update the state.
@@ -154,7 +162,7 @@ def up(ctx, yes, task_heartbeat):
 
         exec_summary = inspector.execution_summary(exec_info, ctx.obj["metatasks"])
 
-        exec_summary_string = exec_summary.to_string()
+        exec_summary_string = exec_summary.to_string(full_trace=fulltrace)
 
         click.echo(exec_summary_string)
     finally:
@@ -166,8 +174,9 @@ def up(ctx, yes, task_heartbeat):
 @metatasks_opt
 @yes_opt
 @task_heartbeat_opt
+@full_trace_opt
 @click.pass_context
-def down(ctx, task_dag, metatasks, yes, task_heartbeat):
+def down(ctx, task_dag, metatasks, yes, task_heartbeat, fulltrace):
     resource_graph = ctx.obj["state_manager"].load(st.registry)
 
     loop = asyncio.get_event_loop()
@@ -223,7 +232,7 @@ def down(ctx, task_dag, metatasks, yes, task_heartbeat):
 
         exec_summary = inspector.execution_summary(exec_info, metatasks)
 
-        exec_summary_string = exec_summary.to_string()
+        exec_summary_string = exec_summary.to_string(full_trace=fulltrace)
 
         click.echo(exec_summary_string)
     finally:
@@ -241,6 +250,33 @@ def refresh(ctx):
     click.secho("State refreshed successfully.", fg="green", bold=True)
 
     ctx.obj["state_manager"].dump(resource_graph, st.registry)
+
+
+@cli.command()
+@click.option('--compact', is_flag=True, help='Do not pretty print JSON output.')
+@click.argument('paths', nargs=-1)
+@click.pass_context
+def query(ctx, paths, compact):
+    resource_graph = ctx.obj["state_manager"].load(st.registry)
+    path_parser = st.PathParser()
+
+    session = st.create_session()
+
+    for path in paths:
+        head, *tail = path_parser.split(path)
+        if head not in resource_graph.graph.nodes:
+            click.secho(f'{path} does not exist.', fg='red')
+            raise click.Abort
+
+        node = resource_graph.graph.nodes[head]
+        obj = st.Object(node['value'], node['type'])
+        for comp in tail:
+            obj = obj[comp]
+
+        if compact:
+            print(json.dumps(session.resolve(obj)))
+        else:
+            print(json.dumps(session.resolve(obj), indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

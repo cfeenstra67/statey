@@ -10,7 +10,7 @@ import networkx as nx
 
 import statey as st
 from statey import resource, task, exc
-from statey.syms import schemas, utils, types, Object, diff
+from statey.syms import utils, types, Object, diff
 
 
 class Transition(abc.ABC):
@@ -245,6 +245,9 @@ class SingleStateMachine(Machine):
         """
         raise NotImplementedError
 
+    # Overridding this as an "optional" abstract method
+    modify = NotImplemented
+
     @abc.abstractmethod
     async def refresh_state(self, data: Any) -> Optional[Any]:
         """
@@ -271,11 +274,18 @@ class SingleStateMachine(Machine):
             return ModificationAction.NONE
         return ModificationAction.DELETE_AND_RECREATE
 
-    def get_diffconfig(self, differ: diff.Differ) -> diff.DiffConfig:
+    def get_diff(
+        self,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+        session: task.TaskSession,
+    ) -> diff.Diff:
         """
-        Get the DiffConfig object to use for diffing this machine
+        Produce a diff given the current, config and session data
         """
-        return differ.config()
+        differ = session.ns.registry.get_differ(config.state.input_type)
+        current_as_config = st.filter_struct(current.obj, config.type)
+        return differ.diff(current_as_config, config.obj, session)
 
     async def refresh(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
         if current.state.name == self.null_state.name:
@@ -295,11 +305,7 @@ class SingleStateMachine(Machine):
 
         config = config.clone(obj=await self.refresh_config(config.obj))
 
-        differ = session.ns.registry.get_differ(config.state.input_type)
-        diffconfig = self.get_diffconfig(differ)
-
-        current_as_config = st.filter_struct(current.obj, config.type)
-        diff = differ.diff(current_as_config, config.obj, session, diffconfig)
+        diff = self.get_diff(current, config, session)
 
         action = self.get_action(diff)
 
@@ -307,13 +313,16 @@ class SingleStateMachine(Machine):
             return current.obj
 
         if action == ModificationAction.MODIFY:
+            if self.modify is NotImplemented:
+                raise NotImplementedError(f'`modify` has not been defined in {type(self).__name__}.')
             return await self.modify(session, current, config)
 
         if action == ModificationAction.DELETE_AND_RECREATE:
-            ref = await self.delete(session, current)
-            snapshotted = session["post_deletion_snapshot"] << self.DOWN.snapshot(ref)
-            joined_config = config.clone(obj=st.join(config.obj, snapshotted))
-            return await self.create(session, joined_config)
+            raise exc.NullRequired
+            # ref = await self.delete(session, current)
+            # snapshotted = session["post_deletion_snapshot"] << self.DOWN.snapshot(ref)
+            # joined_config = config.clone(obj=st.join(config.obj, snapshotted))
+            # return await self.create(session, joined_config)
 
         raise exc.InvalidModificationAction(action)
 

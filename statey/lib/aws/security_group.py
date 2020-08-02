@@ -1,41 +1,44 @@
 import asyncio
 import contextlib
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 import aioboto3
 import botocore
 
 import statey as st
+from statey.lib.aws import utils
 
 
-SecurityGroupRuleType = st.S.Struct[
-    "cidr_blocks" : ~st.S.Array[st.S.String],
-    "ipv6_cidr_blocks" : ~st.S.Array[st.S.String],
-    "from_port" : ~st.S.Integer,
-    "protocol" : st.S.String,
-    "to_port" : ~st.S.Integer,
-].t
+SecurityGroupRuleType = st.Struct[
+    # Optional args
+    "cidr_blocks" : ~st.Array[str],
+    "ipv6_cidr_blocks" : ~st.Array[str],
+    "from_port" : Optional[int],
+    "protocol" : st.String(default='tcp'),
+    "to_port" : Optional[int],
+]
 
-SecurityGroupConfigType = st.S.Struct[
-    "name" : st.S.String,
-    "description" : st.S.String,
-    "ingress" : ~st.S.Array[SecurityGroupRuleType],
-    "egress" : ~st.S.Array[SecurityGroupRuleType],
-    "vpc_id" : ~st.S.String,
-].t
+SecurityGroupConfigType = st.Struct[
+    "name" : str,
+    "description" : str,
+    # Optional args
+    "ingress" : st.Array[SecurityGroupRuleType](default=()),
+    "egress" : st.Array[SecurityGroupRuleType](default=()),
+    "vpc_id" : Optional[str],
+]
 
-SecurityGroupType = st.S.Struct[
-    "name" : st.S.String,
-    "description" : st.S.String,
-    "ingress" : st.S.Array[SecurityGroupRuleType],
-    "egress" : st.S.Array[SecurityGroupRuleType],
-    "vpc_id" : ~st.S.String,
-    "id" : st.S.String,
-    "owner_id" : st.S.String,
-].t
+SecurityGroupType = st.Struct[
+    "name" : str,
+    "description" : str,
+    "ingress" : st.Array[SecurityGroupRuleType],
+    "egress" : st.Array[SecurityGroupRuleType],
+    "vpc_id" : Optional[str],
+    "id" : str,
+    "owner_id" : str,
+]
 
 
-class SecurityGroupMachine(st.SingleStateMachine):
+class SecurityGroupMachine(st.SimpleMachine):
     """
     Machine for a security group
     """
@@ -98,20 +101,13 @@ class SecurityGroupMachine(st.SingleStateMachine):
 
     async def refresh_config(self, config: st.Object) -> st.Object:
         async with self.client_ctx() as client:
-            vpcs_resp = await client.describe_vpcs(
-                Filters=[{"Name": "isDefault", "Values": ["true"]}]
+            default_vpc = await utils.get_default_vpc(client)
+            return st.replace(
+                config,
+                vpc_id=st.ifnull(config.vpc_id, default_vpc["VpcId"])
             )
-            vpcs = vpcs_resp["Vpcs"]
-            default_vpc = vpcs[0]["VpcId"] if vpcs else None
 
-            @st.function
-            def get_vpc(vpc: Optional[str]) -> Optional[str]:
-                return vpc if vpc is not None else default_vpc
-
-            return st.replace(config, vpc_id=get_vpc(config.vpc_id))
-
-    @st.task.new
-    async def create_sg(self, config: SecurityGroupConfigType) -> SecurityGroupType:
+    async def create_task(self, config: SecurityGroupConfigType) -> SecurityGroupType:
         """
         Create a security group resource
         """
@@ -120,9 +116,10 @@ class SecurityGroupMachine(st.SingleStateMachine):
             if config["vpc_id"] is not None:
                 kws["VpcId"] = config["vpc_id"]
             group = await ec2.create_security_group(**kws)
-            return await self.convert_instance(group)
+            current = await self.convert_instance(group)
+            yield current
+            yield await self.update_rules(current, config)
 
-    @st.task.new
     async def update_rules(
         self, current: SecurityGroupType, config: SecurityGroupConfigType
     ) -> SecurityGroupType:
@@ -191,8 +188,7 @@ class SecurityGroupMachine(st.SingleStateMachine):
 
         return out
 
-    @st.task.new
-    async def delete_sg(self, current: SecurityGroupType) -> st.EmptyType:
+    async def delete_task(self, current: SecurityGroupType) -> st.EmptyType:
         """
         Delete a security group
         """
@@ -200,33 +196,6 @@ class SecurityGroupMachine(st.SingleStateMachine):
             group = await ec2.SecurityGroup(current["id"])
             await group.delete()
             return {}
-
-    async def create(
-        self, session: st.TaskSession, config: st.StateConfig
-    ) -> st.Object:
-        expected = await self.get_expected(config)
-        without_rules = session["create_security_group"] << self.create_sg(config.obj)
-        without_rules_cp = session[
-            "create_security_group_checkpoint"
-        ] << self.UP.snapshot(without_rules)
-        return session["update_rules"] << (
-            self.update_rules(without_rules_cp, config.obj) >> expected
-        )
-
-    async def delete(
-        self, session: st.TaskSession, current: st.StateSnapshot
-    ) -> st.Object:
-        ref = session["delete_security_group"] << self.delete_sg(current.obj)
-        return st.join(st.Object({}, st.EmptyType, session.ns.registry), ref)
-
-    async def modify(
-        self, session: st.TaskSession, current: st.StateSnapshot, config: st.StateConfig
-    ) -> st.Object:
-        expected = await self.get_expected(config)
-        ref = await self.delete(session, current)
-        snapshotted = session["post_delete_snapshot"] << self.DOWN.snapshot(ref)
-        joined_config = config.clone(obj=st.join(config.obj, snapshotted))
-        return await self.create(session, joined_config) >> expected
 
 
 security_group_resource = st.MachineResource("aws_security_group", SecurityGroupMachine)

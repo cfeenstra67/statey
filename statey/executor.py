@@ -357,7 +357,7 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
     def execute(
         self,
         task_graph: TaskGraph,
-        strategy: ExecutionStrategy = ExecutionStrategy.TENTATIVE,
+        strategy: ExecutionStrategy = ExecutionStrategy.EAGER,
         max_signals: int = 2,
     ) -> ExecutionInfo:
 

@@ -55,6 +55,11 @@ class PythonNamespace(session.Namespace):
 
         return semantics.type
 
+    def clone(self) -> session.Namespace:
+        new_inst = PythonNamespace(self.registry, self.path_parser)
+        new_inst.types = self.types.copy()
+        return new_inst
+
 
 class PythonSession(session.Session):
     """
@@ -251,10 +256,13 @@ class PythonSession(session.Session):
         return graph
 
     def clone(self) -> session.Session:
-        new_inst = copy.copy(self)
+        new_inst = PythonSession(self.ns.clone())
         # Since data can only be set at the root level and is immutable while in the
         # session, a shallow copy works fine here.
-        new_inst.data = new_inst.data.copy()
+        new_inst.data = self.data.copy()
+        for plugin in self.pm.get_plugins():
+            if plugin is not self:
+                new_inst.pm.register(plugin)
         return new_inst
 
 

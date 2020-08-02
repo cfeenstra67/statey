@@ -56,11 +56,6 @@ def register_default_plugins(
 
         register_serializers(registry)
 
-    if resources:
-        from statey.lib import register as register_resources
-
-        register_resources(registry)
-
     if differs:
         from statey.syms.diff import register as register_differs
 
@@ -75,6 +70,11 @@ def register_default_plugins(
         from statey.syms.methods import register as register_methods
 
         register_methods(registry)
+
+    if resources:
+        from statey.lib import register as register_resources
+
+        register_resources(registry)
 
     if clear_cache:
         from statey.registry import RegistryCachingWrapper

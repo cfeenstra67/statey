@@ -1,5 +1,7 @@
 import collections
 import dataclasses as dc
+import operator
+from functools import reduce
 from typing import Type as PyType, Dict, Any, Union, Callable, Sequence, Optional
 
 import statey as st
@@ -45,7 +47,8 @@ class ValuePredicatePlugin:
         if not predicate(annotation):
             return None
 
-        return self.type_cls(meta.get("nullable", False))
+        meta = meta.copy()
+        return self.type_cls(meta.pop("nullable", False), meta=meta)
 
 
 @dc.dataclass(frozen=True)
@@ -58,7 +61,7 @@ class AnyPlugin:
     def get_type(
         self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]
     ) -> types.Type:
-        return types.AnyType()
+        return types.AnyType(meta=meta)
 
 
 @dc.dataclass(frozen=True)
@@ -86,15 +89,20 @@ class ParseSequencePlugin:
         if utils.extract_optional_annotation(annotation) is not None:
             return None
         element_type = registry.get_type(inner) if inner else registry.any_type
-        return self.array_type_cls(element_type, meta.get("nullable", False))
+        meta = meta.copy()
+        return self.array_type_cls(element_type, meta.pop("nullable", False), meta=meta)
 
     @st.hookimpl
     def infer_type(self, obj: Any, registry: "Registry") -> types.Type:
         if not isinstance(obj, (list, tuple)):
             return None
-        element_types = {registry.infer_type(item) for item in obj}
-        if len(element_types) != 1 or element_types == {types.AnyType()}:
+        element_types = [registry.infer_type(item) for item in obj]
+        if not element_types:
             return None
+        if len(element_types) > 1:
+            all_same = reduce(operator.eq, element_types)
+            if not all_same or element_types[0] != types.AnyType():
+                return None
         return types.ArrayType(element_types.pop(), False)
 
 
@@ -119,7 +127,8 @@ class ParseDataClassPlugin:
             syms_type = registry.get_type(field_annotation)
             syms_field = types.StructField(dc_field.name, syms_type)
             fields.append(syms_field)
-        instance = self.struct_type_cls(tuple(fields), meta.get("nullable", False))
+        meta = meta.copy()
+        instance = self.struct_type_cls(tuple(fields), meta.pop("nullable", False), meta=meta)
         # Register encoding hooks
         instance.pm.register(
             EncodeDataClassPlugin(self.dataclass_cls, self.struct_type_cls)
@@ -212,7 +221,11 @@ class BasicObjectBehaviors:
         self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]
     ) -> types.Type:
         if isinstance(annotation, types.Type):
-            return annotation
+            meta = meta.copy()
+            type_as_nullable = annotation.with_nullable(meta.pop('nullable', annotation.nullable))
+            type_meta = type_as_nullable.meta.copy()
+            type_meta.update(meta)
+            return type_as_nullable.with_meta(type_meta)
         return None
 
 

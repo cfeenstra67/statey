@@ -21,6 +21,7 @@ class Encoder(abc.ABC):
     """
 	An encoder encodes data of some with possibly native types info some format
 	"""
+    type: types.Type
 
     @abc.abstractmethod
     def encode(self, type: types.Type, value: Any) -> Any:
@@ -65,19 +66,10 @@ def create_encoder_plugin_manager():
     return pm
 
 
-@dc.dataclass(frozen=True)
-class DefaultEncoder(Encoder, utils.Cloneable):
+class HookHandlingEncoder(Encoder):
     """
-	The default encoder just handles hooks properly, doesn't do any actual encoding
-	"""
-
-    pm: pluggy.PluginManager = dc.field(
-        init=False,
-        default_factory=create_encoder_plugin_manager,
-        compare=False,
-        repr=False,
-    )
-
+    Handles hooks properly in encode() and decode()
+    """
     def encode(self, value: Any) -> Any:
         result = self.pm.hook.encode(value=value)
         return value if result is None else result
@@ -85,6 +77,19 @@ class DefaultEncoder(Encoder, utils.Cloneable):
     def decode(self, value: Any) -> Any:
         result = self.pm.hook.decode(value=value)
         return value if result is None else result
+
+
+@dc.dataclass(frozen=True)
+class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
+    """
+	The default encoder just handles hooks properly, doesn't do any actual encoding
+	"""
+    pm: pluggy.PluginManager = dc.field(
+        init=False,
+        default_factory=create_encoder_plugin_manager,
+        compare=False,
+        repr=False,
+    )
 
     @st.hookimpl
     def get_encoder(self, type: types.Type) -> Encoder:
@@ -100,7 +105,7 @@ class DefaultEncoder(Encoder, utils.Cloneable):
 
 
 @dc.dataclass(frozen=True)
-class MarshmallowEncoder(DefaultEncoder):
+class MarshmallowEncoder(HookHandlingEncoder):
     """
 	Encodeable helper to get all functionality from a field factory
 	"""
@@ -122,7 +127,7 @@ class MarshmallowEncoder(DefaultEncoder):
         raise NotImplementedError
 
     def marshmallow_field(self, encoding: bool) -> ma.fields.Field:
-        kws = self._marshmallow_field_kws(self.type.nullable)
+        kws = self._marshmallow_field_kws(self.type.nullable, self.type.meta)
         base = self.base_marshmallow_field(encoding)
         return utils.PossiblySymbolicField(base, self.type, self.registry, **kws)
 
@@ -144,15 +149,25 @@ class MarshmallowEncoder(DefaultEncoder):
             return super().decode(value)
 
     @staticmethod
-    def _marshmallow_field_kws(nullable: bool) -> Dict[str, Any]:
+    def _marshmallow_field_kws(nullable: bool, meta: Dict[str, Any]) -> Dict[str, Any]:
+        default = meta.get('default', utils.MISSING)
+        validate = meta.get('validator', utils.MISSING)
         if nullable:
-            return {
+            kws = {
                 "required": False,
-                "default": None,
-                "missing": None,
+                "default": None if utils.is_missing(default) else default,
+                "missing": None if utils.is_missing(default) else default,
                 "allow_none": True,
             }
-        return {"required": True}
+        elif utils.is_missing(default):
+            kws = {"required": True}
+        else:
+            kws = {'missing': default, 'default': default}
+
+        if not utils.is_missing(validate):
+            kws['validate'] = validate
+
+        return kws
 
 
 class MarshmallowValueEncoder(MarshmallowEncoder):
@@ -210,7 +225,7 @@ class ArrayEncoder(MarshmallowEncoder):
     element_encoder: Encoder
 
     def base_marshmallow_field(self, encoding: bool) -> ma.fields.Field:
-        kws = self._marshmallow_field_kws(self.element_encoder.type.nullable)
+        kws = self._marshmallow_field_kws(self.element_encoder.type.nullable, self.element_encoder.type.meta)
         if encoding:
             kws["serialize"] = lambda x: x
             kws["deserialize"] = self.element_encoder.encode
@@ -244,7 +259,7 @@ class StructEncoder(MarshmallowEncoder):
     def marshmallow_schema(self, encoding: bool) -> ma.Schema:
         fields = {}
         for name, encoder in self.field_encoders.items():
-            kws = self._marshmallow_field_kws(encoder.type.nullable)
+            kws = self._marshmallow_field_kws(encoder.type.nullable, encoder.type.meta)
             if encoding:
                 kws["serialize"] = lambda x: x
                 kws["deserialize"] = encoder.encode

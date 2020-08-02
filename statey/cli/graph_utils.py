@@ -2,7 +2,6 @@ import asyncio
 import dataclasses as dc
 import io
 import textwrap as tw
-import traceback
 import time
 from typing import Sequence, Dict, Any, Optional, Tuple, Callable
 
@@ -136,9 +135,22 @@ def color_for_status(status: TaskStatus) -> Optional[str]:
 
 
 def truncate_string(value: str, length: int) -> str:
-    if len(value) <= length:
+    unstyled_len = len(click.unstyle(value))
+    styled_len = len(value)
+
+    style_chars = styled_len - unstyled_len
+
+    if unstyled_len <= length:
         return value
-    return value[: length - 3] + "..."
+    return value[: length - style_chars] + "..."
+
+
+def ljust(value: str, length: int) -> str:
+    unstyled_len = len(click.unstyle(value))
+    styled_len = len(value)
+    style_chars = styled_len - unstyled_len
+
+    return value.ljust(length + style_chars)
 
 
 class ColoredTypeRenderer(types.TypeStringRenderer):
@@ -249,12 +261,36 @@ class PlanNodeSummary:
         )
 
     def data_to_string(self, max_width: int) -> str:
+
+        should_diff = False
         if (
             self.plan_node.current_type == self.plan_node.config_type
             and self.plan_node.current_type != types.EmptyType
         ):
+            should_diff = True
+        
+        if not should_diff and self.plan_node.current_type and self.plan_node.config_type:
+            try:
+                caster = st.registry.get_caster(self.plan_node.current_type, self.plan_node.config_type)
+            except st.exc.NoCasterFound:
+                pass
+            else:
+                from statey.syms.casters import ForceCaster
+
+                if isinstance(caster, ForceCaster):
+                    should_diff = True
+
+        if should_diff:
             differ = st.registry.get_differ(self.plan_node.current_type)
+            config_differ = None
+            if self.plan_node.config_state:
+                config_differ = st.registry.get_differ(self.plan_node.config_state.input_type)
+
             diff = differ.diff(self.plan_node.current_data, self.plan_node.config_data)
+            config_diff = []
+            if config_differ is not None:
+                config_diff = config_differ.diff(self.plan_node.current_data, self.plan_node.config_data)
+
             current_lines = []
             config_lines = []
             path_parser = PathParser()
@@ -262,33 +298,45 @@ class PlanNodeSummary:
             if not diff:
                 return click.style("<no diff>", bold=True)
 
+            def diff_style_current_name(name):
+                og_styled = self._style_current_name(name)
+                if name in config_diff:
+                    return click.style(og_styled, bg='red')
+                return og_styled
+
+            def diff_style_config_name(name):
+                og_styled = self._style_config_name(name)
+                if name in config_diff:
+                    return click.style(og_styled, bg='red')
+                return og_styled
+
             for subdiff in diff:
                 current_diff_lines = data_to_lines(
-                    subdiff.left, name_func=self._style_current_name
+                    subdiff.left, name_func=diff_style_current_name
                 )
                 path_str = path_parser.join(subdiff.path)
 
                 if len(current_diff_lines) <= 1:
                     current_lines.append(
-                        f"{self._style_current_name(path_str)}:"
+                        f"{diff_style_current_name(path_str)}:"
                         f' {"".join(current_diff_lines)}'
                     )
                 else:
-                    current_lines.append(f"{self._style_current_name(path_str)}:")
+                    current_lines.append(f"{diff_style_current_name(path_str)}:")
                     current_lines.extend(
                         map(lambda x: tw.indent(x, "  "), current_diff_lines)
                     )
 
                 config_diff_lines = data_to_lines(
-                    subdiff.right, name_func=self._style_config_name
+                    subdiff.right, name_func=diff_style_config_name
                 )
                 if len(config_diff_lines) <= 1:
                     config_lines.append(
-                        f"{self._style_config_name(path_str)}:"
+                        f"{diff_style_config_name(path_str)}:"
                         f' {"".join(config_diff_lines)}'
                     )
                 else:
-                    config_lines.append(f"{self._style_config_name(path_str)}:")
+                    config_lines.append(f"{diff_style_config_name(path_str)}:")
                     config_lines.extend(
                         map(lambda x: tw.indent(x, "  "), config_diff_lines)
                     )
@@ -318,7 +366,7 @@ class PlanNodeSummary:
         if not current_lines:
             return ""
 
-        max_line_length = max(map(len, current_lines))
+        max_line_length = max(map(lambda x: len(click.unstyle(x)), current_lines))
         buffer_length = 6
 
         column_split = min((max_width - buffer_length) // 2, max_line_length)
@@ -334,7 +382,7 @@ class PlanNodeSummary:
             # return ' => ' if idx % 2 == 0 else '    '
 
         out_lines = [
-            "".join([current_line.ljust(column_split), sep(idx), config_line])
+            "".join([ljust(current_line, column_split), sep(idx), config_line])
             for idx, (current_line, config_line) in enumerate(
                 zip(current_lines, config_lines)
             )
@@ -501,7 +549,7 @@ class ExecutionSummary:
             out.setdefault(status, []).append(node)
         return out
 
-    def to_string(self, indent: int = 2) -> str:
+    def to_string(self, indent: int = 2, full_trace: bool = False) -> str:
         """
 		Render a human-readable view describing what occurred in this
 		exec info
@@ -552,7 +600,10 @@ class ExecutionSummary:
                 name = click.style(
                     task_name, bold=True, fg=color_for_status(TaskStatus.FAILED)
                 )
-                lines.append(f"- {name}:\n{error.format_exception()}\n")
+                if full_trace:
+                    lines.append(f"- {name}:\n{error.format_exception()}\n")
+                else:
+                    lines.append(f"- {name}: {error.format_error_message()}")
             return "\n".join(lines)
 
         lines = [

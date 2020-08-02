@@ -8,34 +8,34 @@ import botocore
 import statey as st
 
 
-VpcConfigType = st.S.Struct[
-    "cidr_block": st.S.String,
-    "instance_tenancy": st.S.String,
+VpcConfigType = st.Struct[
+    "cidr_block": str,
+    "instance_tenancy": str,
     # "enable_dns_support": st.S.Boolean,
     # "enable_dns_hostnames": st.S.Boolean,
     # "enable_classiclink": st.S.Boolean,
     # "enable_classiclink_dns_support": st.S.Boolean,
-    "assign_generated_ipv6_cidr_block": st.S.Boolean,
+    "assign_generated_ipv6_cidr_block": bool,
     # Missing: Tags
-].t
+]
 
 
-VpcType = st.S.Struct[
-    "cidr_block": st.S.String,
-    "instance_tenancy": st.S.String,
+VpcType = st.Struct[
+    "cidr_block": str,
+    "instance_tenancy": str,
     # "enable_dns_support": st.S.Boolean,
     # "enable_dns_hostnames": st.S.Boolean,
     # "enable_classiclink": st.S.Boolean,
     # "enable_classiclink_dns_support": st.S.Boolean,
-    "assign_generated_ipv6_cidr_block": st.S.Boolean,
-    "id": st.S.String,
-    "main_route_table_id": ~st.S.String,
-    "default_network_acl_id": ~st.S.String,
-    "ipv6_association_id": ~st.S.String,
-    "ipv6_cidr_block": ~st.S.String,
-    "owner_id": st.S.Integer,
+    "assign_generated_ipv6_cidr_block": bool,
+    "id": str,
+    "main_route_table_id": Optional[str],
+    "default_network_acl_id": Optional[str],
+    "ipv6_association_id": Optional[str],
+    "ipv6_cidr_block": Optional[str],
+    "owner_id": int,
     # Missing: Tags
-].t
+]
 
 
 class VpcMachine(st.SimpleMachine):

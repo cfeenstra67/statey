@@ -503,3 +503,18 @@ def scope_update_handler(handler: Callable[[Any, str, Any], None]):
             handler(frame, key, val)
 
     return differ
+
+
+def check_dag(graph: nx.DiGraph) -> None:
+    """
+    Check if the given graph is a DAG, raising NotADagError otherwise
+    """
+    try:
+        cycle = nx.find_cycle(graph)
+    except nx.NetworkXNoCycle:
+        return
+
+    edges_left, edges_right = zip(*cycle)
+    cycle_path = edges_left + edges_right[-1:]
+
+    raise exc.NotADagError(graph, cycle_path)

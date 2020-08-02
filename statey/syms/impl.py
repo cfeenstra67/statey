@@ -353,7 +353,7 @@ class Future(FunctionalBehaviorMixin, ObjectImplementation):
             raise NotImplementedError
         return self.return_type
 
-    def object_repr(self, obj: "Object") -> str:
+    def object_repr(self, obj: Object) -> str:
         return f"{type(self).__name__}[{obj._type}]({self.result.result})"
 
 
@@ -362,6 +362,14 @@ class Unknown(ObjectImplementation):
     """
     Some value that is not known
     """
+    def __class_getitem__(self, item: Any) -> Object:
+        """
+        Get an Unknown object with the given type
+        """
+        import statey as st
+
+        typ = st.registry.get_type(item)
+        return st.Object(Unknown(return_type=typ))
 
     obj: Optional[Object] = None
     refs: Sequence[Object] = ()
@@ -434,7 +442,8 @@ class Unknown(ObjectImplementation):
         return self.obj._registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f"{type(self).__name__}[{obj._type}]({self.obj})"
+        post = '' if self.obj is None else f'({self.obj})'
+        return f"{type(self).__name__}[{obj._type}]{post}"
 
 
 @dc.dataclass(frozen=True)
