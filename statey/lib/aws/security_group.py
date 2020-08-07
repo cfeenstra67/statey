@@ -55,6 +55,29 @@ class SecurityGroupMachine(st.SimpleMachine):
         async with aioboto3.client("ec2") as client:
             yield client
 
+
+    def get_diff(
+        self,
+        current: st.StateSnapshot,
+        config: st.StateConfig,
+        session: st.TaskSession,
+    ) -> st.Diff:
+
+        differ = session.ns.registry.get_differ(config.state.input_type)
+        diffconfig = differ.config()
+
+        def compare_unordered(arr1, arr2):
+            if arr1 is None or arr2 is None:
+                return arr1 == arr2
+            return all(el1 in arr2 for el1 in arr1) and all(el2 in arr1 for el2 in arr2)
+
+        diffconfig.set_comparison('ingress', compare_unordered)
+        diffconfig.set_comparison('egress', compare_unordered)
+
+        current_as_config = st.filter_struct(current.obj, config.type)
+        out_diff = differ.diff(current_as_config, config.obj, session, diffconfig)
+        return out_diff
+
     async def convert_instance(self, instance: "SecurityGroup") -> Dict[str, Any]:
         out = {"id": instance.id}
         (

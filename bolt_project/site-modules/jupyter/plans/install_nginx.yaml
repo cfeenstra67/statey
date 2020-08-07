@@ -1,0 +1,50 @@
+parameters:
+  targets:
+    type: TargetSpec
+  # src:
+  #   type: String
+
+steps:
+
+  - name: setup_resources
+    targets: $targets
+    resources: 
+      - type: jupyter::nginx_server
+        title: cam_test
+      # - package: nginx
+      #   parameters:
+      #     latest: true
+
+      # - type: nginx::resource::server
+      #   title: my_server.blah.com
+      #   parameters:
+      #     www_root: /var/www/html
+      #     ssl_prefer_server_ciphers: off
+      #     ssl_protocols: TLSv1.2
+      #     ssl_ciphers: AES256
+      #     spdy: off
+      #     http2: off
+      #     proxy_read_timeout: 60
+      #     proxy_send_tmeout: 60
+      #     proxy_set_header: []
+
+  # - name: install_nginx
+  #   task: package
+  #   targets: $targets
+  #   parameters:
+  #     action: install
+  #     name: nginx
+  #   description: "Install nginx using the packages task"
+  # - name: install_nginx
+  #   command: amazon-linux-extras install -y nginx1.12
+  # - name: start_nginx
+  #   task: service
+  #   targets: $targets
+  #   parameters:
+  #     action: start
+  #     service: nginx
+  # - name: start_apache
+  #   script: apache/start_apache.sh
+  #   targets: $targets
+  #   description: "Starting Apache service"
+

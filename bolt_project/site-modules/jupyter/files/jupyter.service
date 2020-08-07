@@ -1,0 +1,32 @@
+# service name:     jupyter.service 
+# path:             /lib/systemd/system/jupyter.service
+
+# After Ubuntu 16.04, Systemd becomes the default.
+# Ref: https://gist.github.com/whophil/5a2eab328d2f8c16bb31c9ceaf23164f
+
+[Unit]
+Description=Jupyter Notebook Server
+
+[Service]
+Type=simple
+PIDFile=/run/jupyter.pid
+
+EnvironmentFile=/opt/jupyter/config/env
+
+# Jupyter Notebook: change PATHs as needed for your system
+ExecStart=/opt/anaconda/envs/notebook/bin/jupyter lab --config=/opt/jupyter/config/config.py
+
+# ExecStart=/usr/local/bin/jupyter-notebook --config=/home/fermi/.jupyter/jupyter_notebook_config.py
+
+# In case you want to use jupyter-lab 
+# ExecStart=/usr/local/bin/jupyter-lab --config=/home/fermi/.jupyter/jupyter_notebook_config.py
+
+User=root
+Group=root
+WorkingDirectory=/opt/jupyter/notebooks
+Restart=always
+RestartSec=10
+#KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
