@@ -212,7 +212,7 @@ def ifnull(obj: Object, otherwise: Any) -> Object:
     def _ifnull(first: obj._type) -> non_nullable:
         return otherwise if first is None else first
 
-    _ifnull.__name__ = 'ifnull'
+    _ifnull.__name__ = "ifnull"
     return function(_ifnull)(obj, otherwise)
 
 
@@ -231,11 +231,7 @@ def struct_drop(obj: Union[Object, types.Type], *fields: str) -> Object:
                 continue
             type_fields.append(field)
 
-        return st.StructType(
-            type_fields,
-            nullable=obj.nullable,
-            meta=obj.meta
-        )
+        return st.StructType(type_fields, nullable=obj.nullable, meta=obj.meta)
 
     if not hasattr(obj._type, "fields"):
         raise TypeError(f"Invalid input type for replace(): {obj._type}")
@@ -250,7 +246,9 @@ def struct_drop(obj: Union[Object, types.Type], *fields: str) -> Object:
     return res
 
 
-def struct_add(obj: Union[Object, types.Type], *fields: Sequence[Tuple[str, Any, types.Type]]) -> Object:
+def struct_add(
+    obj: Union[Object, types.Type], *fields: Sequence[Tuple[str, Any, types.Type]]
+) -> Object:
     """
     Add the given fields to `obj`
     """
@@ -267,13 +265,9 @@ def struct_add(obj: Union[Object, types.Type], *fields: Sequence[Tuple[str, Any,
                 typ = st.registry.get_type(typ)
                 type_fields.append(types.Field(name, typ))
             else:
-                raise ValueError(f'Invalid tuple length: {len(tup)} for {tup}.')
+                raise ValueError(f"Invalid tuple length: {len(tup)} for {tup}.")
 
-        return st.StructType(
-            type_fields,
-            nullable=obj.nullable,
-            meta=obj.meta
-        )
+        return st.StructType(type_fields, nullable=obj.nullable, meta=obj.meta)
 
     if not hasattr(obj._type, "fields"):
         raise TypeError(f"Invalid input type for replace(): {obj._type}")
@@ -289,15 +283,13 @@ def struct_add(obj: Union[Object, types.Type], *fields: Sequence[Tuple[str, Any,
             name, obj, typ = tup
             obj = Object(obj, typ)
         else:
-            ValueError(f'Invalid tuple length: {len(tup)} for {tup}.')
+            ValueError(f"Invalid tuple length: {len(tup)} for {tup}.")
 
         type_fields.append(types.Field(name, obj._type))
         values[name] = obj
 
     new_type = st.StructType(
-        type_fields,
-        nullable=obj._type.nullable,
-        meta=obj._type.meta
+        type_fields, nullable=obj._type.nullable, meta=obj._type.meta
     )
     return Object(values, new_type)
 
@@ -306,6 +298,7 @@ class _StructSymbolFactory:
     """
     Utility for simply create struct objects
     """
+
     def new(self, fields: Sequence[Tuple[str, Any]]) -> Object:
         out_fields = []
         for name, value in fields:

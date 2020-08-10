@@ -27,16 +27,20 @@ class NotADagError(StateyError):
     """
     Error indicating that some graph is not a DAG
     """
+
     def __init__(self, graph: "DiGraph", path: Sequence[str]) -> None:
         self.graph = graph
         self.path = path
-        super().__init__(f'Graph {repr(graph)} is not a DAG! Cycle found: {" -> ".join(path)}.')
+        super().__init__(
+            f'Graph {repr(graph)} is not a DAG! Cycle found: {" -> ".join(path)}.'
+        )
 
 
 class ErrorDuringPlanning(PlanError):
     """
     Generic error wrapping during plan()
     """
+
     def __init__(self, exception: Exception) -> None:
         self.exception = exception
         super().__init__(
@@ -92,9 +96,11 @@ class NoEncoderFound(SymsTypeError):
 	Error to indicate we could not find an encoder for some type
 	"""
 
-    def __init__(self, type: "Type") -> None:
+    def __init__(self, type: "Type", serializable: bool = False) -> None:
         self.type = type
-        super().__init__(f"No encoder found for type: {type}.")
+        super().__init__(
+            f"No encoder found for type: {type} (serializable={serializable})."
+        )
 
 
 class NoSemanticsFound(SymsTypeError):
@@ -275,11 +281,13 @@ class ResolutionError(SessionError):
     Error indicating that some exception was encountered during resolution
     """
 
-    def __init__(self, obj: "Object", exception: Exception) -> None:
-        self.obj = obj
+    def __init__(self, stack: "ResolutionStack", exception: Exception) -> None:
+        self.stack = stack
         self.exception = exception
+        obj = self.stack.get_object(self.stack.symbol_id)
         super().__init__(
-            f"Encountered exception while resolving {obj}: {type(exception).__name__}: {exception}"
+            f"Resolution stack:\n{stack.format_stack()}\n"
+            f"Encountered exception while resolving {obj}: {type(exception).__name__}: {exception}."
         )
 
 

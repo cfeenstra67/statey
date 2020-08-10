@@ -394,7 +394,11 @@ class PlanNode:
             #     input_ref = node.config_input_task()
             #     edges.add((config_output_task, input_ref))
 
-            check_set = {(current_ref, current_input_task)} if self.current_action else {(config_ref, config_input_task)}
+            check_set = (
+                {(current_ref, current_input_task)}
+                if self.current_action
+                else {(config_ref, config_input_task)}
+            )
 
             if not check_set & edges:
                 input_ref = node.current_input_task()
@@ -988,11 +992,10 @@ class DefaultMigrator(Migrator):
     #         # try:
 
     #         # except Exception as err:
-    #         #     snapshot = 
+    #         #     snapshot =
     #         #     error = exc.ErrorDuringPlanning(
     #         #         node, pre
     #         #     )
-
 
     #     plan = Plan(tuple(plan_nodes), config_session, state_graph)
     #     # This will ensure that the task graph is a valid DAG, not perfect but it will
@@ -1073,7 +1076,9 @@ class DefaultMigrator(Migrator):
                 previous_snapshot = StateSnapshot(previous_resolved, previous_state)
 
                 task_session_base = self.create_task_session()
-                input_ref = task_session_base.ns.new("input", config_state.state.input_type)
+                input_ref = task_session_base.ns.new(
+                    "input", config_state.state.input_type
+                )
                 task_session_base.set_data("input", config_partial_resolved)
 
                 task_session = task_session_base.clone()
@@ -1096,14 +1101,19 @@ class DefaultMigrator(Migrator):
                         null_bound_config = StateConfig({}, resource.s.null_state)
 
                         old_task_session = self.create_task_session()
-                        old_task_session.ns.new("input", resource.s.null_state.input_type)
+                        old_task_session.ns.new(
+                            "input", resource.s.null_state.input_type
+                        )
                         old_task_session.set_data("input", {})
                         # old_task_session = task_session_base.clone()
                         og_plan_output = await resource.plan(
                             previous_snapshot, null_bound_config, old_task_session
                         )
 
-                        if isinstance(og_plan_output, tuple) and len(og_plan_output) == 2:
+                        if (
+                            isinstance(og_plan_output, tuple)
+                            and len(og_plan_output) == 2
+                        ):
                             og_output_ref, og_graph_ref = og_plan_output
                         else:
                             og_output_ref, og_graph_ref = og_plan_output, og_plan_output
@@ -1123,7 +1133,7 @@ class DefaultMigrator(Migrator):
                             config_state=resource.s.null_state,
                             previous_state=previous_state,
                             resource=resource,
-                            input_symbol=null_snapshot.obj
+                            input_symbol=null_snapshot.obj,
                         )
 
                 except Exception as err:

@@ -1,7 +1,9 @@
 import copy
+import dataclasses as dc
 import sys
+import textwrap as tw
 from itertools import chain, product
-from typing import Any, Union, Iterator
+from typing import Any, Union, Iterator, Sequence, Callable
 
 import networkx as nx
 from networkx.algorithms.dag import (
@@ -61,6 +63,63 @@ class PythonNamespace(session.Namespace):
         return new_inst
 
 
+@dc.dataclass(frozen=True)
+class ResolutionStack:
+    """
+    A resolution stack object contains logic to format stack information
+    for resolution errors
+    """
+
+    dag: nx.DiGraph
+    symbol_id: Any
+
+    def get_object(self, symbol_id: Any) -> Object:
+        return self.dag.nodes[symbol_id]["symbol"]
+
+    def _format_dag_stack(
+        self,
+        dag: nx.DiGraph,
+        start: Any,
+        repr: Callable[[Any], str] = repr,
+        parent_size: int = 0,
+    ) -> Sequence[str]:
+        sym = self.get_object(start)
+        lines = []
+        successors = list(dag.succ[start])
+        child_parent_size = len(successors)
+        fmt = (lambda x: tw.indent(x, "  ")) if parent_size > 1 else (lambda x: x)
+        for sym_id in successors:
+            sym_stack = self._format_dag_stack(dag, sym_id, repr, child_parent_size)
+            lines.append(fmt(sym_stack))
+        prefix = "-" if child_parent_size > 0 else "*"
+        lines.append(f"{prefix} {repr(sym)}")
+        return "\n".join(lines)
+
+    def format_dag_stack(
+        self, dag: nx.DiGraph, repr: Callable[[Any], str] = repr
+    ) -> str:
+        """
+        Format the given DAG into a stack string
+        """
+        return self._format_dag_stack(dag, self.symbol_id, repr=repr)
+
+    def get_stack_dag(self) -> nx.DiGraph:
+        """
+        Get the part of the DAG we want to visualize in the stack
+        """
+        descendants = list(nx.descendants(self.dag, self.symbol_id)) + [self.symbol_id]
+        dag_copy = self.dag.copy()
+        utils.subgraph_retaining_dependencies(dag_copy, descendants)
+        return dag_copy
+
+    def format_stack(self, repr: Callable[[Any], str] = repr) -> str:
+        """
+        Format this resolution stack into a string
+        """
+        dag = self.get_stack_dag()
+        return self.format_dag_stack(dag, repr=repr)
+
+
 class PythonSession(session.Session):
     """
 	A pure python session implementation for resolving objects.
@@ -76,7 +135,7 @@ class PythonSession(session.Session):
 		"""
         typ = self.ns.resolve(key)
 
-        encoder = self.ns.registry.get_encoder(typ)
+        encoder = self.ns.registry.get_encoder(typ, serializable=True)
         encoded_data = encoder.encode(data)
 
         root, *rel_path = self.ns.path_parser.split(key)
@@ -190,7 +249,8 @@ class PythonSession(session.Session):
                 return handle_symbol_id(symbol_id)
             except Exception as err:
                 _, _, tb = sys.exc_info()
-                exception = exc.ResolutionError(dag.nodes[symbol_id]["symbol"], err)
+                resolution_stack = ResolutionStack(dag, symbol_id)
+                exception = exc.ResolutionError(resolution_stack, err)
             raise exception.with_traceback(tb)
 
         for symbol_id in list(topological_sort(dag)):

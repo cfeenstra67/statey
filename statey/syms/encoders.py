@@ -2,12 +2,7 @@ import abc
 import base64
 
 import dataclasses as dc
-from typing import (
-    Type as PyType,
-    Any,
-    Dict,
-    Optional
-)
+from typing import Type as PyType, Any, Dict, Optional
 
 import marshmallow as ma
 import pickle
@@ -21,6 +16,7 @@ class Encoder(abc.ABC):
     """
 	An encoder encodes data of some with possibly native types info some format
 	"""
+
     type: types.Type
 
     @abc.abstractmethod
@@ -70,6 +66,7 @@ class HookHandlingEncoder(Encoder):
     """
     Handles hooks properly in encode() and decode()
     """
+
     def encode(self, value: Any) -> Any:
         result = self.pm.hook.encode(value=value)
         return value if result is None else result
@@ -84,6 +81,7 @@ class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
     """
 	The default encoder just handles hooks properly, doesn't do any actual encoding
 	"""
+
     pm: pluggy.PluginManager = dc.field(
         init=False,
         default_factory=create_encoder_plugin_manager,
@@ -92,14 +90,18 @@ class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
     )
 
     @st.hookimpl
-    def get_encoder(self, type: types.Type) -> Encoder:
+    def get_encoder(
+        self, type: types.Type, registry: "Registry", serializable: bool
+    ) -> Encoder:
         """
 		The basic encoder behavior just calls hooks, but we should pass through plugins too.
 		"""
+        if serializable:
+            return None
         me_copy = self.clone()
         for plugin in self.pm.get_plugins():
             me_copy.pm.register(plugin)
-        for plugin in type.pm.get_plugins():
+        for plugin in type.meta.get("plugins", []):
             me_copy.pm.register(plugin)
         return me_copy
 
@@ -150,8 +152,8 @@ class MarshmallowEncoder(HookHandlingEncoder):
 
     @staticmethod
     def _marshmallow_field_kws(nullable: bool, meta: Dict[str, Any]) -> Dict[str, Any]:
-        default = meta.get('default', utils.MISSING)
-        validate = meta.get('validator', utils.MISSING)
+        default = meta.get("default", utils.MISSING)
+        validate = meta.get("validator", utils.MISSING)
         if nullable:
             kws = {
                 "required": False,
@@ -162,10 +164,10 @@ class MarshmallowEncoder(HookHandlingEncoder):
         elif utils.is_missing(default):
             kws = {"required": True}
         else:
-            kws = {'missing': default, 'default': default}
+            kws = {"missing": default, "default": default}
 
         if not utils.is_missing(validate):
-            kws['validate'] = validate
+            kws["validate"] = validate
 
         return kws
 
@@ -177,16 +179,21 @@ class MarshmallowValueEncoder(MarshmallowEncoder):
 
     base_field: ma.fields.Field
     type_cls: PyType[types.Type]
+    serializable: bool
 
     def base_marshmallow_field(self, encoding: bool) -> ma.fields.Field:
         return self.base_field
 
     @classmethod
     @st.hookimpl
-    def get_encoder(cls, type: types.Type, registry: "Registry") -> Encoder:
+    def get_encoder(
+        cls, type: types.Type, registry: "Registry", serializable: bool
+    ) -> Encoder:
+        if serializable and not cls.serializable:
+            return None
         if isinstance(type, cls.type_cls):
             instance = cls(type, registry)
-            for plugin in type.pm.get_plugins():
+            for plugin in type.meta.get("plugins", []):
                 instance.pm.register(plugin)
             return instance
         return None
@@ -196,24 +203,28 @@ class MarshmallowValueEncoder(MarshmallowEncoder):
 class IntegerEncoder(MarshmallowValueEncoder):
     type_cls = types.IntegerType
     base_field = ma.fields.Int()
+    serializable = True
 
 
 @dc.dataclass(frozen=True)
 class FloatEncoder(MarshmallowValueEncoder):
     type_cls = types.FloatType
     base_field = ma.fields.Float()
+    serializable = True
 
 
 @dc.dataclass(frozen=True, repr=False)
 class BooleanEncoder(MarshmallowValueEncoder):
     type_cls = types.BooleanType
     base_field = ma.fields.Bool()
+    serializable = True
 
 
 @dc.dataclass(frozen=True, repr=False)
 class StringEncoder(MarshmallowValueEncoder):
     type_cls = types.StringType
     base_field = ma.fields.Str()
+    serializable = True
 
 
 @dc.dataclass(frozen=True, repr=False)
@@ -225,7 +236,9 @@ class ArrayEncoder(MarshmallowEncoder):
     element_encoder: Encoder
 
     def base_marshmallow_field(self, encoding: bool) -> ma.fields.Field:
-        kws = self._marshmallow_field_kws(self.element_encoder.type.nullable, self.element_encoder.type.meta)
+        kws = self._marshmallow_field_kws(
+            self.element_encoder.type.nullable, self.element_encoder.type.meta
+        )
         if encoding:
             kws["serialize"] = lambda x: x
             kws["deserialize"] = self.element_encoder.encode
@@ -238,12 +251,14 @@ class ArrayEncoder(MarshmallowEncoder):
 
     @classmethod
     @st.hookimpl
-    def get_encoder(cls, type: types.Type, registry: "Registry") -> Encoder:
+    def get_encoder(
+        cls, type: types.Type, registry: "Registry", serializable: bool
+    ) -> Encoder:
         if not isinstance(type, types.ArrayType):
             return None
-        element_encoder = registry.get_encoder(type.element_type)
+        element_encoder = registry.get_encoder(type.element_type, serializable)
         instance = cls(type, registry, element_encoder)
-        for plugin in type.pm.get_plugins():
+        for plugin in type.meta.get("plugins", []):
             instance.pm.register(plugin)
         return instance
 
@@ -271,14 +286,16 @@ class StructEncoder(MarshmallowEncoder):
 
     @classmethod
     @st.hookimpl
-    def get_encoder(cls, type: types.Type, registry: "Registry") -> Encoder:
+    def get_encoder(
+        cls, type: types.Type, registry: "Registry", serializable: bool
+    ) -> Encoder:
         if not isinstance(type, types.StructType):
             return None
         encoders = {}
         for field in type.fields:
-            encoders[field.name] = registry.get_encoder(field.type)
+            encoders[field.name] = registry.get_encoder(field.type, serializable)
         instance = cls(type, registry, encoders)
-        for plugin in type.pm.get_plugins():
+        for plugin in type.meta.get("plugins", []):
             instance.pm.register(plugin)
         return instance
 
@@ -313,16 +330,68 @@ class NativeFunctionEncoder(StructEncoder):
 
     @classmethod
     @st.hookimpl
-    def get_encoder(cls, type: types.Type, registry: "Registry") -> Encoder:
+    def get_encoder(
+        cls, type: types.Type, registry: "Registry", serializable: bool
+    ) -> Encoder:
         if not isinstance(type, types.NativeFunctionType):
             return None
         as_struct = types.StructType(type.fields, False)
-        struct_encoder = registry.get_encoder(as_struct)
+        struct_encoder = registry.get_encoder(as_struct, serializable)
         return cls(type, registry, struct_encoder.field_encoders)
 
 
-# Intentionally a list--this can be mutated
+@dc.dataclass(frozen=True, repr=False)
+class MapEncoder(MarshmallowEncoder):
+    """
+    An array with some element type
+    """
+
+    key_encoder: Encoder
+    value_encoder: Encoder
+
+    def base_marshmallow_field(self, encoding: bool) -> ma.fields.Field:
+        key_kws = self._marshmallow_field_kws(
+            self.key_encoder.type.nullable, self.key_encoder.type.meta
+        )
+        if encoding:
+            key_kws["serialize"] = lambda x: x
+            key_kws["deserialize"] = self.key_encoder.encode
+        else:
+            key_kws["serialize"] = lambda x: x
+            key_kws["deserialize"] = self.key_encoder.decode
+
+        key_field = utils.SingleValueFunction(**key_kws)
+
+        value_kws = self._marshmallow_field_kws(
+            self.value_encoder.type.nullable, self.value_encoder.type.meta
+        )
+        if encoding:
+            value_kws["serialize"] = lambda x: x
+            value_kws["deserialize"] = self.value_encoder.encode
+        else:
+            value_kws["serialize"] = lambda x: x
+            value_kws["deserialize"] = self.value_encoder.decode
+
+        value_field = utils.SingleValueFunction(**value_kws)
+        return ma.fields.Dict(keys=key_field, values=value_field)
+
+    @classmethod
+    @st.hookimpl
+    def get_encoder(
+        cls, type: types.Type, registry: "Registry", serializable: bool
+    ) -> Encoder:
+        if not isinstance(type, types.MapType):
+            return None
+        key_encoder = registry.get_encoder(type.key_type, serializable)
+        value_encoder = registry.get_encoder(type.value_type, serializable)
+        instance = cls(type, registry, key_encoder, value_encoder)
+        for plugin in type.meta.get("plugins", []):
+            instance.pm.register(plugin)
+        return instance
+
+
 ENCODER_CLASSES = [
+    DefaultEncoder(),
     IntegerEncoder,
     FloatEncoder,
     BooleanEncoder,
@@ -330,6 +399,7 @@ ENCODER_CLASSES = [
     ArrayEncoder,
     StructEncoder,
     NativeFunctionEncoder,
+    MapEncoder,
 ]
 
 
@@ -339,7 +409,7 @@ try:
 except ImportError:
     import warnings
 
-    warnings.warn("Dill is not installed", RuntimeWarning)
+    warnings.warn("Dill is not installed.", RuntimeWarning)
 else:
 
     @dc.dataclass(frozen=True)
@@ -358,18 +428,18 @@ try:
 except ImportError:
     import warnings
 
-    warnings.warn("Cloudpickle is not installed", RuntimeWarning)
+    warnings.warn("Cloudpickle is not installed.", RuntimeWarning)
 else:
 
     @dc.dataclass(frozen=True)
-    class CloudPickleEncoder(NativeFunctionEncoder):
+    class CloudPickleFunctionEncoder(NativeFunctionEncoder):
         """
         cloudpickle-based python function encoder
         """
 
         module: Any = cloudpickle
 
-    ENCODER_CLASSES.append(CloudPickleEncoder)
+    ENCODER_CLASSES.append(CloudPickleFunctionEncoder)
 
 
 def register(registry: Optional["Registry"] = None) -> None:

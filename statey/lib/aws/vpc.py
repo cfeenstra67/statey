@@ -9,31 +9,31 @@ import statey as st
 
 
 VpcConfigType = st.Struct[
-    "cidr_block": str,
-    "instance_tenancy": str,
+    "cidr_block":str,
+    "instance_tenancy":str,
     # "enable_dns_support": st.S.Boolean,
     # "enable_dns_hostnames": st.S.Boolean,
     # "enable_classiclink": st.S.Boolean,
     # "enable_classiclink_dns_support": st.S.Boolean,
-    "assign_generated_ipv6_cidr_block": bool,
+    "assign_generated_ipv6_cidr_block":bool,
     # Missing: Tags
 ]
 
 
 VpcType = st.Struct[
-    "cidr_block": str,
-    "instance_tenancy": str,
+    "cidr_block":str,
+    "instance_tenancy":str,
     # "enable_dns_support": st.S.Boolean,
     # "enable_dns_hostnames": st.S.Boolean,
     # "enable_classiclink": st.S.Boolean,
     # "enable_classiclink_dns_support": st.S.Boolean,
-    "assign_generated_ipv6_cidr_block": bool,
-    "id": str,
-    "main_route_table_id": Optional[str],
-    "default_network_acl_id": Optional[str],
-    "ipv6_association_id": Optional[str],
-    "ipv6_cidr_block": Optional[str],
-    "owner_id": int,
+    "assign_generated_ipv6_cidr_block":bool,
+    "id":str,
+    "main_route_table_id" : Optional[str],
+    "default_network_acl_id" : Optional[str],
+    "ipv6_association_id" : Optional[str],
+    "ipv6_cidr_block" : Optional[str],
+    "owner_id":int,
     # Missing: Tags
 ]
 
@@ -42,6 +42,7 @@ class VpcMachine(st.SimpleMachine):
     """
     AWS VPC resource
     """
+
     UP = st.State("UP", VpcConfigType, VpcType)
 
     @contextlib.asynccontextmanager
@@ -54,64 +55,60 @@ class VpcMachine(st.SimpleMachine):
         async with aioboto3.client("ec2") as client:
             yield client
 
-    async def convert_instance(self, data: Dict[str, Any], vpc: "Vpc") -> Dict[str, Any]:
+    async def convert_instance(
+        self, data: Dict[str, Any], vpc: "Vpc"
+    ) -> Dict[str, Any]:
         out = {
-            'id': vpc.id,
-            'assign_generated_ipv6_cidr_block': data['assign_generated_ipv6_cidr_block']
+            "id": vpc.id,
+            "assign_generated_ipv6_cidr_block": data[
+                "assign_generated_ipv6_cidr_block"
+            ],
         }
         (
-            out['cidr_block'],
-            out['instance_tenancy'],
+            out["cidr_block"],
+            out["instance_tenancy"],
             ipv6_associations,
-            out['owner_id']
+            out["owner_id"],
         ) = await asyncio.gather(
             vpc.cidr_block,
             vpc.instance_tenancy,
             vpc.ipv6_cidr_block_association_set,
-            vpc.owner_id
+            vpc.owner_id,
         )
         if ipv6_associations:
             association = ipv6_associations[0]
-            out['ipv6_association_id'] = association['AssociationId']
-            out['ipv6_cidr_block'] = association['Ipv6CidrBlock']
+            out["ipv6_association_id"] = association["AssociationId"]
+            out["ipv6_cidr_block"] = association["Ipv6CidrBlock"]
         else:
-            out['ipv6_association_id'] = None
-            out['ipv6_cidr_block'] = None
+            out["ipv6_association_id"] = None
+            out["ipv6_cidr_block"] = None
 
         async with self.client_ctx() as client:
             main_rt_resp = await client.describe_route_tables(
                 Filters=[
-                    {
-                        'Name': 'vpc-id',
-                        'Values': [vpc.id]
-                    },
-                    {
-                        'Name': 'association.main',
-                        'Values': ['true']
-                    }
+                    {"Name": "vpc-id", "Values": [vpc.id]},
+                    {"Name": "association.main", "Values": ["true"]},
                 ]
             )
             if main_rt_resp["RouteTables"]:
-                out['main_route_table_id'] = main_rt_resp["RouteTables"][0]['RouteTableId']
+                out["main_route_table_id"] = main_rt_resp["RouteTables"][0][
+                    "RouteTableId"
+                ]
             else:
-                out['main_route_table_id'] = None
+                out["main_route_table_id"] = None
 
             default_acl_resp = await client.describe_network_acls(
                 Filters=[
-                    {
-                        'Name': 'vpc-id',
-                        'Values': [vpc.id]
-                    },
-                    {
-                        'Name': 'default',
-                        'Values': ['true']
-                    }
+                    {"Name": "vpc-id", "Values": [vpc.id]},
+                    {"Name": "default", "Values": ["true"]},
                 ]
             )
             if default_acl_resp["NetworkAcls"]:
-                out['default_network_acl_id'] = default_acl_resp["NetworkAcls"][0]['NetworkAclId']
+                out["default_network_acl_id"] = default_acl_resp["NetworkAcls"][0][
+                    "NetworkAclId"
+                ]
             else:
-                out['default_network_acl_id'] = None
+                out["default_network_acl_id"] = None
 
         return out
 
@@ -130,9 +127,9 @@ class VpcMachine(st.SimpleMachine):
         """
         async with self.resource_ctx() as ec2:
             vpc = await ec2.create_vpc(
-                CidrBlock=config['cidr_block'],
-                InstanceTenancy=config['instance_tenancy'],
-                AmazonProvidedIpv6CidrBlock=config['assign_generated_ipv6_cidr_block']
+                CidrBlock=config["cidr_block"],
+                InstanceTenancy=config["instance_tenancy"],
+                AmazonProvidedIpv6CidrBlock=config["assign_generated_ipv6_cidr_block"],
             )
             yield await self.convert_instance(config, vpc)
             await vpc.wait_until_available()

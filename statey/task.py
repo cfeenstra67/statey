@@ -65,7 +65,7 @@ class ErrorInfo:
         """
         Return a single-line error message from this exception.
         """
-        return f'{self.exc_type.__name__}: {self.exc_value}'
+        return f"{self.exc_type.__name__}: {self.exc_value}"
 
 
 @dc.dataclass(frozen=True)

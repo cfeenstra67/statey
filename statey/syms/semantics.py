@@ -168,6 +168,82 @@ class ArraySemantics(Semantics):
 
 
 @dc.dataclass(frozen=True)
+class MapSemantics(Semantics):
+    """
+    Semantics for MapTypes
+    """
+
+    type: types.Type
+    key_semantics: Semantics
+    key_encoder: "Encoder"
+    value_semantics: Semantics
+
+    def attr_semantics(self, attr: Any) -> Optional[Semantics]:
+        try:
+            encoded_attr = self.key_encoder.encode(attr)
+        except st.exc.InputValidationError:
+            return None
+        return self.value_semantics
+
+    def get_attr(self, value: Any, attr: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, Object):
+            return value[attr]
+        encoded_attr = self.key_encoder.encode(attr)
+        try:
+            return value[encoded_attr]
+        except KeyError:
+            return None
+
+    def map_objects(self, func: Callable[[Any], Any], value: Any) -> Any:
+        if isinstance(value, Object):
+            return func(value)
+        if value is None:
+            return None
+        return {
+            self.key_semantics.map_objects(func, key): self.value_semantics.map_objects(
+                func, val
+            )
+            for key, val in value.items()
+        }
+
+    def clone(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, Object):
+            return value.clone()
+        return {
+            self.key_semantics.clone(key): self.value_semantics.clone(val)
+            for key, val in value.items()
+        }
+
+    def expand(self, value: Any) -> Any:
+
+        from statey.syms import api
+
+        def func(x):
+            if x is None:
+                return None
+            return {
+                self.key_semantics.expand(key): self.value_semantics.expand(val)
+                for key, val in x.items()
+            }
+
+        return api.map(func, value)
+
+    @classmethod
+    @st.hookimpl
+    def get_semantics(cls, type: types.Type, registry: st.Registry) -> Semantics:
+        if not isinstance(type, types.MapType):
+            return None
+        key_semantics = registry.get_semantics(type.key_type)
+        key_encoder = registry.get_encoder(type.key_type)
+        value_semantics = registry.get_semantics(type.value_type)
+        return cls(type, key_semantics, key_encoder, value_semantics)
+
+
+@dc.dataclass(frozen=True)
 class StructSemantics(Semantics):
     """
     Semantics for StructTypes
@@ -229,12 +305,12 @@ class StructSemantics(Semantics):
 
 
 # Intentionally a list--this can be mutated if desired
-SEMANTICS_CLASSES = [ValueSemantics, ArraySemantics, StructSemantics]
+SEMANTICS_CLASSES = [ValueSemantics, ArraySemantics, MapSemantics, StructSemantics]
 
 
 def register(registry: Optional["Registry"] = None) -> None:
     """
-    Replace default encoder with encoders defined here
+    Register semantics plugins
     """
     if registry is None:
         registry = st.registry

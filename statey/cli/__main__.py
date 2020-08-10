@@ -63,9 +63,7 @@ task_heartbeat_opt = click.option(
 )
 
 full_trace_opt = click.option(
-    '--fulltrace',
-    is_flag=True,
-    help="Print full stack traces for task errors."
+    "--fulltrace", is_flag=True, help="Print full stack traces for task errors."
 )
 
 
@@ -253,8 +251,8 @@ def refresh(ctx):
 
 
 @cli.command()
-@click.option('--compact', is_flag=True, help='Do not pretty print JSON output.')
-@click.argument('paths', nargs=-1)
+@click.option("--compact", is_flag=True, help="Do not pretty print JSON output.")
+@click.argument("paths", nargs=-1)
 @click.pass_context
 def query(ctx, paths, compact):
     resource_graph = ctx.obj["state_manager"].load(st.registry)
@@ -265,11 +263,11 @@ def query(ctx, paths, compact):
     for path in paths:
         head, *tail = path_parser.split(path)
         if head not in resource_graph.graph.nodes:
-            click.secho(f'{path} does not exist.', fg='red')
+            click.secho(f"{path} does not exist.", fg="red")
             raise click.Abort
 
         node = resource_graph.graph.nodes[head]
-        obj = st.Object(node['value'], node['type'])
+        obj = st.Object(node["value"], node["type"])
         for comp in tail:
             obj = obj[comp]
 

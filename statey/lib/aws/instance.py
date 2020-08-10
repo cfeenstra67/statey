@@ -13,8 +13,8 @@ InstanceConfigType = st.Struct[
     "instance_type" : st.String,
     "key_name" : st.String,
     # Optional args
-    "vpc_security_group_ids": ~st.Array[st.String],
-    "subnet_id": ~st.String,
+    "vpc_security_group_ids" : ~st.Array[st.String],
+    "subnet_id" : ~st.String,
     # "availability_zone": ~st.String,
     # "placement_group": ~st.String,
     # "tenancy": ~st.String,
@@ -31,19 +31,19 @@ InstanceConfigType = st.Struct[
 
 
 InstanceType = st.Struct[
-    "ami" : str,
-    "instance_type" : str,
-    "key_name" : str,
+    "ami":str,
+    "instance_type":str,
+    "key_name":str,
     # Exported
-    "id" : str,
-    "ebs_optimized" : bool,
-    "placement_group" : str,
+    "id":str,
+    "ebs_optimized":bool,
+    "placement_group":str,
     "public_ip" : Optional[str],
-    "public_dns" : str,
-    "private_ip" : str,
-    "private_dns" : str,
-    "vpc_security_group_ids": st.Array[st.String],
-    "subnet_id": st.String,
+    "public_dns":str,
+    "private_ip":str,
+    "private_dns":str,
+    "vpc_security_group_ids" : st.Array[st.String],
+    "subnet_id" : st.String,
 ]
 
 
@@ -51,6 +51,7 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
     """
     Machine for an EC2 Instance
     """
+
     service: str = "ec2"
 
     UP = st.State("UP", InstanceConfigType, InstanceType)
@@ -69,7 +70,7 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
             out["public_dns"],
             out["key_name"],
             security_groups,
-            out['subnet_id']
+            out["subnet_id"],
         ) = await asyncio.gather(
             instance.image_id,
             instance.ebs_optimized,
@@ -81,10 +82,10 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
             instance.public_dns_name,
             instance.key_name,
             instance.security_groups,
-            instance.subnet_id
+            instance.subnet_id,
         )
         out["placement_group"] = placement["GroupName"]
-        out['vpc_security_group_ids'] = [group['GroupId'] for group in security_groups]
+        out["vpc_security_group_ids"] = [group["GroupId"] for group in security_groups]
         return out
 
     async def refresh_state(self, data: Any) -> Optional[Any]:
@@ -112,8 +113,8 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
             # Pass it along to the element-level logic
             return NotImplemented
 
-        diffconfig.set_comparison('subnet_id', ignore_if_new_none)
-        diffconfig.set_comparison('vpc_security_group_ids', ignore_if_new_none)
+        diffconfig.set_comparison("subnet_id", ignore_if_new_none)
+        diffconfig.set_comparison("vpc_security_group_ids", ignore_if_new_none)
 
         current_as_config = st.filter_struct(current.obj, config.type)
         out_diff = differ.diff(current_as_config, config.obj, session, diffconfig)
@@ -121,12 +122,12 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
 
     async def get_expected(self, config: st.StateConfig) -> Any:
         replaced = st.replace(
-            config.obj, False,
+            config.obj,
+            False,
             subnet_id=st.ifnull(config.obj.subnet_id, st.Unknown[st.String]),
             vpc_security_group_ids=st.ifnull(
-                config.obj.vpc_security_group_ids,
-                st.Unknown[st.Array[st.String]]
-            )
+                config.obj.vpc_security_group_ids, st.Unknown[st.Array[st.String]]
+            ),
         )
         return st.fill_unknowns(replaced, config.state.output_type)
 
@@ -136,16 +137,16 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
         """
         async with self.resource_ctx() as ec2:
             kws = {
-                'ImageId': config['ami'],
-                'InstanceType': config['instance_type'],
-                'KeyName': config['key_name'],
-                'MinCount': 1,
-                'MaxCount': 1
+                "ImageId": config["ami"],
+                "InstanceType": config["instance_type"],
+                "KeyName": config["key_name"],
+                "MinCount": 1,
+                "MaxCount": 1,
             }
-            if config['vpc_security_group_ids'] is not None:
-                kws['SecurityGroupIds'] = config['vpc_security_group_ids']
-            if config['subnet_id'] is not None:
-                kws['SubnetId'] = config['subnet_id']
+            if config["vpc_security_group_ids"] is not None:
+                kws["SecurityGroupIds"] = config["vpc_security_group_ids"]
+            if config["subnet_id"] is not None:
+                kws["SubnetId"] = config["subnet_id"]
 
             (instance,) = await ec2.create_instances(**kws)
             # Checkpoint after creation

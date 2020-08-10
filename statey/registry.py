@@ -28,12 +28,12 @@ class Registry(abc.ABC):
     @abc.abstractmethod
     def infer_type(self, obj: Any) -> types.Type:
         """
-		Attempt to infer the type of `obj`, falling back on self.any_type
+		Attempt to infer the type of `obj`, falling back on Any
 		"""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_encoder(self, type: types.Type) -> "Encoder":
+    def get_encoder(self, type: types.Type, serializable: bool = False) -> "Encoder":
         """
 		Given a type, return an Encoder instance to encode the type, raising an exc.NoEncoderFound to
 		indicate failure
@@ -140,9 +140,13 @@ class RegistryHooks:
 		"""
 
     @hookspec(firstresult=True)
-    def get_encoder(self, type: types.Type, registry: Registry) -> "Encoder":
+    def get_encoder(
+        self, type: types.Type, registry: Registry, serializable: bool
+    ) -> "Encoder":
         """
 		Handle the given type and produce an Encoder instance that can encode values of that type
+        `serializable` indicates that encoded values that the Encoder produces should
+        always be JSON-serializable
 		"""
 
     @hookspec(firstresult=True)
@@ -186,7 +190,9 @@ class RegistryHooks:
         """
 
     @hookspec(firstresult=True)
-    def get_caster(self, from_type: types.Type, to_type: types.Type, registry: Registry) -> "Caster":
+    def get_caster(
+        self, from_type: types.Type, to_type: types.Type, registry: Registry
+    ) -> "Caster":
         """
         Hook to get a caster object to cast from one type to another
         """
@@ -206,6 +212,7 @@ class HookBasedRegistry(Registry):
     """
     Registry based on pluggy hooks
     """
+
     pm: pluggy.PluginManager = dc.field(
         init=False,
         default_factory=create_registry_plugin_manager,
@@ -233,10 +240,12 @@ class HookBasedRegistry(Registry):
         annotation = utils.infer_annotation(obj)
         return self.get_type(annotation)
 
-    def get_encoder(self, type: types.Type) -> "Encoder":
-        handled = self.pm.hook.get_encoder(type=type, registry=self)
+    def get_encoder(self, type: types.Type, serializable: bool = False) -> "Encoder":
+        handled = self.pm.hook.get_encoder(
+            type=type, registry=self, serializable=serializable
+        )
         if handled is None:
-            raise exc.NoEncoderFound(type)
+            raise exc.NoEncoderFound(type, serializable)
         return handled
 
     def get_semantics(self, type: types.Type) -> "Semantics":
@@ -299,7 +308,9 @@ class HookBasedRegistry(Registry):
         return handled
 
     def get_caster(self, from_type: types.Type, to_type: types.Type) -> "Object":
-        handled = self.pm.hook.get_caster(from_type=from_type, to_type=to_type, registry=self)
+        handled = self.pm.hook.get_caster(
+            from_type=from_type, to_type=to_type, registry=self
+        )
         if handled is None:
             raise exc.NoCasterFound(from_type, to_type)
         return handled
@@ -309,6 +320,7 @@ class RegistryWrapper(Registry):
     """
     Wrapper class to wrap any methods desired simply
     """
+
     registry: Registry
 
     @abc.abstractmethod
@@ -321,46 +333,45 @@ class RegistryWrapper(Registry):
     def get_type(
         self, annotation: Any, meta: Optional[Dict[str, Any]] = None
     ) -> types.Type:
-       return self.wrap('get_type', self.registry.get_type)(annotation, meta)
+        return self.wrap("get_type", self.registry.get_type)(annotation, meta)
 
     def infer_type(self, obj: Any) -> types.Type:
-        return self.wrap('infer_type', self.registry.infer_type)(obj)
+        return self.wrap("infer_type", self.registry.infer_type)(obj)
 
-    def get_encoder(self, type: types.Type) -> "Encoder":
-        return self.wrap('get_encoder', self.registry.get_encoder)(type)
+    def get_encoder(self, type: types.Type, serializable: bool = False) -> "Encoder":
+        return self.wrap("get_encoder", self.registry.get_encoder)(type, serializable)
 
     def get_semantics(self, type: types.Type) -> "Semantics":
-        return self.wrap('get_semantics', self.registry.get_semantics)(type)
+        return self.wrap("get_semantics", self.registry.get_semantics)(type)
 
     def get_type_serializer(self, type: types.Type) -> "TypeSerializer":
-        return self.wrap('get_type_serializer', self.registry.get_type_serializer)(type)
+        return self.wrap("get_type_serializer", self.registry.get_type_serializer)(type)
 
     def get_type_serializer_from_data(self, data: Any) -> "TypeSerializer":
         return self.wrap(
-            'get_type_serializer_from_data',
-            self.registry.get_type_serializer_from_data
+            "get_type_serializer_from_data", self.registry.get_type_serializer_from_data
         )(data)
 
     def get_differ(self, type: types.Type) -> "Differ":
-        return self.wrap('get_differ', self.registry.get_differ)(type)
+        return self.wrap("get_differ", self.registry.get_differ)(type)
 
     def register_resource(self, resource: "Resource") -> None:
-        return self.wrap('register_resource', self.registry.register_resource)(resource)
+        return self.wrap("register_resource", self.registry.register_resource)(resource)
 
     def get_resource(self, name: str) -> "Resource":
-        return self.wrap('get_resource', self.registry.get_resource)(name)
+        return self.wrap("get_resource", self.registry.get_resource)(name)
 
     def get_methods(self, type: types.Type) -> "ObjectMethods":
-        return self.wrap('get_methods', self.registry.get_methods)(type)
+        return self.wrap("get_methods", self.registry.get_methods)(type)
 
     def get_object(self, value: Any) -> "Object":
-        return self.wrap('get_object', self.registry.get_object)(value)
+        return self.wrap("get_object", self.registry.get_object)(value)
 
     def get_caster(self, from_type: types.Type, to_type: types.Type) -> "Object":
-        return self.wrap('get_caster', self.registry.get_caster)(from_type, to_type)
+        return self.wrap("get_caster", self.registry.get_caster)(from_type, to_type)
 
     def register(self, plugin: Any) -> None:
-        return self.wrap('register', self.registry.register)(plugin)
+        return self.wrap("register", self.registry.register)(plugin)
 
 
 @dc.dataclass(frozen=True)
@@ -368,17 +379,20 @@ class RegistryCachingWrapper(RegistryWrapper):
     """
     Wrapper that wraps get_* methods to cache outputs for better performance
     """
+
     registry: Registry
     maxsize: int = dc.field(default=1_000)
     caches: Dict[str, Any] = dc.field(default_factory=dict)
-    cache_methods: Sequence[str] = dc.field(default=(
-        'get_encoder',
-        'get_semantics',
-        'get_type_serializer',
-        'get_differ',
-        'get_methods',
-        'get_caster'
-    ))
+    cache_methods: Sequence[str] = dc.field(
+        default=(
+            "get_encoder",
+            "get_semantics",
+            "get_type_serializer",
+            "get_differ",
+            "get_methods",
+            "get_caster",
+        )
+    )
 
     def wrap(self, name: str, func: Callable[[Any], Any]) -> Callable[[Any], Any]:
         if name not in self.cache_methods:

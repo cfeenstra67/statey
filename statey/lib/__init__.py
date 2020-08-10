@@ -9,7 +9,9 @@ except RuntimeError:
     pass
 
 
-def register(registry: Optional["Registry"] = None, os: bool = True, aws: Optional[bool] = None) -> None:
+def register(
+    registry: Optional["Registry"] = None, os: bool = True, aws: Optional[bool] = None
+) -> None:
     """
     Register all default library resources
     """

@@ -143,6 +143,57 @@ class ArrayTypeSerializer(TypeSerializer):
 
 
 @dc.dataclass(frozen=True)
+class MapTypeSerializer(TypeSerializer):
+    """
+    Type serializer for arrays
+    """
+
+    key_serializer: TypeSerializer
+    value_serializer: TypeSerializer
+
+    def serialize(self, type: types.Type) -> Any:
+        key_type = self.key_serializer.serialize(type.key_type)
+        value_type = self.value_serializer.serialize(type.value_type)
+        return {
+            "type": "map",
+            "nullable": type.nullable,
+            "key_type": key_type,
+            "value_type": value_type,
+        }
+
+    def deserialize(self, data: Any) -> types.Type:
+        key_type = self.key_serializer.deserialize(data["key_type"])
+        value_type = self.value_serializer.deserialize(data["value_type"])
+        return types.ArrayType(
+            key_type=type, value_type=value_type, nullable=data["nullable"]
+        )
+
+    @classmethod
+    @st.hookimpl
+    def get_type_serializer(
+        cls, type: types.Type, registry: "Registry"
+    ) -> "TypeSerializer":
+        if not isinstance(type, types.MapType):
+            return None
+        key_serializer = registry.get_type_serializer(type.key_type)
+        value_serializer = registry.get_type_serializer(type.value_type)
+        return cls(key_serializer, value_serializer)
+
+    @classmethod
+    @st.hookimpl
+    def get_type_serializer_from_data(
+        cls, data: Any, registry: "Registry"
+    ) -> "TypeSerializer":
+        if data.get("type") != "map":
+            return None
+        key_type_data = data["key_type"]
+        key_serializer = registry.get_type_serializer_from_data(key_type_data)
+        value_type_data = data["value_type"]
+        value_serializer = registry.get_type_serializer_from_data(value_type_data)
+        return cls(key_serializer, value_serializer)
+
+
+@dc.dataclass(frozen=True)
 class StructTypeSerializer(TypeSerializer):
     """
 	Type serializer for structs
@@ -207,13 +258,14 @@ TYPE_SERIALIZER_CLASSES = [
     BooleanTypeSerializer,
     StringTypeSerializer,
     ArrayTypeSerializer,
+    MapTypeSerializer,
     StructTypeSerializer,
 ]
 
 
 def register(registry: Optional["Registry"] = None) -> None:
     """
-	Replace default encoder with encoders defined here
+	Register default type serializer classes
 	"""
     if registry is None:
         registry = st.registry

@@ -191,21 +191,39 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
 
     value: Any
     value_type: Optional[types.Type] = None
+    encoded_value: Any = utils.MISSING
+    encoded_value_type: Optional[types.Type] = None
+
+    def get_encoded_value(self, obj: Object) -> Any:
+        """
+        Get the encoded version of this value, calculating it if
+        it hasn't been
+        """
+        # We only want to encode the value once, but we also need to be
+        # careful to encode the value with the encoder from the correct type,
+        # including if `obj` is casted from one type to another (for example adding
+        # a validator)
+        if utils.is_missing(self.encoded_value) or obj._type != self.encoded_value_type:
+            encoder = obj._registry.get_encoder(obj._type)
+            semantics = obj._registry.get_semantics(obj._type)
+            encoded_value = encoder.encode(self.value)
+            expanded_value = semantics.expand(encoded_value)
+
+            self.__dict__["encoded_value"] = expanded_value
+            self.__dict__["encoded_value_type"] = obj._type
+
+        return self.encoded_value
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
-        semantics = obj._registry.get_semantics(obj._type)
-        encoder = obj._registry.get_encoder(obj._type)
-        encoded_value = encoder.encode(self.value)
-        expanded = semantics.expand(encoded_value)
+        expanded = self.get_encoded_value(obj)
 
         syms = []
-
+        semantics = obj._registry.get_semantics(obj._type)
         semantics.map_objects(syms.append, expanded)
         return syms
 
     def apply_alone(self, obj: Object) -> Any:
-        encoder = obj._registry.get_encoder(obj._type)
-        return encoder.encode(self.value)
+        return self.get_encoded_value(obj)
 
     def type(self) -> types.Type:
         if self.value_type is None:
@@ -216,16 +234,20 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         return f"{type(self).__name__}[{obj._type}]({repr(self.value)})"
 
     def get_attr(self, obj: Object, attr: str) -> Any:
+        encoded_value = self.get_encoded_value(obj)
         semantics = obj._registry.get_semantics(obj._type)
-        if self.value is None:
+        if encoded_value is None:
             new_data = None
         else:
-            new_data = semantics.get_attr(self.value, attr)
+            new_data = semantics.get_attr(encoded_value, attr)
         attr_semantics = semantics.attr_semantics(attr)
         if attr_semantics is None:
             raise exc.SymbolAttributeError(obj, attr)
 
-        return Object(Data(new_data), attr_semantics.type, obj._registry)
+        attr_type = attr_semantics.type
+        # Data is already encoded, can pass the encoded values explicitly
+        new_impl = Data(new_data, attr_type, new_data, attr_type)
+        return Object(new_impl, attr_type, registry=obj._registry)
 
 
 @dc.dataclass(frozen=True)
@@ -362,6 +384,7 @@ class Unknown(ObjectImplementation):
     """
     Some value that is not known
     """
+
     def __class_getitem__(self, item: Any) -> Object:
         """
         Get an Unknown object with the given type
@@ -442,7 +465,7 @@ class Unknown(ObjectImplementation):
         return self.obj._registry
 
     def object_repr(self, obj: "Object") -> str:
-        post = '' if self.obj is None else f'({self.obj})'
+        post = "" if self.obj is None else f"({self.obj})"
         return f"{type(self).__name__}[{obj._type}]{post}"
 
 

@@ -174,7 +174,9 @@ class Machine(resource.States, metaclass=MachineMeta):
         if len(states) > 1:
             raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
         if len(states) < 1:
-            raise TypeError(f'"{self.resource_name}" does not have any non-null states.')
+            raise TypeError(
+                f'"{self.resource_name}" does not have any non-null states.'
+            )
         return resource.ResourceState(states[0], self.resource_name)(*args, **kwargs)
 
     @abc.abstractmethod
@@ -314,7 +316,9 @@ class SingleStateMachine(Machine):
 
         if action == ModificationAction.MODIFY:
             if self.modify is NotImplemented:
-                raise NotImplementedError(f'`modify` has not been defined in {type(self).__name__}.')
+                raise NotImplementedError(
+                    f"`modify` has not been defined in {type(self).__name__}."
+                )
             return await self.modify(session, current, config)
 
         if action == ModificationAction.DELETE_AND_RECREATE:

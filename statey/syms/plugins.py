@@ -77,18 +77,14 @@ class ParseSequencePlugin:
         self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]
     ) -> types.Type:
         # Sort of hacky, will behave differently in different python versions (3.7 works)
-        if (
-            not hasattr(annotation, "mro")
-            or not callable(annotation.mro)
-            or collections.abc.Sequence not in annotation.mro()
-        ):
+        if not utils.is_sequence_annotation(annotation):
             return None
 
         inner = utils.extract_inner_annotation(annotation)
         # Optionals are subtypes of themselves I guess?
         if utils.extract_optional_annotation(annotation) is not None:
             return None
-        element_type = registry.get_type(inner) if inner else registry.any_type
+        element_type = registry.get_type(inner) if inner else st.Any
         meta = meta.copy()
         return self.array_type_cls(element_type, meta.pop("nullable", False), meta=meta)
 
@@ -104,6 +100,37 @@ class ParseSequencePlugin:
             if not all_same or element_types[0] != types.AnyType():
                 return None
         return types.ArrayType(element_types.pop(), False)
+
+
+@dc.dataclass(frozen=True)
+class ParseMappingPlugin:
+    """
+    Parse lists and sequences into ArrayTypes
+    """
+
+    map_type_cls: PyType[types.MapType] = types.MapType
+
+    @st.hookimpl
+    def get_type(
+        self, annotation: Any, registry: st.Registry, meta: Dict[str, Any]
+    ) -> types.Type:
+        # Sort of hacky, will behave differently in different python versions (3.7 works)
+        if not utils.is_mapping_annotation(annotation):
+            return None
+
+        inners = utils.extract_inner_annotations(annotation)
+        # Optionals are subtypes of themselves I guess?
+        if utils.extract_optional_annotation(annotation) is not None:
+            return None
+        if inners is not None and len(inners) != 2:
+            return None
+        key_annotation, value_annotation = inners or (None, None)
+        key_type = registry.get_type(key_annotation) if key_annotation else st.Any
+        value_type = registry.get_type(value_annotation) if value_annotation else st.Any
+        meta = meta.copy()
+        return self.map_type_cls(
+            key_type, value_type, meta.pop("nullable", False), meta=meta
+        )
 
 
 @dc.dataclass(frozen=True)
@@ -128,10 +155,15 @@ class ParseDataClassPlugin:
             syms_field = types.StructField(dc_field.name, syms_type)
             fields.append(syms_field)
         meta = meta.copy()
-        instance = self.struct_type_cls(tuple(fields), meta.pop("nullable", False), meta=meta)
-        # Register encoding hooks
-        instance.pm.register(
-            EncodeDataClassPlugin(self.dataclass_cls, self.struct_type_cls)
+        meta.update(
+            {
+                "plugins": [
+                    EncodeDataClassPlugin(self.dataclass_cls, self.struct_type_cls)
+                ]
+            }
+        )
+        instance = self.struct_type_cls(
+            tuple(fields), meta.pop("nullable", False), meta=meta
         )
         return instance
 
@@ -222,7 +254,9 @@ class BasicObjectBehaviors:
     ) -> types.Type:
         if isinstance(annotation, types.Type):
             meta = meta.copy()
-            type_as_nullable = annotation.with_nullable(meta.pop('nullable', annotation.nullable))
+            type_as_nullable = annotation.with_nullable(
+                meta.pop("nullable", annotation.nullable)
+            )
             type_meta = type_as_nullable.meta.copy()
             type_meta.update(meta)
             return type_as_nullable.with_meta(type_meta)
@@ -233,6 +267,7 @@ DEFAULT_PLUGINS = [
     AnyPlugin(),
     HandleOptionalPlugin(),
     ParseSequencePlugin(types.ArrayType),
+    ParseMappingPlugin(types.MapType),
     ValuePredicatePlugin(float, types.FloatType),
     ValuePredicatePlugin(int, types.IntegerType),
     ValuePredicatePlugin(list, types.ArrayType),

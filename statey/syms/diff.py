@@ -44,7 +44,9 @@ class DiffConfig(utils.Cloneable):
         """
         self.path_comparisons[get_path_from_pathlike(path, self.path_parser)] = func
 
-    def get_explicit_comparison(self, path: PathLike) -> Optional[Callable[[Any, Any], bool]]:
+    def get_explicit_comparison(
+        self, path: PathLike
+    ) -> Optional[Callable[[Any, Any], bool]]:
         """
         Get the comparison function for a given path, _only_ if it has been explicitly
         set using set_comparison(). Otherwise, return None
@@ -385,7 +387,94 @@ class StructDiffer(Differ):
         return cls(type, field_differs)
 
 
-DIFFER_HOOKS = [ValueDiffer, ArrayDiffer, StructDiffer]
+@dc.dataclass(frozen=True)
+class MapDiffer(Differ):
+    """
+    Differ for arrays
+    """
+
+    type: types.Type
+    value_differ: Differ
+
+    def element_diffs(self, diff: DiffComponent) -> Sequence[DiffComponent]:
+        """
+        Construct diffs for each of the elements of the givn diff
+        """
+        out = []
+
+        left_keys = set(diff.left)
+        right_keys = set(diff.right)
+
+        for key in left_keys - right_keys:
+            sub_diff = DiffComponent(
+                differ=self.value_differ,
+                left=diff.left[key],
+                right=None,
+                path=tuple(diff.path) + (key,),
+            )
+            out.append(sub_diff)
+
+        for key in right_keys - left_keys:
+            sub_diff = DiffComponent(
+                differ=self.value_differ,
+                left=diff.right[key],
+                right=None,
+                path=tuple(diff.path) + (key,),
+            )
+            out.append(sub_diff)
+
+        for key in left_keys & right_keys:
+            sub_diff = DiffComponent(
+                differ=self.value_differ,
+                left=diff.left[key],
+                right=diff.right[key],
+                path=tuple(diff.path) + (key,),
+            )
+            out.append(sub_diff)
+
+        return out
+
+    def flatten(
+        self, diff: DiffComponent, config: Optional[DiffConfig] = None
+    ) -> Iterator[DiffComponent]:
+        """
+        Yield the diffs for each element in left and right. This assumes these arrays are of the
+        same length
+        """
+        if config is None:
+            config = self.config()
+
+        if diff.left_is_unknown() or diff.right_is_unknown():
+            yield diff
+            return
+
+        explicit_comp = config.get_explicit_comparison(diff.path)
+        if explicit_comp is not None:
+            res = explicit_comp(diff.left, diff.right)
+            if not res:
+                yield diff
+            if res is not NotImplemented:
+                return
+
+        if diff.left is None or diff.right is None:
+            if diff.left is None and diff.right is None:
+                return
+            yield diff
+            return
+
+        for diff in self.element_diffs(diff):
+            yield from diff.flatten(config)
+
+    @classmethod
+    @st.hookimpl
+    def get_differ(cls, type: types.Type, registry: st.Registry) -> "Differ":
+        if not isinstance(type, types.MapType):
+            return None
+        value_differ = registry.get_differ(type.value_type)
+        return cls(type, value_type)
+
+
+DIFFER_HOOKS = [ValueDiffer, ArrayDiffer, StructDiffer, MapDiffer]
 
 
 def register(registry: Optional["Registry"] = None) -> None:

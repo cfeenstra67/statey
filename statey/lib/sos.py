@@ -15,24 +15,24 @@ from statey import (
 from statey.syms import types, utils, Object, impl
 
 
-FileConfigType = st.Struct["location" : str, "data" : str]
+FileConfigType = st.Struct["location":str, "data":str]
 
 
 StatType = st.Struct[
-    "mode" : int,
-    "ino" : int,
-    "dev" : int,
-    "nlink" : int,
-    "uid" : int,
-    "gid" : int,
-    "size" : int,
-    "atime" : float,
-    "mtime" : float,
-    "ctime" : float,
+    "mode":int,
+    "ino":int,
+    "dev":int,
+    "nlink":int,
+    "uid":int,
+    "gid":int,
+    "size":int,
+    "atime":float,
+    "mtime":float,
+    "ctime":float,
 ]
 
 
-FileType = st.Struct["location" : str, "data" : str, "stat": StatType]
+FileType = st.Struct["location":str, "data":str, "stat":StatType]
 
 
 @st.function

@@ -14,13 +14,13 @@ SecurityGroupRuleType = st.Struct[
     "cidr_blocks" : ~st.Array[str],
     "ipv6_cidr_blocks" : ~st.Array[str],
     "from_port" : Optional[int],
-    "protocol" : st.String(default='tcp'),
+    "protocol" : st.String(default="tcp"),
     "to_port" : Optional[int],
 ]
 
 SecurityGroupConfigType = st.Struct[
-    "name" : str,
-    "description" : str,
+    "name":str,
+    "description":str,
     # Optional args
     "ingress" : st.Array[SecurityGroupRuleType](default=()),
     "egress" : st.Array[SecurityGroupRuleType](default=()),
@@ -28,13 +28,13 @@ SecurityGroupConfigType = st.Struct[
 ]
 
 SecurityGroupType = st.Struct[
-    "name" : str,
-    "description" : str,
+    "name":str,
+    "description":str,
     "ingress" : st.Array[SecurityGroupRuleType],
     "egress" : st.Array[SecurityGroupRuleType],
     "vpc_id" : Optional[str],
-    "id" : str,
-    "owner_id" : str,
+    "id":str,
+    "owner_id":str,
 ]
 
 
@@ -55,7 +55,6 @@ class SecurityGroupMachine(st.SimpleMachine):
         async with aioboto3.client("ec2") as client:
             yield client
 
-
     def get_diff(
         self,
         current: st.StateSnapshot,
@@ -71,8 +70,8 @@ class SecurityGroupMachine(st.SimpleMachine):
                 return arr1 == arr2
             return all(el1 in arr2 for el1 in arr1) and all(el2 in arr1 for el2 in arr2)
 
-        diffconfig.set_comparison('ingress', compare_unordered)
-        diffconfig.set_comparison('egress', compare_unordered)
+        diffconfig.set_comparison("ingress", compare_unordered)
+        diffconfig.set_comparison("egress", compare_unordered)
 
         current_as_config = st.filter_struct(current.obj, config.type)
         out_diff = differ.diff(current_as_config, config.obj, session, diffconfig)
@@ -126,8 +125,7 @@ class SecurityGroupMachine(st.SimpleMachine):
         async with self.client_ctx() as client:
             default_vpc = await utils.get_default_vpc(client)
             return st.replace(
-                config,
-                vpc_id=st.ifnull(config.vpc_id, default_vpc["VpcId"])
+                config, vpc_id=st.ifnull(config.vpc_id, default_vpc["VpcId"])
             )
 
     async def create_task(self, config: SecurityGroupConfigType) -> SecurityGroupType:

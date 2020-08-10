@@ -1,27 +1,11 @@
 import abc
 import enum
 import dataclasses as dc
-from typing import (
-    Sequence,
-    Any,
-    Optional,
-    Dict
-)
+from typing import Sequence, Any, Optional, Dict
 
 import pluggy
 
 from statey import create_plugin_manager
-
-
-def create_type_plugin_manager():
-    """
-	Factory function for plugin managers for types, registering any default hook specs
-	"""
-    from .encoders import EncoderHooks
-
-    pm = create_plugin_manager()
-    pm.add_hookspecs(EncoderHooks)
-    return pm
 
 
 class TypeStringToken(enum.Enum):
@@ -57,7 +41,6 @@ class Type(abc.ABC):
     name: str
     nullable: bool
     meta: Dict[str, Any]
-    pm: pluggy.PluginManager
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
         """
@@ -96,8 +79,8 @@ class Type(abc.ABC):
         e.g. IntegerType(True)(nullable=False)
         """
         obj = self
-        if 'nullable' in meta:
-            obj = obj.with_nullable(meta.pop('nullable'))
+        if "nullable" in meta:
+            obj = obj.with_nullable(meta.pop("nullable"))
         current = self.meta.copy()
         current.update(meta)
         return obj.with_meta(current)
@@ -113,15 +96,12 @@ class DataClassMixin(abc.ABC):
     """
     Mixin to define with_nullable() and with_meta() by using dc.replace(...)
     """
+
     def with_nullable(self, nullable: bool) -> Type:
-        inst = dc.replace(self, nullable=nullable)
-        inst.__dict__['pm'] = self.pm
-        return inst
+        return dc.replace(self, nullable=nullable)
 
     def with_meta(self, meta: Dict[str, Any]) -> Type:
-        inst = dc.replace(self, meta=meta)
-        inst.__dict__['pm'] = self.pm
-        return inst
+        return dc.replace(self, meta=meta)
 
 
 class ValueType(Type):
@@ -131,7 +111,6 @@ class ValueType(Type):
 
     nullable: bool
     meta: Dict[str, Any]
-    pm: pluggy.PluginManager
 
     @property
     @abc.abstractmethod
@@ -145,9 +124,6 @@ class AnyType(DataClassMixin, Type):
 	Type that applies to any value. Not a regular dataclass to avoid issues w/ defaults :(
 	"""
 
-    pm: pluggy.PluginManager = dc.field(
-        init=False, default_factory=create_type_plugin_manager, compare=False
-    )
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
 
@@ -167,56 +143,47 @@ class IntegerType(DataClassMixin, NumberType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="integer")
-    pm: pluggy.PluginManager = dc.field(
-        init=False, default_factory=create_type_plugin_manager, compare=False
-    )
+
 
 @dc.dataclass(frozen=True, repr=False)
 class FloatType(DataClassMixin, NumberType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="float")
-    pm: pluggy.PluginManager = dc.field(
-        init=False, default_factory=create_type_plugin_manager, compare=False
-    )
+
 
 @dc.dataclass(frozen=True, repr=False)
 class BooleanType(DataClassMixin, NumberType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="boolean")
-    pm: pluggy.PluginManager = dc.field(
-        init=False, default_factory=create_type_plugin_manager, compare=False
-    )
+
 
 @dc.dataclass(frozen=True, repr=False)
 class StringType(DataClassMixin, ValueType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="string")
-    pm: pluggy.PluginManager = dc.field(
-        init=False, default_factory=create_type_plugin_manager, compare=False
-    )
+
 
 @dc.dataclass(frozen=True, repr=False)
 class ArrayType(DataClassMixin, Type):
     """
 	An array with some element type
 	"""
+
     def __class_getitem__(cls, item: Any) -> Type:
         """
         Create array types
         """
         import statey as st
+
         typ = st.registry.get_type(item)
         return cls(typ)
 
     element_type: Type
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
-    pm: pluggy.PluginManager = dc.field(
-        init=False, default_factory=create_type_plugin_manager, compare=False
-    )
 
     @property
     def name(self) -> str:
@@ -238,9 +205,7 @@ class ArrayType(DataClassMixin, Type):
         """
         Return a copy of this type with the given element type
         """
-        new_inst = dc.replace(self, element_type=element_type)
-        new_inst.__dict__['pm'] = self.pm
-        return new_inst
+        return dc.replace(self, element_type=element_type)
 
 
 @dc.dataclass(frozen=True)
@@ -259,6 +224,7 @@ class StructType(DataClassMixin, Type):
 	A struct contains an ordered sequence of named fields, any of which
 	may or may not be null
 	"""
+
     def __class_getitem__(cls, value: Sequence[slice]) -> "Type":
         """
         Ability to use syntax like StructType["a": 1]
@@ -266,17 +232,19 @@ class StructType(DataClassMixin, Type):
         import statey as st
 
         if not isinstance(value, tuple):
-            value = value,
+            value = (value,)
 
         fields = []
         for item in value:
 
             if not isinstance(item, slice):
-                raise TypeError(f'{item} is not a slice.')
+                raise TypeError(f"{item} is not a slice.")
             if not isinstance(item.start, str):
-                raise TypeError(f'{item.start} is not a string.')
+                raise TypeError(f"{item.start} is not a string.")
             if item.step is not None:
-                raise ValueError(f'{item} contains a non-null step, this is not allowed.')
+                raise ValueError(
+                    f"{item} contains a non-null step, this is not allowed."
+                )
 
             name = item.start
             typ = st.registry.get_type(item.stop)
@@ -287,9 +255,6 @@ class StructType(DataClassMixin, Type):
     fields: Sequence[Field]
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
-    pm: pluggy.PluginManager = dc.field(
-        init=False, default_factory=create_type_plugin_manager, compare=False
-    )
 
     def __post_init__(self) -> None:
         self.__dict__["fields"] = tuple(self.fields)
@@ -338,8 +303,7 @@ class StructType(DataClassMixin, Type):
         Return a copy of this type with the fields replaced
         """
         new_inst = dc.replace(self)
-        new_inst.__dict__['fields'] = tuple(fields)
-        new_inst.__dict__['pm'] = self.pm
+        new_inst.__dict__["fields"] = tuple(fields)
         return new_inst
 
 
@@ -362,14 +326,12 @@ class FunctionType(StructType):
 
     def with_nullable(self, nullable: bool) -> Type:
         new_inst = dc.replace(self)
-        new_inst.__dict__['nullable'] = nullable
-        new_inst.__dict__['pm'] = self.pm
+        new_inst.__dict__["nullable"] = nullable
         return new_inst
 
     def with_meta(self, meta: Dict[str, Any]) -> Type:
         new_inst = dc.replace(self)
-        new_inst.__dict__['meta'] = meta
-        new_inst.__dict__['pm'] = self.pm
+        new_inst.__dict__["meta"] = meta
         return new_inst
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
@@ -437,10 +399,78 @@ class NativeFunctionType(FunctionType):
         return "native_function"
 
 
-# Some exported objects
-Struct = StructType # Alias
+@dc.dataclass(frozen=True, repr=False)
+class MapType(DataClassMixin, Type):
+    """
+    An array with some element type
+    """
 
-Array = ArrayType # Alias
+    def __class_getitem__(cls, item: Any) -> Type:
+        """
+        Create array types
+        """
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise ValueError(f'Expected a tuple of length 2, got "{item}".')
+        key_annotation, value_annotation = item
+
+        import statey as st
+
+        key_type = st.registry.get_type(key_annotation)
+        value_type = st.registry.get_type(value_annotation)
+        return cls(key_type, value_type)
+
+    key_type: Type
+    value_type: Type
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        return "map"
+
+    def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
+        if renderer is None:
+            renderer = TypeStringRenderer()
+        type_name = renderer.render(self.name, TypeStringToken.TYPE_NAME)
+        key_string = self.key_type.render_type_string(renderer)
+        value_string = self.value_type.render_type_string(renderer)
+        suffix = (
+            renderer.render(
+                TypeStringToken.QUESTION_MARK.value, TypeStringToken.QUESTION_MARK
+            )
+            if self.nullable
+            else ""
+        )
+        lbrace = renderer.render(
+            TypeStringToken.LEFT_BRACE.value, TypeStringToken.LEFT_BRACE
+        )
+        rbrace = renderer.render(
+            TypeStringToken.RIGHT_BRACE.value, TypeStringToken.RIGHT_BRACE
+        )
+        comma = renderer.render(TypeStringToken.COMMA.value, TypeStringToken.COMMA)
+        return "".join(
+            [type_name, lbrace, key_string, comma, " ", value_string, rbrace, suffix]
+        )
+
+    def with_key_type(self, key_type: Type) -> Type:
+        """
+        Return a copy of this type with the given key type
+        """
+        return dc.replace(self, key_type=key_type)
+
+    def with_value_type(self, value_type: Type) -> Type:
+        """
+        Return a copy of this type with the given key type
+        """
+        return dc.replace(self, value_type=value_type)
+
+
+# Some exported objects
+Struct = StructType  # Alias
+
+Array = ArrayType  # Alias
+
+Map = MapType  # Alias
 
 Integer = IntegerType()
 

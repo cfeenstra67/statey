@@ -268,10 +268,16 @@ class PlanNodeSummary:
             and self.plan_node.current_type != types.EmptyType
         ):
             should_diff = True
-        
-        if not should_diff and self.plan_node.current_type and self.plan_node.config_type:
+
+        if (
+            not should_diff
+            and self.plan_node.current_type
+            and self.plan_node.config_type
+        ):
             try:
-                caster = st.registry.get_caster(self.plan_node.current_type, self.plan_node.config_type)
+                caster = st.registry.get_caster(
+                    self.plan_node.current_type, self.plan_node.config_type
+                )
             except st.exc.NoCasterFound:
                 pass
             else:
@@ -284,12 +290,16 @@ class PlanNodeSummary:
             differ = st.registry.get_differ(self.plan_node.current_type)
             config_differ = None
             if self.plan_node.config_state:
-                config_differ = st.registry.get_differ(self.plan_node.config_state.input_type)
+                config_differ = st.registry.get_differ(
+                    self.plan_node.config_state.input_type
+                )
 
             diff = differ.diff(self.plan_node.current_data, self.plan_node.config_data)
             config_diff = []
             if config_differ is not None:
-                config_diff = config_differ.diff(self.plan_node.current_data, self.plan_node.config_data)
+                config_diff = config_differ.diff(
+                    self.plan_node.current_data, self.plan_node.config_data
+                )
 
             current_lines = []
             config_lines = []
@@ -301,13 +311,13 @@ class PlanNodeSummary:
             def diff_style_current_name(name):
                 og_styled = self._style_current_name(name)
                 if name in config_diff:
-                    return click.style(og_styled, bg='red')
+                    return click.style(og_styled, bg="red")
                 return og_styled
 
             def diff_style_config_name(name):
                 og_styled = self._style_config_name(name)
                 if name in config_diff:
-                    return click.style(og_styled, bg='red')
+                    return click.style(og_styled, bg="red")
                 return og_styled
 
             for subdiff in diff:

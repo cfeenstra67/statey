@@ -34,7 +34,7 @@ from statey.syms.api import (
     filter_struct,
     ifnull,
     struct_drop,
-    struct_add
+    struct_add,
 )
 
 from statey.syms.diff import Diff, DiffConfig, Differ
@@ -58,6 +58,7 @@ from statey.syms.types import (
     IntegerType,
     FloatType,
     ArrayType,
+    MapType,
     BooleanType,
     Field,
     EmptyType,
@@ -67,7 +68,8 @@ from statey.syms.types import (
     Struct,
     Array,
     Boolean,
-    Any
+    Any,
+    Map,
 )
 
 from statey.resource import (

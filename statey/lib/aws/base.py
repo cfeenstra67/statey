@@ -6,6 +6,7 @@ class AWSMachine:
     """
     A few helper methods for AWS resources
     """
+
     service: str
 
     @contextlib.asynccontextmanager

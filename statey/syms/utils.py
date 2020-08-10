@@ -1,3 +1,4 @@
+import collections
 import dataclasses as dc
 import inspect
 import sys
@@ -51,9 +52,49 @@ def extract_optional_annotation(annotation: Any) -> Any:
 
 
 def extract_inner_annotation(annotation: Any) -> Any:
+    """
+    Extract a single inner annotation from an outer annotation
+    """
+    res = extract_inner_annotations(annotation)
+    if not res:
+        return None
+    return res[0]
+
+
+def extract_inner_annotations(annotation: Any) -> Any:
+    """
+    Extract a all inner annotations from `annotation`
+    """
     if not getattr(annotation, "__args__", None):
         return None
-    return annotation.__args__[0]
+    return annotation.__args__
+
+
+def is_sequence_annotation(annotation: Any) -> bool:
+    """
+    Indicates if the given annotation might be a Sequence[type]
+    """
+    if not hasattr(annotation, "mro"):
+        return False
+    if not callable(annotation.mro):
+        return False
+    if collections.abc.Sequence not in annotation.mro():
+        return False
+    return True
+
+
+def is_mapping_annotation(annotation: Any) -> bool:
+    """
+    Indicates if the given annotation might be a Dict[type] or
+    Mapping[type] annotation
+    """
+    if not hasattr(annotation, "mro"):
+        return False
+    if not callable(annotation.mro):
+        return False
+    if not (dict in annotation.mro() or collections.abc.Mapping in annotation.mro()):
+        return False
+    return True
 
 
 def dict_get_path(
@@ -118,7 +159,14 @@ class PossiblySymbolicField(ma.fields.Field):
 	A field that will validate the type if given a symbol or the value if given anything else
 	"""
 
-    def __init__(self, field: ma.fields.Field, type: "Type", registry: "Registry", *args, **kwargs) -> None:
+    def __init__(
+        self,
+        field: ma.fields.Field,
+        type: "Type",
+        registry: "Registry",
+        *args,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.field = field
         self.type = type

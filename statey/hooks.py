@@ -27,7 +27,7 @@ def register_default_plugins(
     differs: bool = True,
     methods: bool = True,
     casters: bool = True,
-    clear_cache: bool = True
+    clear_cache: bool = True,
 ) -> None:
     """
 	Convenience method to register all of the default provided hooks for the given

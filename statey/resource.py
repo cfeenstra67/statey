@@ -480,7 +480,9 @@ class ResourceGraph:
 
         self.graph.add_edges_from([(dep, key) for dep in dependencies])
 
-    async def refresh(self, registry: st.Registry, finalize: bool = False) -> Iterator[str]:
+    async def refresh(
+        self, registry: st.Registry, finalize: bool = False
+    ) -> Iterator[str]:
         """
 		Refresh the current state of all resources in the graph. Returns an asynchronous
 		generator that yields keys as they finish refreshing successfully.
