@@ -21,7 +21,7 @@ from statey.syms.path import PathParser
 PathLike = Union[Sequence[Any], str]
 
 
-def get_path_from_pathlike(path_like: PathLike, path_parser: PathParser) -> str:
+def get_path_from_pathlike(path_like: PathLike, path_parser: PathParser) -> Sequence[Any]:
     if isinstance(path_like, str):
         path_like = path_parser.split(path_like)
     return path_like

@@ -81,7 +81,13 @@ class SymsTypeError(SymsError, TypeError):
 	"""
 
 
-class NoTypeFound(SymsTypeError):
+class NotFoundError(SymsTypeError):
+    """
+    Base class for errors indicating some object can't be found
+    """
+
+
+class NoTypeFound(NotFoundError):
     """
 	Error to indicate we could not find a type for some annotation
 	"""
@@ -91,7 +97,7 @@ class NoTypeFound(SymsTypeError):
         super().__init__(f"No type found for annotation: {annotation}.")
 
 
-class NoEncoderFound(SymsTypeError):
+class NoEncoderFound(NotFoundError):
     """
 	Error to indicate we could not find an encoder for some type
 	"""
@@ -103,7 +109,7 @@ class NoEncoderFound(SymsTypeError):
         )
 
 
-class NoSemanticsFound(SymsTypeError):
+class NoSemanticsFound(NotFoundError):
     """
 	Error to indicate we could not find semantics for some type
 	"""
@@ -113,7 +119,7 @@ class NoSemanticsFound(SymsTypeError):
         super().__init__(f"No semantics found for type: {type}.")
 
 
-class NoResourceFound(SymsError):
+class NoResourceFound(NotFoundError):
     """
 	Error to indicate no resource could be found for a given name
 	"""
@@ -123,7 +129,7 @@ class NoResourceFound(SymsError):
         super().__init__(f"No resource registered for name: {resource_name}.")
 
 
-class NoDifferFound(SymsError):
+class NoDifferFound(NotFoundError):
     """
     Error to indicate we could not find a differ for some type
     """
@@ -133,7 +139,7 @@ class NoDifferFound(SymsError):
         super().__init__(f"No differ found for type: {type}.")
 
 
-class NoObjectFound(SymsError):
+class NoObjectFound(NotFoundError):
     """
     Error indicating we could not create an object from an arbitrary value
     """
@@ -143,7 +149,7 @@ class NoObjectFound(SymsError):
         super().__init__(f"Unable to create an object from {value}.")
 
 
-class NoCasterFound(SymsError):
+class NoCasterFound(NotFoundError):
     """
     Error indicating we could not create an object from an arbitrary value
     """
@@ -154,7 +160,7 @@ class NoCasterFound(SymsError):
         super().__init__(f"Unable to find caster from {from_type} to {to_type}.")
 
 
-class NoTypeSerializerFound(SymsError):
+class NoTypeSerializerFound(NotFoundError):
     """
 	Base class for NoTypeSerializerFound errors
 	"""
@@ -178,6 +184,108 @@ class NoTypeSerializerFoundForData(NoTypeSerializerFound):
     def __init__(self, data: Any) -> None:
         self.data = data
         super().__init__(f"No resource registered for data: {data}.")
+
+
+class NoObjectImplementationSerializerFound(NotFoundError):
+    """
+    Error indicating that an ObjectImplementation serializer couldn't
+    be found
+    """
+
+
+class NoObjectImplementationSerializerFoundForImpl(NoObjectImplementationSerializerFound):
+    """
+    Error for the get_impl_serializer() method
+    """
+    def __init__(self, impl: "ObjectImplementation", type: "Type") -> None:
+        self.impl = impl
+        self.type = type
+        super().__init__(
+            f'No serializer found for object implementation: {impl}, type: {type}'
+        )
+
+
+class NoObjectImplementationSerializerFoundForData(NoObjectImplementationSerializerFound):
+    """
+    Error for the get_impl_serializer_from_data() method
+    """
+    def __init__(self, data: Any) -> None:
+        self.data = data
+        super().__init__(
+            f'No object implementation serializer found for data: {data}'
+        )
+
+
+class NoObjectSerializerFound(NotFoundError):
+    """
+    Error indicating a serializer could not be found for an object
+    """
+
+
+class NoObjectSerializerFoundForObject(NoObjectSerializerFound):
+    """
+    Error for the get_object_serializer() method
+    """
+    def __init__(self, obj: "Object") -> None:
+        self.obj = obj
+        super().__init__(f'No serializer found for object: {obj}')
+
+
+class NoObjectSerializerFoundForData(NoObjectSerializerFound):
+    """
+    Error for the get_object_serializer_from_data() method
+    """
+    def __init__(self, data: Any) -> None:
+        self.data = data
+        super().__init__(f'No object serializer found for data: {data}')
+
+
+class NoSessionSerializerFound(NotFoundError):
+    """
+    Error indicating a serializer could not be found for a session
+    """
+
+
+class NoSessionSerializerFoundForSession(NoSessionSerializerFound):
+    """
+    Error for the get_session_serializer() method
+    """
+    def __init__(self, session: "Session") -> None:
+        self.session = session
+        super().__init__(f'No serializer found for session: {session}')
+
+
+class NoSessionSerializerFoundForData(NoSessionSerializerFound):
+    """
+    Error for the get_session_serializer_from_data() method
+    """
+    def __init__(self, data: Any) -> None:
+        self.data = data
+        super().__init__(f'No session serializer found for data: {data}')
+
+
+class NoNamespaceSerializerFound(NotFoundError):
+    """
+    Error indicating a serializer could not be found for a namespace
+    """
+
+
+class NoNamespaceSerializerFoundForNamespace(NoNamespaceSerializerFound):
+    """
+    Error for the get_namespace_serializer() method
+    """
+    def __init__(self, ns: "Namespace") -> None:
+        self.ns = ns
+        super().__init__(f'No serializer found for namespace: {ns}')
+
+
+class NoNamespaceSerializerFoundForData(NoNamespaceSerializerFound):
+    """
+    Error for the get_namespace_serializer_from_data() method
+    """
+    def __init__(self, data: Any) -> None:
+        self.data = data
+        super().__init__(f'No namespace serializer found for data: {data}')
 
 
 class NamespaceError(SymsError):

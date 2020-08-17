@@ -31,13 +31,6 @@ class ObjectImplementation(base.AttributeAccess):
         """
         raise NotImplementedError
 
-    def apply_alone(self, obj: Object) -> Any:
-        """
-        Object implementations may not depend on other objects and thus can
-        be trivially resolved this way. Default behavior is to return NotImplemented
-        """
-        raise NotImplementedError
-
     @abc.abstractmethod
     def map(self, obj: Object, function: func.Function) -> Object:
         """
@@ -45,11 +38,18 @@ class ObjectImplementation(base.AttributeAccess):
         """
         raise NotImplementedError
 
-    def call(self, obj: Object, args: Sequence[Any], kwargs: Dict[str, Any]) -> Object:
+    def apply_alone(self, obj: Object) -> Any:
         """
-        Some object implementations can apply arguments
+        Object implementations may not depend on other objects and thus can
+        be trivially resolved this way. Default behavior is to return NotImplemented
         """
         raise NotImplementedError
+
+    # def call(self, obj: Object, args: Sequence[Any], kwargs: Dict[str, Any]) -> Object:
+    #     """
+    #     Some object implementations can apply arguments
+    #     """
+    #     raise NotImplementedError
 
     @property
     def id(self) -> Any:
@@ -58,7 +58,7 @@ class ObjectImplementation(base.AttributeAccess):
         """
         return id(self)
 
-    def object_repr(self, obj: "Object") -> str:
+    def object_repr(self, obj: Object) -> str:
         """
         Render a string representation of an object with this implementation
         """
@@ -194,7 +194,7 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
     encoded_value: Any = utils.MISSING
     encoded_value_type: Optional[types.Type] = None
 
-    def get_encoded_value(self, obj: Object) -> Any:
+    def get_encoded_value(self, type: types.Type, registry: "Registry") -> Any:
         """
         Get the encoded version of this value, calculating it if
         it hasn't been
@@ -203,19 +203,19 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         # careful to encode the value with the encoder from the correct type,
         # including if `obj` is casted from one type to another (for example adding
         # a validator)
-        if utils.is_missing(self.encoded_value) or obj._type != self.encoded_value_type:
-            encoder = obj._registry.get_encoder(obj._type)
-            semantics = obj._registry.get_semantics(obj._type)
+        if utils.is_missing(self.encoded_value) or type != self.encoded_value_type:
+            encoder = registry.get_encoder(type)
+            semantics = registry.get_semantics(type)
             encoded_value = encoder.encode(self.value)
             expanded_value = semantics.expand(encoded_value)
 
             self.__dict__["encoded_value"] = expanded_value
-            self.__dict__["encoded_value_type"] = obj._type
+            self.__dict__["encoded_value_type"] = type
 
         return self.encoded_value
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
-        expanded = self.get_encoded_value(obj)
+        expanded = self.get_encoded_value(obj._type, obj._registry)
 
         syms = []
         semantics = obj._registry.get_semantics(obj._type)
@@ -223,7 +223,7 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         return syms
 
     def apply_alone(self, obj: Object) -> Any:
-        return self.get_encoded_value(obj)
+        return self.get_encoded_value(obj._type, obj._registry)
 
     def type(self) -> types.Type:
         if self.value_type is None:
@@ -234,7 +234,7 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         return f"{type(self).__name__}[{obj._type}]({repr(self.value)})"
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-        encoded_value = self.get_encoded_value(obj)
+        encoded_value = self.get_encoded_value(obj._type, obj._registry)
         semantics = obj._registry.get_semantics(obj._type)
         if encoded_value is None:
             new_data = None
@@ -527,9 +527,9 @@ class ExpectedValue(ObjectImplementation):
     def __post_init__(self) -> None:
         assert isinstance(self.expected, Object)
 
-    def get_attr(self, obj: Object, attr: str) -> Any:
-        new_impl = ExpectedValue(self.obj[attr], self.expected[attr])
-        return Object(new_impl)
+    # def get_attr(self, obj: Object, attr: str) -> Any:
+    #     new_impl = ExpectedValue(self.obj[attr], self.expected[attr])
+    #     return Object(new_impl)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
         def handle(result):
@@ -560,7 +560,12 @@ class ExpectedValue(ObjectImplementation):
             return self.obj._impl.apply(self.obj, dag, session)
         except exc.UnknownError as err:
             refs = list(self.depends_on(obj, session))
-            raise exc.UnknownError(refs, expected=self.expected) from err
+            expected_value = self.expected
+            try:
+                expected_value = session.resolve(self.expected, allow_unknowns=True)
+            except Exception:
+                pass
+            raise exc.UnknownError(refs, expected=expected_value) from err
 
     def map(self, obj: Object, function: func.Function) -> Object:
         mapped_obj = self.obj._inst.map(function)

@@ -252,6 +252,75 @@ class StructTypeSerializer(TypeSerializer):
         return cls(field_serializers)
 
 
+@dc.dataclass(frozen=True)
+class NativeFunctionTypeSerializer(TypeSerializer):
+    """
+    Type serializer for function types
+    """
+    arg_serializers: Dict[str, TypeSerializer]
+    return_type_serializer: TypeSerializer
+
+    def serialize(self, type: types.Type) -> Any:
+        fields = []
+
+        field_names = [field.name for field in type.args]
+        ordered_fields = sorted(self.arg_serializers, key=field_names.index)
+
+        arg_types = {arg.name: arg.type for arg in type.args}
+
+        for key in ordered_fields:
+            serializer = self.arg_serializers[key]
+            fields.append({"name": key, "type": serializer.serialize(arg_types[key])})
+
+        return {
+            "type": "native_function",
+            "nullable": type.nullable,
+            "args": fields,
+            "return_type": self.return_type_serializer.serialize(type.return_type)
+        }
+
+    def deserialize(self, data: Any) -> types.Type:
+        fields = []
+        for field in data["args"]:
+            serializer = self.arg_serializers[field["name"]]
+            fields.append(
+                types.Field(
+                    name=field["name"], type=serializer.deserialize(field["type"])
+                )
+            )
+
+        return_type = self.return_type_serializer.deserialize(data['return_type'])
+        return types.NativeFunctionType(fields, return_type).with_nullable(data['nullable'])
+
+    @classmethod
+    @st.hookimpl
+    def get_type_serializer(
+        cls, type: types.Type, registry: "Registry"
+    ) -> "TypeSerializer":
+        if not isinstance(type, types.NativeFunctionType):
+            return None
+        field_serializers = {}
+        for field in type.args:
+            field_serializers[field.name] = registry.get_type_serializer(field.type)
+        return_type_serializer = registry.get_type_serializer(type.return_type)
+        return cls(field_serializers, return_type_serializer)
+
+    @classmethod
+    @st.hookimpl
+    def get_type_serializer_from_data(
+        cls, data: Any, registry: "Registry"
+    ) -> "TypeSerializer":
+        if data.get("type") != "native_function":
+            return None
+        field_serializers = {}
+        for field in data["args"]:
+            field_serializers[field["name"]] = registry.get_type_serializer_from_data(
+                field["type"]
+            )
+        return_type_serializer = registry.get_type_serializer_from_data(data['return_type'])
+        return cls(field_serializers, return_type_serializer)
+
+
 TYPE_SERIALIZER_CLASSES = [
     IntegerTypeSerializer,
     FloatTypeSerializer,
@@ -260,6 +329,7 @@ TYPE_SERIALIZER_CLASSES = [
     ArrayTypeSerializer,
     MapTypeSerializer,
     StructTypeSerializer,
+    NativeFunctionTypeSerializer
 ]
 
 

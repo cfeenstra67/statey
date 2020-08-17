@@ -27,7 +27,11 @@ def register_default_plugins(
     differs: bool = True,
     methods: bool = True,
     casters: bool = True,
-    clear_cache: bool = True,
+    impl_serializers: bool = True,
+    object_serializers: bool = True,
+    namespace_serializers: bool = True,
+    session_serializers: bool = True,
+    clear_cache: bool = True
 ) -> None:
     """
 	Convenience method to register all of the default provided hooks for the given
@@ -70,6 +74,26 @@ def register_default_plugins(
         from statey.syms.methods import register as register_methods
 
         register_methods(registry)
+
+    if impl_serializers:
+        from statey.syms.impl_serializers import register as register_impl_serializers
+
+        register_impl_serializers(registry)
+
+    if object_serializers:
+        from statey.syms.object_serializers import register as register_object_serializers
+
+        register_object_serializers(registry)
+
+    if namespace_serializers:
+        from statey.syms.namespace_serializers import register as register_ns_serializers
+
+        register_ns_serializers(registry)
+
+    if session_serializers:
+        from statey.syms.session_serializers import register as register_session_serializers
+
+        register_session_serializers(registry)
 
     if resources:
         from statey.lib import register as register_resources
