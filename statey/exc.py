@@ -193,27 +193,31 @@ class NoObjectImplementationSerializerFound(NotFoundError):
     """
 
 
-class NoObjectImplementationSerializerFoundForImpl(NoObjectImplementationSerializerFound):
+class NoObjectImplementationSerializerFoundForImpl(
+    NoObjectImplementationSerializerFound
+):
     """
     Error for the get_impl_serializer() method
     """
+
     def __init__(self, impl: "ObjectImplementation", type: "Type") -> None:
         self.impl = impl
         self.type = type
         super().__init__(
-            f'No serializer found for object implementation: {impl}, type: {type}'
+            f"No serializer found for object implementation: {impl}, type: {type}"
         )
 
 
-class NoObjectImplementationSerializerFoundForData(NoObjectImplementationSerializerFound):
+class NoObjectImplementationSerializerFoundForData(
+    NoObjectImplementationSerializerFound
+):
     """
     Error for the get_impl_serializer_from_data() method
     """
+
     def __init__(self, data: Any) -> None:
         self.data = data
-        super().__init__(
-            f'No object implementation serializer found for data: {data}'
-        )
+        super().__init__(f"No object implementation serializer found for data: {data}")
 
 
 class NoObjectSerializerFound(NotFoundError):
@@ -226,18 +230,20 @@ class NoObjectSerializerFoundForObject(NoObjectSerializerFound):
     """
     Error for the get_object_serializer() method
     """
+
     def __init__(self, obj: "Object") -> None:
         self.obj = obj
-        super().__init__(f'No serializer found for object: {obj}')
+        super().__init__(f"No serializer found for object: {obj}")
 
 
 class NoObjectSerializerFoundForData(NoObjectSerializerFound):
     """
     Error for the get_object_serializer_from_data() method
     """
+
     def __init__(self, data: Any) -> None:
         self.data = data
-        super().__init__(f'No object serializer found for data: {data}')
+        super().__init__(f"No object serializer found for data: {data}")
 
 
 class NoSessionSerializerFound(NotFoundError):
@@ -250,18 +256,20 @@ class NoSessionSerializerFoundForSession(NoSessionSerializerFound):
     """
     Error for the get_session_serializer() method
     """
+
     def __init__(self, session: "Session") -> None:
         self.session = session
-        super().__init__(f'No serializer found for session: {session}')
+        super().__init__(f"No serializer found for session: {session}")
 
 
 class NoSessionSerializerFoundForData(NoSessionSerializerFound):
     """
     Error for the get_session_serializer_from_data() method
     """
+
     def __init__(self, data: Any) -> None:
         self.data = data
-        super().__init__(f'No session serializer found for data: {data}')
+        super().__init__(f"No session serializer found for data: {data}")
 
 
 class NoNamespaceSerializerFound(NotFoundError):
@@ -274,18 +282,20 @@ class NoNamespaceSerializerFoundForNamespace(NoNamespaceSerializerFound):
     """
     Error for the get_namespace_serializer() method
     """
+
     def __init__(self, ns: "Namespace") -> None:
         self.ns = ns
-        super().__init__(f'No serializer found for namespace: {ns}')
+        super().__init__(f"No serializer found for namespace: {ns}")
 
 
 class NoNamespaceSerializerFoundForData(NoNamespaceSerializerFound):
     """
     Error for the get_namespace_serializer_from_data() method
     """
+
     def __init__(self, data: Any) -> None:
         self.data = data
-        super().__init__(f'No namespace serializer found for data: {data}')
+        super().__init__(f"No namespace serializer found for data: {data}")
 
 
 class NamespaceError(SymsError):

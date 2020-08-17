@@ -257,6 +257,7 @@ class NativeFunctionTypeSerializer(TypeSerializer):
     """
     Type serializer for function types
     """
+
     arg_serializers: Dict[str, TypeSerializer]
     return_type_serializer: TypeSerializer
 
@@ -276,7 +277,7 @@ class NativeFunctionTypeSerializer(TypeSerializer):
             "type": "native_function",
             "nullable": type.nullable,
             "args": fields,
-            "return_type": self.return_type_serializer.serialize(type.return_type)
+            "return_type": self.return_type_serializer.serialize(type.return_type),
         }
 
     def deserialize(self, data: Any) -> types.Type:
@@ -289,8 +290,10 @@ class NativeFunctionTypeSerializer(TypeSerializer):
                 )
             )
 
-        return_type = self.return_type_serializer.deserialize(data['return_type'])
-        return types.NativeFunctionType(fields, return_type).with_nullable(data['nullable'])
+        return_type = self.return_type_serializer.deserialize(data["return_type"])
+        return types.NativeFunctionType(fields, return_type).with_nullable(
+            data["nullable"]
+        )
 
     @classmethod
     @st.hookimpl
@@ -317,7 +320,9 @@ class NativeFunctionTypeSerializer(TypeSerializer):
             field_serializers[field["name"]] = registry.get_type_serializer_from_data(
                 field["type"]
             )
-        return_type_serializer = registry.get_type_serializer_from_data(data['return_type'])
+        return_type_serializer = registry.get_type_serializer_from_data(
+            data["return_type"]
+        )
         return cls(field_serializers, return_type_serializer)
 
 
@@ -329,7 +334,7 @@ TYPE_SERIALIZER_CLASSES = [
     ArrayTypeSerializer,
     MapTypeSerializer,
     StructTypeSerializer,
-    NativeFunctionTypeSerializer
+    NativeFunctionTypeSerializer,
 ]
 
 

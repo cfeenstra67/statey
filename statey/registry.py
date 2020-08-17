@@ -106,9 +106,7 @@ class Registry(abc.ABC):
 
     @abc.abstractmethod
     def get_impl_serializer(
-        self,
-        impl: "ObjectImplementation",
-        type: types.Type
+        self, impl: "ObjectImplementation", type: types.Type
     ) -> "ObjectImplementationSerializer":
         """
         Get an object implementation serializer for the given implementation
@@ -117,7 +115,9 @@ class Registry(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_impl_serializer_from_data(self, data: Any) -> "ObjectImplementationSerializer":
+    def get_impl_serializer_from_data(
+        self, data: Any
+    ) -> "ObjectImplementationSerializer":
         """
         Get an object implementation serializer from the given data
         """
@@ -260,53 +260,64 @@ class RegistryHooks:
 
     @hookspec(firstresult=True)
     def get_impl_serializer(
-        self,
-        impl: "ObjectImplementation",
-        type: types.Type,
-        registry: Registry
+        self, impl: "ObjectImplementation", type: types.Type, registry: Registry
     ) -> "ObjectImplementationSerializer":
         """
         Hook to get an implementation serializer from an implementation and type
         """
 
     @hookspec(firstresult=True)
-    def get_impl_serializer_from_data(self, data: Any, registry: Registry) -> "ObjectImplementationSerializer":
+    def get_impl_serializer_from_data(
+        self, data: Any, registry: Registry
+    ) -> "ObjectImplementationSerializer":
         """
         Hook to get an impl serializer from data
         """
 
     @hookspec(firstresult=True)
-    def get_object_serializer(self, obj: "Object", registry: Registry) -> "ObjectSerializer":
+    def get_object_serializer(
+        self, obj: "Object", registry: Registry
+    ) -> "ObjectSerializer":
         """
         Hook to get an object serializer from an object
         """
 
     @hookspec(firstresult=True)
-    def get_object_serializer_from_data(self, data: Any, registry: Registry) -> "ObjectSerializer":
+    def get_object_serializer_from_data(
+        self, data: Any, registry: Registry
+    ) -> "ObjectSerializer":
         """
         Hook to get an object serializer from data
         """
 
     @hookspec(firstresult=True)
-    def get_session_serializer(self, session: "Session", registry: Registry) -> "SessionSerializer":
+    def get_session_serializer(
+        self, session: "Session", registry: Registry
+    ) -> "SessionSerializer":
         """
         Hook to get a session serializer from a session
         """
 
     @hookspec(firstresult=True)
-    def get_session_serializer_from_data(self, data: Any, registry: Registry) -> "SessionSerializer":
+    def get_session_serializer_from_data(
+        self, data: Any, registry: Registry
+    ) -> "SessionSerializer":
         """
         Hook to get a session serializer from data
         """
 
     @hookspec(firstresult=True)
-    def get_namespace_serializer(self, ns: "Namespace", registry: Registry) -> "NamespaceSerializer":
+    def get_namespace_serializer(
+        self, ns: "Namespace", registry: Registry
+    ) -> "NamespaceSerializer":
         """
         Hook to get a namespace serializer from a namespace
         """
 
     @hookspec(firstresult=True)
-    def get_namespace_serializer_from_data(self, data: Any, registry: Registry) -> "NamespaceSerializer":
+    def get_namespace_serializer_from_data(
+        self, data: Any, registry: Registry
+    ) -> "NamespaceSerializer":
         """
         Hook to get a namespace serializer from data
         """
@@ -422,9 +433,7 @@ class HookBasedRegistry(Registry):
         return handled
 
     def get_impl_serializer(
-        self,
-        impl: "ObjectImplementation",
-        type: types.Type
+        self, impl: "ObjectImplementation", type: types.Type
     ) -> "ObjectImplementationSerializer":
         handled = self.pm.hook.get_impl_serializer(impl=impl, type=type, registry=self)
         if handled is None:
@@ -440,54 +449,40 @@ class HookBasedRegistry(Registry):
         return handled
 
     def get_object_serializer(self, obj: "Object") -> "ObjectSerializer":
-        handled = self.pm.hook.get_object_serializer(
-            obj=obj,
-            registry=self
-        )
+        handled = self.pm.hook.get_object_serializer(obj=obj, registry=self)
         if handled is None:
             raise exc.NoObjectSerializerFoundForObject(obj)
         return handled
 
     def get_session_serializer(self, session: "Session") -> "SessionSerializer":
-        handled = self.pm.hook.get_session_serializer(
-            session=session,
-            registry=self
-        )
+        handled = self.pm.hook.get_session_serializer(session=session, registry=self)
         if handled is None:
             raise exc.NoSessionSerializerFoundForSession(session)
         return handled
 
     def get_namespace_serializer(self, ns: "Namespace") -> "NamespaceSerializer":
-        handled = self.pm.hook.get_namespace_serializer(
-            ns=ns,
-            registry=self
-        )
+        handled = self.pm.hook.get_namespace_serializer(ns=ns, registry=self)
         if handled is None:
             raise exc.NoNamespaceSerializerFoundForNamespace(ns)
         return handled
 
-    def get_impl_serializer_from_data(self, data: Any) -> "ObjectImplementationSerializer":
-        handled = self.pm.hook.get_impl_serializer_from_data(
-            data=data,
-            registry=self
-        )
+    def get_impl_serializer_from_data(
+        self, data: Any
+    ) -> "ObjectImplementationSerializer":
+        handled = self.pm.hook.get_impl_serializer_from_data(data=data, registry=self)
         if handled is None:
             raise exc.NoObjectImplementationSerializerFoundForData(data)
         return handled
 
     def get_object_serializer_from_data(self, data: Any) -> "ObjectSerializer":
-        handled = self.pm.hook.get_object_serializer_from_data(
-            data=data,
-            registry=self
-        )
+        handled = self.pm.hook.get_object_serializer_from_data(data=data, registry=self)
         if handled is None:
             raise exc.NoObjectSerializerFoundForData(data)
         return handled
 
     def get_session_serializer_from_data(self, data: Any) -> "SessionSerializer":
         handled = self.pm.hook.get_session_serializer_from_data(
-            data=data,
-            registry=self
+            data=data, registry=self
         )
         if handled is None:
             raise exc.NoSessionSerializerFoundForData(data)
@@ -495,8 +490,7 @@ class HookBasedRegistry(Registry):
 
     def get_namespace_serializer_from_data(self, data: Any) -> "NamespaceSerializer":
         handled = self.pm.hook.get_namespace_serializer_from_data(
-            data=data,
-            registry=self
+            data=data, registry=self
         )
         if handled is None:
             raise exc.NoNamespaceSerializerFoundForData(data)
@@ -558,32 +552,51 @@ class RegistryWrapper(Registry):
         return self.wrap("get_caster", self.registry.get_caster)(from_type, to_type)
 
     def get_impl_serializer(
-        self,
-        impl: "ObjectImplementation",
-        type: types.Type
+        self, impl: "ObjectImplementation", type: types.Type
     ) -> "ObjectImplementationSerializer":
-        return self.wrap("get_impl_serializer", self.registry.get_impl_serializer)(impl, type)
+        return self.wrap("get_impl_serializer", self.registry.get_impl_serializer)(
+            impl, type
+        )
 
     def get_object_serializer(self, obj: "Object") -> "ObjectSerializer":
-        return self.wrap("get_object_serializer", self.registry.get_object_serializer)(obj)
+        return self.wrap("get_object_serializer", self.registry.get_object_serializer)(
+            obj
+        )
 
     def get_session_serializer(self, session: "Session") -> "SessionSerializer":
-        return self.wrap("get_session_serializer", self.registry.get_session_serializer)(session)
+        return self.wrap(
+            "get_session_serializer", self.registry.get_session_serializer
+        )(session)
 
     def get_namespace_serializer(self, ns: "Namespace") -> "NamespaceSerializer":
-        return self.wrap("get_namespace_serializer", self.registry.get_namespace_serializer)(ns)
+        return self.wrap(
+            "get_namespace_serializer", self.registry.get_namespace_serializer
+        )(ns)
 
-    def get_impl_serializer_from_data(self, data: Any) -> "ObjectImplementationSerializer":
-        return self.wrap("get_impl_serializer_from_data", self.registry.get_impl_serializer_from_data)(data)
+    def get_impl_serializer_from_data(
+        self, data: Any
+    ) -> "ObjectImplementationSerializer":
+        return self.wrap(
+            "get_impl_serializer_from_data", self.registry.get_impl_serializer_from_data
+        )(data)
 
     def get_object_serializer_from_data(self, data: Any) -> "ObjectSerializer":
-        return self.wrap("get_object_serializer_from_data", self.registry.get_object_serializer_from_data)(data)
+        return self.wrap(
+            "get_object_serializer_from_data",
+            self.registry.get_object_serializer_from_data,
+        )(data)
 
     def get_session_serializer_from_data(self, data: Any) -> "SessionSerializer":
-        return self.wrap("get_session_serializer_from_data", self.registry.get_session_serializer_from_data)(data)
+        return self.wrap(
+            "get_session_serializer_from_data",
+            self.registry.get_session_serializer_from_data,
+        )(data)
 
     def get_namespace_serializer_from_data(self, data: Any) -> "NamespaceSerializer":
-        return self.wrap("get_namespace_serializer_from_data", self.registry.get_namespace_serializer_from_data)(data)
+        return self.wrap(
+            "get_namespace_serializer_from_data",
+            self.registry.get_namespace_serializer_from_data,
+        )(data)
 
     def register(self, plugin: Any) -> None:
         return self.wrap("register", self.registry.register)(plugin)
