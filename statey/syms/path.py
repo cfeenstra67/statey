@@ -44,7 +44,7 @@ class PathParser(BasePathParser):
 	supports encoding/decoding of utils.EXPLODE, strings, integers and slices
 	"""
 
-    pathsep: str = "/"
+    pathsep: str = "."
     explode_key: str = "*"
     idx_wrap: Tuple[str, str] = ("[", "]")
 

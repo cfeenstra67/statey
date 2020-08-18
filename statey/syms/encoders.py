@@ -82,6 +82,7 @@ class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
 	The default encoder just handles hooks properly, doesn't do any actual encoding
 	"""
 
+    type: types.Type
     pm: pluggy.PluginManager = dc.field(
         init=False,
         default_factory=create_encoder_plugin_manager,
@@ -89,21 +90,20 @@ class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
         repr=False,
     )
 
+    @classmethod
     @st.hookimpl
     def get_encoder(
-        self, type: types.Type, registry: "Registry", serializable: bool
+        cls, type: types.Type, registry: "Registry", serializable: bool
     ) -> Encoder:
         """
 		The basic encoder behavior just calls hooks, but we should pass through plugins too.
 		"""
         if serializable:
             return None
-        me_copy = self.clone()
-        for plugin in self.pm.get_plugins():
-            me_copy.pm.register(plugin)
+        inst = cls(type)
         for plugin in type.meta.get("plugins", []):
-            me_copy.pm.register(plugin)
-        return me_copy
+            inst.pm.register(plugin)
+        return inst
 
 
 @dc.dataclass(frozen=True)
@@ -391,7 +391,7 @@ class MapEncoder(MarshmallowEncoder):
 
 
 ENCODER_CLASSES = [
-    DefaultEncoder(),
+    DefaultEncoder,
     IntegerEncoder,
     FloatEncoder,
     BooleanEncoder,

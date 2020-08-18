@@ -39,6 +39,8 @@ from statey.syms.api import (
 
 from statey.syms.diff import Diff, DiffConfig, Differ
 
+from statey.syms.fmt import f
+
 from statey.syms.func import Function
 
 from statey.syms.impl import Unknown

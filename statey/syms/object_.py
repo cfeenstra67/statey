@@ -1,5 +1,6 @@
 import abc
 import dataclasses as dc
+from functools import partial
 from typing import Any, Dict, Sequence, Iterable, Optional, Callable, Union
 
 import networkx as nx
@@ -33,6 +34,12 @@ class Object(base.Proxy):
     _type: "Type" = dc.field(init=False, default=None)
     _registry: "Registry" = dc.field(init=False, default=None)
     _inst: "Proxy" = dc.field(init=False, default=None)
+
+    def __class_getitem__(cls, item: Any) -> "Object":
+        """
+        Create a partial object w/ the given annotation
+        """
+        return partial(cls, type=item)
 
     def __post_init__(
         self, impl: Any, type: Optional["Type"], registry: Optional["Registry"]

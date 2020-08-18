@@ -471,7 +471,7 @@ class DataArraySerializer(DataSerializer):
     def serialize(self, implementation: impl.ObjectImplementation) -> Any:
         out = {"type": self.type_serializer.serialize(self.encoder.type)}
         if isinstance(implementation.value, Object):
-            out["value"] = {"object": implementation.id}
+            out["value"] = {"object": implementation.value._impl.id}
         else:
             data = []
             if implementation.value is None:
@@ -592,6 +592,160 @@ class DataArraySerializer(DataSerializer):
         return cls(encoder, type_ser, element_serializer, value_type_ser)
 
 
+
+@dc.dataclass(frozen=True)
+class DataMapSerializer(DataSerializer):
+    """
+    Data serializer for array types
+    """
+
+    encoder: encoders.Encoder
+    type_serializer: ts.TypeSerializer
+    key_serializer: ObjectImplementationSerializer
+    value_serializer: ObjectImplementationSerializer
+    value_type_serializer: Optional[ts.TypeSerializer] = None
+
+    def serialize(self, implementation: impl.ObjectImplementation) -> Any:
+        out = {"type": self.type_serializer.serialize(self.encoder.type)}
+        if isinstance(implementation.value, Object):
+            out["value"] = {"object": implementation.value._impl.id}
+        else:
+            data = []
+            if implementation.value is None:
+                data = None
+            else:
+                encoded_value = self.encoder.encode(implementation.value)
+                for key, val in encoded_value.items():
+                    if isinstance(key, Object):
+                        key_dict = {'object': key._impl.id}
+                    else:
+                        new_impl = impl.Data(key)
+                        key_dict = self.key_serializer.serialize(new_impl)['value']
+
+                    if isinstance(value, Object):
+                        value_dict = {'object': value._impl.id}
+                    else:
+                        new_impl = impl.Data(value)
+                        value_dict = self.value_serializer.serialize(new_impl)['value']
+
+                    data.append((key_dict, value_dict))
+
+            out["value"] = {"data": data}
+
+        if (
+            implementation.value_type is not None
+            and self.value_type_serializer is not None
+        ):
+            out["value_type"] = self.value_type_serializer.serialize(
+                implementation.value_type
+            )
+
+        return DataSchema().dump(out)
+
+    def deserialize(
+        self, data: Any, session: session.Session, objects: Mapping[Any, Object]
+    ) -> impl.ObjectImplementation:
+
+        deserialized = DataSchema().load(data)
+        val_json = deserialized["value"]
+        if "object" in val_json:
+            value = objects[val_json["object"]]
+        elif "data" in val_json:
+            value_list = val_json["data"]
+            value = {}
+            if value_list is None:
+                value = None
+            else:
+                for key_dict, value_dict in value_list:
+                    if "object" in key_dict:
+                        key = objects[key_dict["object"]]
+                    elif "data" in key_dict:
+                        sub_impl = self.element_serializer.deserialize(
+                            {"value": key_dict["data"]}, session, objects
+                        )
+                        key = sub_impl.value
+                    else:
+                        raise ValueError(f"Unable to interpret {key_dict}!")
+
+                    if "object" in value_dict:
+                        val = objects[value_dict["object"]]
+                    elif "data" in value_dict:
+                        sub_impl = self.element_serializer.deserialize(
+                            {"value": value_dict["data"]}, session, objects
+                        )
+                        val = sub_impl.value
+                    else:
+                        raise ValueError(f"Unable to interpret {value_dict}!")
+
+                    value[key] = val
+
+        else:
+            raise ValueError(f"Unable to interpret {val_json}!")
+
+        value_type = None
+        if (
+            deserialized["value_type"] is not None
+            and self.value_type_serializer is not None
+        ):
+            value_type = self.value_type_serializer.deserialize(
+                deserialized["value_type"]
+            )
+
+        return impl.Data(value, value_type)
+
+    @classmethod
+    @st.hookimpl
+    def get_impl_serializer(
+        cls, impl: impl.ObjectImplementation, type: types.Type, registry: "Registry"
+    ) -> ObjectImplementationSerializer:
+        if not isinstance(impl, impl_mod.Data):
+            return None
+        if not isinstance(type, types.ArrayType):
+            return None
+        encoder = registry.get_encoder(type, serializable=True)
+        element_serializer = registry.get_impl_serializer(
+            impl=impl_mod.Data(None), type=type.element_type
+        )
+
+        value_type_serializer = None
+        if impl.value_type is not None:
+            value_type_serializer = registry.get_type_serializer(impl.value_type)
+
+        type_serializer = registry.get_type_serializer(type)
+        return cls(encoder, type_serializer, element_serializer, value_type_serializer)
+
+    @classmethod
+    @st.hookimpl
+    def get_impl_serializer_from_data(
+        cls, data: Any, registry: "Registry"
+    ) -> ObjectImplementationSerializer:
+        if not isinstance(data, dict) or data.get("name") != "data":
+            return None
+
+        type_ser = registry.get_type_serializer_from_data(data["type"])
+        typ = type_ser.deserialize(data["type"])
+        if not isinstance(typ, types.ArrayType):
+            return None
+
+        encoder = registry.get_encoder(typ)
+        element_type_ser = registry.get_type_serializer(typ.element_type)
+
+        element_data = {
+            "name": "data",
+            "value": None,
+            "type": element_type_ser.serialize(typ.element_type),
+            "value_type": None,
+        }
+        element_serializer = registry.get_impl_serializer_from_data(element_data)
+
+        value_type_ser = None
+        if data["value_type"] is not None:
+            value_type_ser = registry.get_type_serializer_from_data(data["value_type"])
+
+        return cls(encoder, type_ser, element_serializer, value_type_ser)
+
+
+
 @dc.dataclass(frozen=True)
 class DataStructSerializer(DataSerializer):
     """
@@ -606,7 +760,7 @@ class DataStructSerializer(DataSerializer):
     def serialize(self, implementation: impl.ObjectImplementation) -> Any:
         out = {"type": self.type_serializer.serialize(self.encoder.type)}
         if isinstance(implementation.value, Object):
-            out["value"] = {"object": implementation.id}
+            out["value"] = {"object": implementation.value._impl.id}
         else:
             data = {}
             if implementation.value is None:
