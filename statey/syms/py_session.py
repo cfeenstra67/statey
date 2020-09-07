@@ -220,8 +220,9 @@ class PythonSession(session.Session):
                 if err.expected is utils.MISSING:
                     result = Object(impl.Unknown(sym))
                 else:
+                    expected = Object(err.expected, sym._type, sym._registry)
                     result = self.resolve(
-                        err.expected, decode=False, allow_unknowns=True
+                        expected, decode=False, allow_unknowns=True
                     )
             else:
                 semantics = self.ns.registry.get_semantics(sym._type)

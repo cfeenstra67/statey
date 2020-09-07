@@ -183,7 +183,83 @@ class TaskGraphExecutor(abc.ABC):
         raise NotImplementedError
 
 
-class AsyncIOGraphExecutor(TaskGraphExecutor):
+class AsyncTaskGraphExecutor(TaskGraphExecutor):
+    """
+
+    """
+
+    @abc.abstractmethod
+    async def execute_async(
+        self,
+        task_graph: TaskGraph,
+        exec_info: ExecutionInfo,
+        strategy: ExecutionStrategy = ExecutionStrategy.EAGER
+    ) -> None:
+        """
+        Wrap all task executions into a single coroutine. This should _not_
+        handle signals
+        """
+        raise NotImplementedError
+
+    def hard_cancel(self, exec_info: ExecutionInfo) -> None:
+        """
+        Cancel any running tasks in exec_info
+        """
+        for task in exec_info.tasks.values():
+            if not task.done():
+                task.cancel()
+
+    def task_loop(
+        self, coro: Coroutine, max_signals: int, exec_info: ExecutionInfo
+    ) -> Any:
+        """
+        Handle signals like KeyboardInterrupt and SystemExit properly, only cancelling running
+        tasks when we reach max_signals.
+        """
+        signals = 0
+        loop = asyncio.get_event_loop()
+        coro_as_task = asyncio.ensure_future(coro)
+
+        while True:
+            try:
+                loop.run_until_complete(coro_as_task)
+                break
+            except Exception:
+                raise
+            # Catch anything else (e.g. SystemExit, KeyboardInterrupt) and handle it
+            # gracefully, avoiding cancelling running tasks as long as the user will
+            # let us.
+            except BaseException as err:
+                signals += 1
+                exec_info.cancelled_by_errors.append(err)
+
+                will_cancel = signals >= max_signals
+
+                self.pm.hook.caught_signal(
+                    signals=signals, max_signals=max_signals, executor=self
+                )
+
+                if will_cancel:
+                    self.hard_cancel(exec_info)
+
+    def execute(
+        self,
+        task_graph: TaskGraph,
+        strategy: ExecutionStrategy = ExecutionStrategy.EAGER,
+        max_signals: int = 2,
+    ) -> ExecutionInfo:
+
+        exec_info = ExecutionInfo(task_graph, strategy)
+
+        coro = self.execute_async(task_graph, exec_info, strategy)
+        self.task_loop(coro, max_signals, exec_info)
+
+        exec_info.end_timestamp = datetime.utcnow()
+
+        return exec_info
+
+
+class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
     """
 	Graph executors that uses python asyncio couroutines for concurrency
 	"""
@@ -313,66 +389,21 @@ class AsyncIOGraphExecutor(TaskGraphExecutor):
             )
             await self.after_task_success(key, exec_info)
 
-    def hard_cancel(self, exec_info: ExecutionInfo) -> None:
-        """
-		Cancel any running tasks in exec_info
-		"""
-        for task in exec_info.tasks.values():
-            if not task.done():
-                task.cancel()
-
-    def task_loop(
-        self, coro: Coroutine, max_signals: int, exec_info: ExecutionInfo
-    ) -> Any:
-        """
-		Handle signals like KeyboardInterrupt and SystemExit properly, only cancelling running
-		tasks when we reach max_signals.
-		"""
-        signals = 0
-        loop = asyncio.get_event_loop()
-        coro_as_task = asyncio.ensure_future(coro)
-
-        while True:
-            try:
-                loop.run_until_complete(coro_as_task)
-                break
-            except Exception:
-                raise
-            # Catch anything else (e.g. SystemExit, KeyboardInterrupt) and handle it
-            # gracefully, avoiding cancelling running tasks as long as the user will
-            # let us.
-            except BaseException as err:
-                signals += 1
-                exec_info.cancelled_by_errors.append(err)
-
-                will_cancel = signals >= max_signals
-
-                self.pm.hook.caught_signal(
-                    signals=signals, max_signals=max_signals, executor=self
-                )
-
-                if will_cancel:
-                    self.hard_cancel(exec_info)
-
-    def execute(
+    async def execute_async(
         self,
         task_graph: TaskGraph,
-        strategy: ExecutionStrategy = ExecutionStrategy.EAGER,
-        max_signals: int = 2,
-    ) -> ExecutionInfo:
+        exec_info: ExecutionInfo,
+        strategy: ExecutionStrategy = ExecutionStrategy.EAGER
+    ) -> None:
 
         ready_tasks = {
             key: task_graph.get_task(key) for key in task_graph.get_ready_tasks()
         }
-        exec_info = ExecutionInfo(task_graph, strategy)
         ready_wrappers = [
             self.task_wrapper(key, task, exec_info) for key, task in ready_tasks.items()
         ]
 
         if not ready_wrappers:
-            return exec_info
+            return
 
-        self.task_loop(asyncio.wait(ready_wrappers), max_signals, exec_info)
-
-        exec_info.end_timestamp = datetime.utcnow()
-        return exec_info
+        await asyncio.wait(ready_wrappers)

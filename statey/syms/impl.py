@@ -276,8 +276,16 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
         unknowns = []
 
+        args_type = self.func.type.args_type
+
+        args_encoder = session.ns.registry.get_encoder(args_type)
+        encoded_args = args_encoder.encode(self.arguments) or {}
+
         kwargs = {}
-        for key, sym in self.arguments.items():
+        for key, sym in encoded_args.items():
+            if key not in self.arguments:
+                kwargs[key] = sym
+                continue
             arg = dag.nodes[sym._impl.id]["result"]
             arg_encoder = session.ns.registry.get_encoder(sym._type)
             decoded_arg = arg_encoder.decode(arg)

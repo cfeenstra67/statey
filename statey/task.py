@@ -97,6 +97,15 @@ class Task(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
+    def is_metatask(self) -> bool:
+        """
+        Indicate whether this task is internal and should not be printed in plans
+        by default. If all tasks in a plan are metatasks, it is considered to be
+        empty
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
     async def run(self) -> None:
         """
 		This should be overridden to implement actual task logic.
@@ -140,7 +149,8 @@ def task_wrapper(
     def process(_func):
         desc = description
         if desc is None:
-            doc = getattr(_func, "__doc__", None)
+            doc_func = _func.func if isinstance(_func, partial) else _func
+            doc = getattr(doc_func, "__doc__", None)
             desc = tw.dedent(doc).strip() if doc else desc
 
         sig = inspect.signature(_func)
@@ -237,6 +247,9 @@ class SessionTask(Task):
     def always_eager(self) -> bool:
         return self.is_always_eager
 
+    def is_metatask(self) -> bool:
+        return False
+
     async def run(self) -> None:
         args = []
         for arg in self.func_type.args:
@@ -285,6 +298,9 @@ class SessionSwitch(Task):
     def always_eager(self) -> bool:
         return False
 
+    def is_metatask(self) -> bool:
+        return True
+
     async def run(self) -> None:
         resolved_input = self.input_session.resolve(
             self.input_symbol, allow_unknowns=self.allow_unknowns, decode=False
@@ -302,6 +318,9 @@ class ResourceGraphOperation(Task):
     resource_graph: "ResourceGraph"
 
     def always_eager(self) -> bool:
+        return True
+
+    def is_metatask(self) -> bool:
         return True
 
 
@@ -350,10 +369,58 @@ class GraphDeleteKey(ResourceGraphOperation):
 	Delete some key in a resource graph.
 	"""
 
+    input_session: session.Session
+    input_symbol: Object
     description: Optional[str] = None
 
     async def run(self) -> None:
+        # We resolve this symbol so that we know any upstream
+        # tasks that this operation depends on went through successfully
+        self.input_session.resolve(self.input_symbol)
         self.resource_graph.delete(self.key)
+
+
+class ResourceGraphOperationSpec(abc.ABC):
+    """
+    Factory for creating resource graph tasks
+    """
+    def bind(
+        self,
+        session: "TaskSession",
+        resource_graph: "ResourceGraph",
+        checkpoint_key: str
+    ) -> ResourceGraphOperation:
+        """
+        Bind this spec to a task session and resource graph, producing
+        a resource graph task
+        """
+        raise NotImplementedError
+
+
+@dc.dataclass(frozen=True)
+class GraphSetKeySpec(ResourceGraphOperationSpec):
+    """
+    Spec to overwrite a state key
+    """
+    state: "ResourceState"
+    remove_dependencies: bool = False
+
+    def bind(
+        self,
+        session: "TaskSession",
+        resource_graph: "ResourceGraph",
+        checkpoint_key: str
+    ) -> ResourceGraphOperation:
+        resource = session.ns.registry.get_resource(self.state.resource)
+        return GraphSetKey(
+            input_session=session,
+            input_symbol=self.state.obj,
+            remove_dependencies=self.remove_dependencies,
+            state=self.state.state,
+            key=checkpoint_key,
+            resource_graph=resource_graph,
+            finalize=resource.finalize
+        )
 
 
 class TaskSession(session.Session):
@@ -371,7 +438,7 @@ class TaskSession(session.Session):
     def before_set_checkpoint(
         self, key: str, value: "StateSnapshot"
     ) -> Tuple[Any, types.Type]:
-        self.checkpoints[key] = value
+        self.checkpoints[key] = GraphSetKeySpec(value)
         return value.data, value.state.output_type
 
     def before_set_bind_task(
@@ -421,17 +488,8 @@ class TaskSession(session.Session):
                 task_subgraph.nodes[node]["task"] = self.tasks[node]
             else:
                 # Construct checkpoint task
-                state = self.checkpoints[node]
-                resource = self.ns.registry.get_resource(state.state.resource)
-                task = GraphSetKey(
-                    input_session=self,
-                    input_symbol=state.obj,
-                    remove_dependencies=False,
-                    state=state.state,
-                    key=checkpoint_key,
-                    resource_graph=resource_graph,
-                    finalize=resource.finalize,
-                )
+                spec = self.checkpoints[node]
+                task = spec.bind(self, resource_graph, checkpoint_key)
                 task_subgraph.nodes[node]["task"] = task
 
         return task_subgraph

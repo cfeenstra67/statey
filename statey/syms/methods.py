@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Any, Dict, Sequence, Callable, Type as PyType, Optional
 
 import statey as st
-from statey.syms import func, impl, types, base, utils
+from statey.syms import func, impl, types, base, utils, api
 from statey.syms.object_ import Object
 
 
@@ -21,6 +21,13 @@ class Method(abc.ABC):
         """
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def return_type(self, obj: Object) -> Any:
+        """
+        Get the return type of this method for the given object
+        """
+        raise NotImplementedError
+
 
 @dc.dataclass(frozen=True)
 class InstanceMethod(Method):
@@ -33,6 +40,9 @@ class InstanceMethod(Method):
     def bind(self, obj: Object) -> Any:
         new_impl = impl.FunctionCall(self.func, (obj,))
         return Object(new_impl, registry=obj._registry)
+
+    def return_type(self, obj: Object) -> Any:
+        return self.func.type.return_type
 
 
 @dc.dataclass(frozen=True)
@@ -57,6 +67,9 @@ class CallFunctionMethod(Method):
             )
 
         return call
+
+    def return_type(self, obj: Object) -> Any:
+        return self.func_type.return_type
 
     @classmethod
     @st.hookimpl
@@ -254,21 +267,25 @@ class BinaryMagicMethod(Method):
     name: str
     instance_type: types.Type
     operation: Callable[[Any, Any], Any]
-    return_type: Optional[types.Type] = None
+    return_type_opt: Optional[types.Type] = None
 
     def bind(self, obj: Object) -> Any:
 
-        return_type = self.return_type or self.instance_type
+        return_type = self.return_type(obj)
 
         def apply_method(other: Any) -> return_type:
-            def call(inst: self.instance_type) -> return_type:
+
+            def operate(inst: self.instance_type, other: self.instance_type) -> return_type:
                 return self.operation(inst, other)
 
-            call_obj = utils.native_function(call)
-            return obj._inst.map(call_obj)
+            operate.__name__ = self.name
+            return utils.native_function(operate)(obj, other)
 
         apply_method.__name__ = self.name
         return apply_method
+
+    def return_type(self, obj: Object) -> Any:
+        return self.return_type_opt or self.instance_type
 
 
 def get_magic_methods():
@@ -276,6 +293,7 @@ def get_magic_methods():
         "__eq__": operator.eq,
         "__ne__": operator.ne,
         "__add__": operator.add,
+        "__sub__": operator.sub
     }
 
 
@@ -307,12 +325,14 @@ class BinaryMagicMethods(ObjectMethods):
             name=name,
             operation=method,
             instance_type=self.type,
-            return_type=self.method_map_type_overrides.get(name),
+            return_type_opt=self.method_map_type_overrides.get(name),
         )
 
     @classmethod
     @st.hookimpl
     def get_methods(cls, type: types.Type, registry: "Registry") -> ObjectMethods:
+        if type.nullable:
+            return None
         return cls(type)
 
 
@@ -323,11 +343,15 @@ class ExpectedValueMethod(Method):
     """
 
     def bind(self, obj: Object) -> Any:
+
         def expect(value: Any) -> Object:
             expected_obj = Object(value, obj._type, obj._registry)
             return Object(impl.ExpectedValue(obj, expected_obj))
 
         return expect
+
+    def return_type(self, obj: Object) -> Any:
+        return utils.single_arg_function_type(obj._type, obj._type)
 
 
 @dc.dataclass(frozen=True)
@@ -344,6 +368,8 @@ class BaseObjectMethods(SimpleObjectMethods):
     @classmethod
     @st.hookimpl
     def get_methods(cls, type: types.Type, registry: "Registry") -> ObjectMethods:
+        if type.nullable:
+            return None
         return cls(type)
 
 
@@ -363,9 +389,71 @@ class StringMethods(DeclarativeMethods):
 
     @st.hookimpl
     def get_methods(self, type: types.Type, registry: "Registry") -> ObjectMethods:
-        if not isinstance(type, types.StringType):
+        if not isinstance(type, types.StringType) or type.nullable:
             return None
         return self
+
+
+@dc.dataclass(frozen=True)
+class OptionMethod(Method):
+    """
+    Turn every method call into something like a scala option.map()
+    """
+    type: types.Type
+    base_method: Method
+
+    def return_type(self, obj: Object) -> Any:
+        return self.base_method.return_type(obj).with_nullable(True)
+
+    def bind(self, obj: Object) -> Any:
+
+        handler = self.base_method.bind(obj)
+        return_type = self.return_type(obj)
+
+        if isinstance(return_type, types.FunctionType):
+
+            nullable_return = return_type.return_type.with_nullable(True)
+
+            def out_handler(*args, **kwargs):
+
+                @utils.native_function
+                def option_handler(data: self.type) -> nullable_return:
+                    if data is None:
+                        return None
+                    return handler(*args, **kwargs)
+
+                return option_handler(obj)
+
+            return out_handler
+
+        @utils.native_function
+        def option_handler(data: self.type) -> return_type:
+            if data is None:
+                return None
+            return handler
+
+        return option_handler(obj)
+
+
+@dc.dataclass(frozen=True)
+class OptionMethods(ObjectMethods):
+    """
+    Turn every method call into something like a scala option.map()
+    """
+    type: types.Type
+    methods: ObjectMethods
+
+    def get_method(self, name: str) -> Method:
+        base_method = self.methods.get_method(name)
+        return OptionMethod(self.type, base_method)
+
+    @classmethod
+    @st.hookimpl
+    def get_methods(cls, type: types.Type, registry: "Registry") -> ObjectMethods:
+        if not type.nullable:
+            return None
+        non_nullable_methods = registry.get_methods(type.with_nullable(False))
+        return cls(type, non_nullable_methods)
 
 
 OBJECT_METHODS_PLUGINS = [
@@ -373,6 +461,7 @@ OBJECT_METHODS_PLUGINS = [
     BinaryMagicMethods,
     BaseObjectMethods,
     StringMethods(),
+    OptionMethods
 ]
 
 

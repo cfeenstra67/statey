@@ -3,7 +3,7 @@ import dataclasses as dc
 import enum
 import types as pytypes
 from collections import Counter
-from functools import wraps
+from functools import wraps, partial
 from typing import Sequence, Callable, Type as PyType, Dict, Any, Optional
 
 import networkx as nx
@@ -358,7 +358,11 @@ class SimpleMachine(SingleStateMachine):
     of a single task
     """
 
-    async def get_expected(self, config: resource.StateConfig) -> Any:
+    async def get_expected(
+        self,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+    ) -> Any:
         """
         Get the expected output for the given configuration. Default implementation
         is just passing through config fields and setting the rest as unknown
@@ -379,7 +383,7 @@ class SimpleMachine(SingleStateMachine):
         """
         raise NotImplementedError
 
-    async def modify_task(self, current: Any, config: Any) -> Any:
+    async def modify_task(self, diff: diff.Diff, current: Any, config: Any) -> Any:
         """
         Defines a single task called "modify" that will modify this resource
         """
@@ -393,7 +397,8 @@ class SimpleMachine(SingleStateMachine):
     async def create(
         self, session: task.TaskSession, config: resource.StateConfig
     ) -> "Object":
-        expected = await self.get_expected(config)
+        current = resource.StateSnapshot({}, self.null_state.state)
+        expected = await self.get_expected(current, config)
         create_task = self._get_optional_method("create_task")
         return session["create"] << (task.new(create_task)(config.obj) >> expected)
 
@@ -410,10 +415,12 @@ class SimpleMachine(SingleStateMachine):
         current: resource.StateSnapshot,
         config: resource.StateConfig,
     ) -> "Object":
-        expected = await self.get_expected(config)
+        expected = await self.get_expected(current, config)
         modify_task = self._get_optional_method("modify_task")
+        diff = self.get_diff(current, config, session)
+        partial_modify = partial(modify_task, diff)
         return session["modify"] << (
-            task.new(modify_task)(current.obj, config.obj) >> expected
+            task.new(partial_modify)(current.obj, config.obj) >> expected
         )
 
 

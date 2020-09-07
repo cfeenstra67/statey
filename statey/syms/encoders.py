@@ -309,7 +309,7 @@ class NativeFunctionEncoder(StructEncoder):
     module: Any = pickle
 
     def encode(self, value: Any) -> Any:
-        if isinstance(value, Object):
+        if isinstance(value, Object) or value is None:
             return super().encode(value)
 
         serialized_bytes = self.module.dumps(value.func)
@@ -323,7 +323,7 @@ class NativeFunctionEncoder(StructEncoder):
         from statey.syms import func
 
         value = super().decode(value)
-        if isinstance(value, Object):
+        if isinstance(value, Object) or value is None:
             return value
         function_ob = self.module.loads(base64.b64decode(value["serialized"]))
         return func.NativeFunction(self.type, function_ob, value["name"])
@@ -335,7 +335,7 @@ class NativeFunctionEncoder(StructEncoder):
     ) -> Encoder:
         if not isinstance(type, types.NativeFunctionType):
             return None
-        as_struct = types.StructType(type.fields, False)
+        as_struct = types.StructType(type.fields, type.nullable, type.meta)
         struct_encoder = registry.get_encoder(as_struct, serializable)
         return cls(type, registry, struct_encoder.field_encoders)
 

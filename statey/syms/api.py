@@ -6,10 +6,10 @@ contained in the the other modules in this package
 import dataclasses as dc
 import inspect
 from functools import wraps
-from typing import Any, Sequence, Dict, Callable, Type, Tuple, Union
+from typing import Any, Sequence, Dict, Callable, Type, Tuple, Union, Optional
 
 import statey as st
-from statey.syms import utils, types, func, impl, Object
+from statey.syms import utils, types, func, impl, Object, path as path_mod
 from statey.syms.plugins import ParseDataClassPlugin, EncodeDataClassPlugin
 
 
@@ -141,10 +141,26 @@ def join(head: Object, *tail: Sequence[Any]) -> Object:
     return utils.wrap_function_call(join_func, (head, tail)) >> head
 
 
-def replace(obj: Object, _keep_type=True, **kwargs: Dict[str, Any]) -> Object:
+def struct_replace(obj: Object, keep_type=True, **kwargs: Dict[str, Any]) -> Object:
     """
     Replace the given attributes in `object`
     """
+    if isinstance(obj, types.Type):
+        type_fields = []
+
+        if not hasattr(obj, 'fields'):
+            raise TypeError(f'Invalid input type for replace(): {obj}')
+
+        for field in obj.fields:
+            if field.name in kwargs:
+                continue
+            type_fields.append(field)
+
+        for key, value in kwargs.items():
+            type_fields.append(types.Field(key, value))
+
+        return obj.with_fields(type_fields)
+
     if not hasattr(obj._type, "fields"):
         raise TypeError(f"Invalid input type for replace(): {obj._type}")
 
@@ -155,7 +171,79 @@ def replace(obj: Object, _keep_type=True, **kwargs: Dict[str, Any]) -> Object:
         else:
             out.append((field.name, obj[field.name]))
 
-    return Object(dict(out), obj._type) if _keep_type else struct.new(out)
+    return Object(dict(out), obj._type) if keep_type else struct.new(out)
+
+
+def struct_interpolate_one(
+    obj: Object,
+    path: str,
+    new_value: Any,
+    keep_type: bool = True,
+    path_parser: Optional[path_mod.PathParser] = None
+) -> Object:
+    """
+    Interpolate a new value in a struct object or type, possibly
+    nested
+    """
+    if path_parser is None:
+        path_parser = path_mod.PathParser()
+
+    comps = path_parser.split(path)
+    if len(comps) > 1:
+        head, *tail = comps
+        rel_path = path_parser.join(tail)
+
+        if isinstance(obj, types.Type):
+            if not hasattr(obj, 'fields'):
+                raise TypeError(f'Invalid type for struct_interpolate: {obj}')
+
+            field_type = obj[head].type
+            new_type = struct_interpolate_one(
+                obj=field_type,
+                path=rel_path,
+                new_value=new_value,
+                path_parser=path_parser,
+                keep_type=keep_type
+            )
+            return struct_replace(obj, keep_type,  **{head: new_type})
+
+        field_value = obj[head]
+        new_value = struct_interpolate_one(
+            obj=field_value,
+            path=rel_path,
+            new_value=new_value,
+            path_parser=path_parser,
+            keep_type=keep_type
+        )
+        return struct_replace(obj, keep_type, **{head: new_value})
+
+    return struct_replace(obj, keep_type, **{path: new_value})
+
+
+def struct_interpolate(
+    obj: Object,
+    new_values: Dict[str, Any],
+    keep_type: bool = True,
+    path_parser: Optional[path_mod.PathParser] = None
+) -> Object:
+    """
+    Extend struct_interpolate_one to allow providing a dictionary
+    of new values
+    """
+    if path_parser is None:
+        path_parser = path_mod.PathParser()
+
+    out = obj
+    for key, value in new_values.items():
+        out = struct_interpolate_one(
+            obj=out,
+            path=key,
+            new_value=value,
+            keep_type=keep_type,
+            path_parser=path_parser
+        )
+
+    return out
 
 
 def fill(
@@ -166,6 +254,9 @@ def fill(
     """
     if not hasattr(obj._type, "fields"):
         raise TypeError(f"Invalid input type for replace(): {obj._type}")
+
+    if isinstance(get_value, Object):
+        get_value = get_value.__getitem__
 
     fields = {field.name: field for field in obj._type.fields}
 
@@ -207,7 +298,7 @@ def ifnull(obj: Object, otherwise: Any) -> Object:
     """
     If the object is None, substitute the value from the other object
     """
-    non_nullable = obj._type.with_nullable(False)
+    non_nullable = obj._type.with_nullable(otherwise is None)
 
     def _ifnull(first: obj._type) -> non_nullable:
         return otherwise if first is None else first

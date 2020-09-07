@@ -286,8 +286,9 @@ class StructSemantics(Semantics):
         return out
 
     def expand(self, value: Any) -> Any:
-        if not self.field_semantics:
+        if not self.field_semantics or value is None:
             return value
+
         out = {}
         for name, semantics in self.field_semantics.items():
             out[name] = semantics.expand(value[name])

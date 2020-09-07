@@ -327,11 +327,13 @@ class FunctionType(StructType):
     def with_nullable(self, nullable: bool) -> Type:
         new_inst = dc.replace(self)
         new_inst.__dict__["nullable"] = nullable
+        new_inst.__dict__['meta'] = self.meta.copy()
         return new_inst
 
     def with_meta(self, meta: Dict[str, Any]) -> Type:
         new_inst = dc.replace(self)
         new_inst.__dict__["meta"] = meta
+        new_inst.__dict__['nullable'] = self.nullable
         return new_inst
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
@@ -374,11 +376,18 @@ class FunctionType(StructType):
         )
 
         func_type_string = " ".join([args_string, to_string, return_type_string])
-        return "".join([lambda_string, lbrace, func_type_string, rbrace])
+        return "".join([lambda_string, lbrace, func_type_string, rbrace, suffix])
 
     @property
     def name(self) -> str:
         return "function"
+
+    @property
+    def args_type(self) -> Type:
+        """
+        Get a structtype for the arguments of this function
+        """
+        return StructType(self.args, all(arg.type.nullable for arg in self.args))
 
 
 @dc.dataclass(frozen=True, repr=False)

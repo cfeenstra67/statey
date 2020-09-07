@@ -164,8 +164,8 @@ class MapTypeSerializer(TypeSerializer):
     def deserialize(self, data: Any) -> types.Type:
         key_type = self.key_serializer.deserialize(data["key_type"])
         value_type = self.value_serializer.deserialize(data["value_type"])
-        return types.ArrayType(
-            key_type=type, value_type=value_type, nullable=data["nullable"]
+        return types.MapType(
+            key_type=key_type, value_type=value_type, nullable=data["nullable"]
         )
 
     @classmethod

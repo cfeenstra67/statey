@@ -89,7 +89,7 @@ class FileMachine(Machine):
 
     @staticmethod
     def get_file_expected(config: st.StateConfig) -> Dict[str, Any]:
-        with_realpath = st.replace(config.obj, location=realpath(config.obj.location))
+        with_realpath = st.struct_replace(config.obj, location=realpath(config.obj.location))
         return st.fill_unknowns(with_realpath, FileType)
 
     @task.new

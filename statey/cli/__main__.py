@@ -3,6 +3,7 @@ import click
 import json
 import importlib
 import shutil
+from typing import Optional, Callable
 
 import statey as st
 from statey.executor import AsyncIOGraphExecutor
@@ -21,15 +22,6 @@ def cli(ctx, state):
     ctx.ensure_object(dict)
     ctx.obj["state_manager"] = FileStateManager(state)
     ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
-
-
-async def refresh_graph(graph, finalize: bool = False):
-    with click.progressbar(
-        length=len(graph.graph.nodes),
-        label=click.style("Refreshing state...", fg="yellow"),
-    ) as bar:
-        async for key in graph.refresh(st.registry, finalize):
-            bar.update(1)
 
 
 session_name_opt = click.option(
@@ -89,37 +81,40 @@ def plan(ctx, module, session_name, task_dag, metatasks):
     else:
         session = getattr(module_obj, session_name)
 
-    resource_graph = ctx.obj["state_manager"].load(st.registry)
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(refresh_graph(resource_graph))
-
     click.echo(
         f'Loaded {click.style(session_name, fg="green", bold=True)} from '
         f'{click.style(module, fg="green", bold=True)} successfully.'
     )
 
-    migrator = DefaultMigrator()
-    plan = loop.run_until_complete(migrator.plan(session, resource_graph))
+    resource_graph = ctx.obj["state_manager"].load(st.registry)
+
+    loop = asyncio.get_event_loop()
+
+    out_plan = loop.run_until_complete(st.helpers.plan(
+        session=session,
+        resource_graph=resource_graph,
+        refresh=True,
+        refresh_progressbar=True
+    ))
 
     click.secho(f"Planning completed successfully.", fg="green")
     click.echo()
 
-    ctx.obj["plan"] = plan
+    ctx.obj["plan"] = out_plan
     ctx.obj["module_name"] = module
     ctx.obj["module"] = module_obj
     ctx.obj["session_name"] = session_name
     ctx.obj["session"] = session
     ctx.obj["metatasks"] = metatasks
 
-    plan_summary = inspector.plan_summary(plan, metatasks)
+    plan_summary = inspector.plan_summary(out_plan, metatasks)
 
     summary_string = plan_summary.to_string(ctx.obj["terminal_size"].columns)
 
     click.echo(summary_string)
     click.echo()
 
-    if task_dag and plan_summary.non_empty_summaries(ctx.obj["terminal_size"].columns):
+    if task_dag and not out_plan.is_empty():
         task_dag_string = plan_summary.task_dag_string()
         click.secho(f"Task DAG:", fg="green")
         click.echo(task_dag_string)
@@ -135,9 +130,7 @@ def up(ctx, yes, task_heartbeat, fulltrace):
     plan = ctx.obj["plan"]
 
     # Sort of hacky way to check if the plan is empty--executing would only update the state.
-    if not inspector.plan_summary(plan).non_empty_summaries(
-        ctx.obj["terminal_size"].columns
-    ):
+    if plan.is_empty():
         return
 
     if not (
@@ -177,31 +170,30 @@ def up(ctx, yes, task_heartbeat, fulltrace):
 def down(ctx, task_dag, metatasks, yes, task_heartbeat, fulltrace):
     resource_graph = ctx.obj["state_manager"].load(st.registry)
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(refresh_graph(resource_graph))
-
-    migrator = DefaultMigrator()
     # Run plan w/ an empty session
-    session = st.create_resource_session()
     loop = asyncio.get_event_loop()
-    plan = loop.run_until_complete(migrator.plan(session, resource_graph))
+    session = st.create_resource_session()
+    out_plan = loop.run_until_complete(st.helpers.plan(
+        session=session,
+        resource_graph=resource_graph,
+        refresh=True,
+        refresh_progressbar=True
+    ))
 
     click.secho(f"Planning completed successfully.", fg="green")
     click.echo()
 
-    ctx.obj["plan"] = plan
+    ctx.obj["plan"] = out_plan
     ctx.obj["session"] = session
 
-    plan_summary = inspector.plan_summary(plan, metatasks)
+    plan_summary = inspector.plan_summary(out_plan, metatasks)
 
     summary_string = plan_summary.to_string(ctx.obj["terminal_size"].columns)
 
     click.echo(summary_string)
     click.echo()
 
-    is_null = not plan_summary.non_empty_summaries(ctx.obj["terminal_size"].columns)
-
-    if is_null:
+    if out_plan.is_empty():
         return
 
     if task_dag:
@@ -221,7 +213,7 @@ def down(ctx, task_dag, metatasks, yes, task_heartbeat, fulltrace):
     executor = AsyncIOGraphExecutor()
     executor.pm.register(ExecutorLoggingPlugin(metatasks, task_heartbeat))
 
-    task_graph = plan.task_graph()
+    task_graph = out_plan.task_graph()
 
     try:
         click.echo()
@@ -243,7 +235,7 @@ def refresh(ctx):
     resource_graph = ctx.obj["state_manager"].load(st.registry)
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(refresh_graph(resource_graph, True))
+    loop.run_until_complete(st.helpers.refresh(resource_graph, True))
 
     click.secho("State refreshed successfully.", fg="green", bold=True)
 

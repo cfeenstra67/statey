@@ -11,7 +11,13 @@ from statey.registry import Registry, create_registry, RegistryCachingWrapper
 
 registry = create_registry()
 
-from statey import task, syms, exc
+from statey import (
+    exc,
+    helpers,
+    plan,
+    task,
+    syms,
+)
 
 from statey.fsm import (
     Machine,
@@ -19,6 +25,14 @@ from statey.fsm import (
     MachineResource,
     SingleStateMachine,
     SimpleMachine,
+    ModificationAction
+)
+
+from statey.plan import (
+    Plan,
+    PlanAction,
+    Migrator,
+    DefaultMigrator
 )
 
 from statey.syms.api import (
@@ -28,13 +42,14 @@ from statey.syms.api import (
     function,
     map,
     declarative,
-    replace,
+    struct_replace,
     fill,
     fill_unknowns,
     filter_struct,
     ifnull,
     struct_drop,
     struct_add,
+    struct_interpolate
 )
 
 from statey.syms.diff import Diff, DiffConfig, Differ

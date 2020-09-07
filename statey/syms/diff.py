@@ -149,11 +149,11 @@ class Diff:
         """
         Indicate whether a diff at the given path exists
         """
-        try:
-            self[path_like]
-        except KeyError:
-            return False
-        return True
+        comps = get_path_from_pathlike(path_like, self.path_parser)
+        for diff in self.components:
+            if comps == tuple(diff.path)[:len(comps)]:
+                return True
+        return False
 
 
 class Differ(abc.ABC):
@@ -312,6 +312,10 @@ class ArrayDiffer(Differ):
             yield diff
             return
 
+        if len(diff.left) != len(diff.right):
+            yield diff
+            return
+
         for diff in self.element_diffs(diff):
             yield from diff.flatten(config)
 
@@ -464,6 +468,10 @@ class MapDiffer(Differ):
             yield diff
             return
 
+        if len(diff.left) != len(diff.right):
+            yield diff
+            return
+
         for diff in self.element_diffs(diff):
             yield from diff.flatten(config)
 
@@ -473,7 +481,7 @@ class MapDiffer(Differ):
         if not isinstance(type, types.MapType):
             return None
         value_differ = registry.get_differ(type.value_type)
-        return cls(type, value_type)
+        return cls(type, value_differ)
 
 
 DIFFER_HOOKS = [ValueDiffer, ArrayDiffer, StructDiffer, MapDiffer]

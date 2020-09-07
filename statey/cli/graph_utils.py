@@ -32,6 +32,9 @@ class TaskWrapper(Task):
     def always_eager(self) -> bool:
         return self.task.always_eager()
 
+    def is_metatask(self) -> bool:
+        return self.task.is_metatask()
+
 
 @dc.dataclass(frozen=True)
 class TaskLogger(TaskWrapper):
@@ -93,7 +96,7 @@ class ExecutorLoggingPlugin:
             )
 
     def should_show(self, task: Task) -> bool:
-        return self.show_metatasks or not is_metatask(task)
+        return self.show_metatasks or not task.is_metatask()
 
     @st.hookimpl
     def before_run(self, key: str, task: Task, executor: "TaskGraphExecutor") -> None:
@@ -215,14 +218,6 @@ def data_to_string(data: Any, name_func=lambda x: x) -> str:
 	Give a nice human-readable representaiton of the data using YAML
 	"""
     return "\n".join(data_to_lines(data, name_func=name_func))
-
-
-def is_metatask(task: Task) -> bool:
-    """
-	Indicate whether this is a "metatask" that shouldn't be displayed to the
-	user in most circumstances
-	"""
-    return isinstance(task, (SessionSwitch, ResourceGraphOperation))
 
 
 @dc.dataclass(frozen=True)
@@ -401,7 +396,7 @@ class PlanNodeSummary:
 
     def to_string(self, max_width: int, indent: int = 2) -> str:
         if all(
-            is_metatask(self.show_tasks.nodes[node]["task"])
+            self.show_tasks.nodes[node]["task"].is_metatask()
             for node in self.show_tasks.nodes
         ):
             return ""
@@ -526,7 +521,7 @@ class PlanSummary:
 
         for node in task_graph:
             task = task_graph.nodes[node]["task"]
-            if self.show_metatasks or not is_metatask(task):
+            if self.show_metatasks or not task.is_metatask():
                 keep.add(node)
 
         utils.subgraph_retaining_dependencies(task_graph, keep)
@@ -552,7 +547,7 @@ class ExecutionSummary:
             task = self.exec_info.task_graph.get_task(node)
             if (
                 not self.show_metatasks
-                and is_metatask(task)
+                and task.is_metatask()
                 and status == TaskStatus.SUCCESS
             ):
                 continue
@@ -642,7 +637,7 @@ class Inspector:
             remove = set()
             for sub_node in task_graph.nodes:
                 task = task_graph.nodes[sub_node]["task"]
-                if not show_metatasks and is_metatask(task):
+                if not show_metatasks and task.is_metatask():
                     remove.add(sub_node)
 
             keep = set(task_graph.nodes) - remove

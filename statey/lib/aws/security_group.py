@@ -108,10 +108,6 @@ class SecurityGroupMachine(st.SimpleMachine):
             "protocol": rule["IpProtocol"],
         }
 
-    @staticmethod
-    async def get_expected(config: st.StateConfig) -> Dict[str, Any]:
-        return st.fill_unknowns(config.obj, SecurityGroupType)
-
     async def refresh_state(self, data: Any) -> Optional[Any]:
         async with self.resource_ctx() as ec2:
             sg = await ec2.SecurityGroup(data["id"])
@@ -124,7 +120,7 @@ class SecurityGroupMachine(st.SimpleMachine):
     async def refresh_config(self, config: st.Object) -> st.Object:
         async with self.client_ctx() as client:
             default_vpc = await utils.get_default_vpc(client)
-            return st.replace(
+            return st.struct_replace(
                 config, vpc_id=st.ifnull(config.vpc_id, default_vpc["VpcId"])
             )
 
