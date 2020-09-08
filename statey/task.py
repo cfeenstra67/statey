@@ -114,6 +114,26 @@ class Task(abc.ABC):
 
 
 @dc.dataclass(frozen=True)
+class CoroutineTask(Task):
+    """
+    Wrap a coroutine in a task
+    """
+    coro: Coroutine
+    description: Optional[str] = None
+    _always_eager: bool = False
+    _is_metatask: bool = False
+
+    def always_eager(self) -> bool:
+        return self._always_eager
+
+    def is_metatask(self) -> bool:
+        return self._is_metatask
+
+    async def run(self) -> None:
+        await self.coro
+
+
+@dc.dataclass(frozen=True)
 class FunctionTaskFactory:
     """
 	This is essentially a factory that allows us to implement tasks for a session
@@ -369,14 +389,15 @@ class GraphDeleteKey(ResourceGraphOperation):
 	Delete some key in a resource graph.
 	"""
 
-    input_session: session.Session
-    input_symbol: Object
+    input_session: Optional[session.Session] = None
+    input_symbol: Optional[Object] = None
     description: Optional[str] = None
 
     async def run(self) -> None:
         # We resolve this symbol so that we know any upstream
         # tasks that this operation depends on went through successfully
-        self.input_session.resolve(self.input_symbol)
+        if self.input_session is not None and self.input_symbol is not None:
+            self.input_session.resolve(self.input_symbol)
         self.resource_graph.delete(self.key)
 
 

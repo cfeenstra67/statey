@@ -188,13 +188,17 @@ class SetValue(PlanAction):
             )
 
     def graph_update_task(self, prefix: str) -> str:
-        return f"{prefix}:graph-update"
+        return f"{prefix}:state"
 
     def session_switch_task(self, prefix: str) -> str:
-        return f"{prefix}:session-switch"
+        return f"{prefix}:output"
 
     def input_task(self, prefix: str) -> str:
-        if self.set_graph and self.set_session or not self.set_session:
+        if (
+            self.set_graph
+            and self.set_session
+            or not self.set_session
+        ):
             return self.graph_update_task(prefix)
         return self.session_switch_task(prefix)
 
@@ -213,7 +217,7 @@ class SetValue(PlanAction):
         dependencies: Sequence[str],
     ) -> None:
 
-        input_task_name = self.input_task(prefix)
+        graph_task_name = self.graph_update_task(prefix)
         if self.set_graph:
             graph_task = GraphSetKey(
                 input_session=output_session,
@@ -222,9 +226,9 @@ class SetValue(PlanAction):
                 resource_graph=resource_graph,
                 dependencies=dependencies,
             )
-            graph.add_node(input_task_name, task=graph_task, source=prefix)
+            graph.add_node(graph_task_name, task=graph_task, source=prefix)
 
-        output_task_name = self.output_task(prefix)
+        session_task_name = self.session_switch_task(prefix)
         if self.set_session:
             session_task = SessionSwitch(
                 input_session=output_session,
@@ -232,9 +236,65 @@ class SetValue(PlanAction):
                 output_session=output_session,
                 output_key=self.output_key,
             )
-            graph.add_node(output_task_name, task=session_task, source=prefix)
+            graph.add_node(session_task_name, task=session_task, source=prefix)
             if self.set_graph:
-                graph.add_edge(input_task_name, output_task_name)
+                graph.add_edge(graph_task_name, session_task_name)
+
+
+@dc.dataclass(frozen=True)
+class ResourceSetValue(PlanAction):
+    """
+    SetValue for a resource, a no-op action
+    """
+    output_key: str
+    output_symbol: Object
+    resource: Resource
+    state: ResourceState
+
+    def graph_update_task(self, prefix: str) -> str:
+        return f"{prefix}:state"
+
+    def session_switch_task(self, prefix: str) -> str:
+        return f"{prefix}:output"
+
+    def input_task(self, prefix: str) -> str:
+        return self.graph_update_task(prefix)
+
+    def output_task(self, prefix: str) -> str:
+        return self.session_switch_task(prefix)
+
+    def render(
+        self,
+        graph: nx.DiGraph,
+        prefix: str,
+        resource_graph: ResourceGraph,
+        output_session: session.Session,
+        # Dependencies of the configuration
+        dependencies: Sequence[str],
+    ) -> None:
+
+        session_task_name = self.session_switch_task(prefix)
+        session_task = SessionSwitch(
+            input_session=output_session,
+            input_symbol=self.output_symbol,
+            output_session=output_session,
+            output_key=self.output_key,
+        )
+        graph.add_node(session_task_name, task=session_task, source=prefix)
+
+        graph_task_name = self.graph_update_task(prefix)
+        graph_task = GraphSetKey(
+            input_session=output_session,
+            key=self.output_key,
+            input_symbol=self.output_symbol,
+            resource_graph=resource_graph,
+            dependencies=dependencies,
+            state=self.state,
+            finalize=self.resource.finalize
+        )
+        graph.add_node(graph_task_name, task=graph_task, source=prefix)
+
+        graph.add_edge(graph_task_name, session_task_name)
 
 
 @dc.dataclass(frozen=True)
@@ -262,7 +322,10 @@ class DeleteValue(PlanAction):
     ) -> None:
 
         graph_task_name = self.input_task(prefix)
-        graph_task = GraphDeleteKey(key=self.delete_key, resource_graph=resource_graph)
+        graph_task = GraphDeleteKey(
+            key=self.delete_key,
+            resource_graph=resource_graph
+        )
         graph.add_node(graph_task_name, task=graph_task, source=prefix)
 
 
@@ -288,6 +351,7 @@ class PlanNode:
     config_state: Optional[ResourceState]
     config_depends_on: Sequence[str]
     config_action: Optional[PlanAction]
+    enforce_dependencies: bool = True
 
     def input_task(self) -> Optional[str]:
         """
@@ -362,12 +426,15 @@ class PlanNode:
         """
 		Get the edges for this node, given the other nodes.
 		"""
-        edges = set()
+        edges = {}
+
+        if not self.enforce_dependencies:
+            return []
 
         # input_task = self.input_task()
         current_input_task = self.config_input_task()
         if current_input_task is None:
-            return edges
+            return []
 
         config_input_task = self.config_input_task()
         current_output_task = self.current_output_task()
@@ -378,7 +445,7 @@ class PlanNode:
             ref = node.output_task()
             if ref is None:
                 continue
-            edges.add((ref, config_input_task))
+            edges[ref, config_input_task] = {'optional': False}
 
         for downstream in self.current_depends_on:
             node = other_nodes[downstream]
@@ -403,11 +470,11 @@ class PlanNode:
                 else {(config_ref, config_input_task)}
             )
 
-            if not check_set & edges:
+            if not check_set & set(edges):
                 input_ref = node.current_input_task()
-                edges.add((current_output_task, input_ref))
+                edges[current_output_task, input_ref] = {'optional': True}
 
-        return edges
+        return [(*key, val) for key, val in edges.items()]
 
     def get_task_graph(
         self, resource_graph: ResourceGraph, output_session: session.Session
@@ -462,11 +529,37 @@ class Plan:
     config_session: ResourceSession
     state_graph: ResourceGraph
 
-    def task_graph(self) -> "TaskGraph":
+    def check_dag(self, graph: nx.DiGraph, strict: bool = False) -> None:
+        """
+        Check that this graph is a DAG, attempting to remove optional
+        edges to remove conflicts if necessary
+        """
+        while not strict:
+            try:
+                cycle = nx.find_cycle(graph, orientation='reverse')
+            except nx.NetworkXNoCycle:
+                return
+
+            removed = False
+
+            for left, right, _ in cycle:
+                edge = graph.edges[left, right]
+                if edge.get('optional'):
+                    graph.remove_edge(left, right)
+                    removed = True
+                    break
+
+            if not removed:
+                break
+
+        # This will raise a properly formatted error
+        utils.check_dag(dag)
+
+    def task_graph(self, strict: bool = False) -> "ResourceTaskGraph":
         """
 		Render a full task graph from this plan
 		"""
-        from statey.executor import TaskGraph
+        from statey.executor import ResourceTaskGraph
 
         state_graph = self.state_graph.clone()
         output_session = self.config_session.clone()
@@ -474,7 +567,7 @@ class Plan:
         node_dict = {node.key: node for node in self.nodes}
 
         graphs = []
-        edges = set()
+        raw_edges = {}
 
         for node in self.nodes:
             graphs.append(
@@ -482,16 +575,23 @@ class Plan:
                     resource_graph=state_graph, output_session=output_session
                 )
             )
-            edges |= node.get_edges(node_dict)
+            node_edges = node.get_edges(node_dict)
+            for edge_from, edge_to, data in node_edges:
+                raw_edges.setdefault((edge_from, edge_to), []).append(data)
+
+        edges = [
+            (*key, {'optional': all(item.get('optional') for item in vals)})
+            for key, vals in raw_edges.items()
+        ]
 
         # This will raise an error if there are overlapping keys, which there
         # shouldn't be.
         full_graph = reduce(nx.union, graphs) if graphs else nx.DiGraph()
         full_graph.add_edges_from(edges)
 
-        utils.check_dag(full_graph)
+        self.check_dag(full_graph, strict)
 
-        return TaskGraph(full_graph, output_session, state_graph)
+        return ResourceTaskGraph(full_graph, output_session, state_graph)
 
     def is_empty(self, include_metatasks: bool = False) -> bool:
         """
@@ -541,11 +641,411 @@ class DefaultMigrator(Migrator):
     def create_task_session(self) -> TaskSession:
         return create_task_session()
 
+    async def plan_node(
+        self,
+        node: str,
+        config_session: ResourceSession,
+        state_graph: ResourceGraph,
+        config_dep_graph: nx.DiGraph,
+        state_dep_graph: nx.DiGraph,
+        output_session: ResourceSession
+    ) -> Sequence[PlanNode]:
+        """
+
+        """
+        previous_exists = node in state_dep_graph.nodes
+        previous_state = None
+        if node in state_dep_graph.nodes:
+            previous_state = state_dep_graph.nodes[node]["state"]
+
+        config_exists = node in config_dep_graph.nodes
+        config_bound_state = None
+        config_state = None
+        try:
+            config_bound_state = output_session.get_state(node)
+        except exc.SymbolKeyError:
+            pass
+        else:
+            config_state = config_bound_state.state
+
+        current_depends_on = (
+            list(state_dep_graph.pred[node]) if previous_exists else []
+        )
+        config_depends_on = (
+            list(config_dep_graph.pred[node]) if config_exists else []
+        )
+
+        plan_nodes = []
+
+        # We can handle this node with one action--otherwise we need two, though
+        # one or both may just be state update operations.
+        if (
+            config_state is not None
+            and previous_state is not None
+            and config_state.resource == previous_state.resource
+        ):
+            resource = output_session.ns.registry.get_resource(
+                config_state.resource
+            )
+            previous_resolved = state_dep_graph.nodes[node]["value"]
+
+            config_partial_resolved = output_session.resolve(
+                config_bound_state.input, decode=False, allow_unknowns=True
+            )
+            previous_snapshot = StateSnapshot(previous_resolved, previous_state)
+
+            task_session_base = self.create_task_session()
+            input_ref = task_session_base.ns.new(
+                "input", config_state.state.input_type
+            )
+            task_session_base.set_data("input", config_partial_resolved)
+
+            task_session = task_session_base.clone()
+
+            bound_config = StateConfig(input_ref, config_state)
+
+            # A bunch of junk to handle errors nicely
+            error, tb = None, None
+            current_action = None
+            try:
+
+                try:
+                    plan_output = await resource.plan(
+                        previous_snapshot, bound_config, task_session
+                    )
+                except exc.NullRequired:
+                    null_bound_config = StateConfig({}, resource.s.null_state)
+
+                    old_task_session = self.create_task_session()
+                    old_task_session.ns.new(
+                        "input", resource.s.null_state.input_type
+                    )
+                    old_task_session.set_data("input", {})
+                    # old_task_session = task_session_base.clone()
+                    og_plan_output = await resource.plan(
+                        previous_snapshot, null_bound_config, old_task_session
+                    )
+
+                    if (
+                        isinstance(og_plan_output, tuple)
+                        and len(og_plan_output) == 2
+                    ):
+                        og_output_ref, og_graph_ref = og_plan_output
+                    else:
+                        og_output_ref, og_graph_ref = og_plan_output, og_plan_output
+
+                    null_snapshot = StateSnapshot({}, resource.s.null_state)
+                    task_session = task_session_base.clone()
+                    plan_output = await resource.plan(
+                        null_snapshot, bound_config, task_session
+                    )
+
+                    current_action = ExecuteTaskSession(
+                        task_session=old_task_session,
+                        task_input_key="input",
+                        output_key=node,
+                        output_ref=og_output_ref,
+                        graph_ref=og_graph_ref,
+                        config_state=resource.s.null_state,
+                        previous_state=previous_state,
+                        resource=resource,
+                        input_symbol=null_snapshot.obj,
+                    )
+
+            except Exception as err:
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, bound_config, err
+                )
+                _, _, tb = sys.exc_info()
+            if error:
+                try:
+                    raise error.with_traceback(tb)
+                except Exception:
+                    stack.rewrite_tb(*sys.exc_info())
+            # End error junk
+
+            # Allow different refs for graph vs. session by returning a tuple of refs
+            if isinstance(plan_output, tuple) and len(plan_output) == 2:
+                output_ref, graph_ref = plan_output
+            else:
+                output_ref, graph_ref = plan_output, plan_output
+
+            output_partial_resolved = task_session.resolve(
+                output_ref, allow_unknowns=True, decode=False
+            )
+            output_session.set_data(node, output_partial_resolved)
+
+            test_graph = task_session.task_graph(ResourceGraph(), node)
+            # This indicates there are no tasks in the session.
+            if not test_graph.nodes:
+                try:
+                    resolved_graph_ref = task_session.resolve(
+                        graph_ref, decode=False
+                    )
+                # The graph reference isn't fully resolved yet, we still need
+                # to execute the task session
+                except exc.UnknownError:
+                    pass
+                else:
+                    state_obj = Object(
+                        resolved_graph_ref,
+                        config_state.state.output_type,
+                        config_session.ns.registry,
+                    )
+                    # Since we are not setting this key in the graph, we can
+                    # act like the configuration has no dependencies during
+                    # planning. This essentially lets us avoid circular
+                    # dependencies because these no-op resources will never
+                    # depend on anything.
+                    plan_node = PlanNode(
+                        key=node,
+                        current_data=previous_resolved,
+                        current_type=previous_state.state.output_type,
+                        current_state=previous_state,
+                        current_depends_on=current_depends_on,
+                        current_action=None,
+                        config_data=resolved_graph_ref,
+                        config_type=config_state.state.output_type,
+                        config_state=config_state,
+                        config_depends_on=config_depends_on,
+                        config_action=ResourceSetValue(
+                            node, state_obj, resource, config_state
+                        ),
+                        enforce_dependencies=False
+                    )
+                    plan_nodes.append(plan_node)
+                    return plan_nodes
+
+            action = ExecuteTaskSession(
+                task_session=task_session,
+                task_input_key="input",
+                output_key=node,
+                output_ref=output_ref,
+                graph_ref=graph_ref,
+                config_state=config_state,
+                previous_state=previous_state,
+                resource=resource,
+                input_symbol=config_bound_state.input,
+            )
+
+            plan_node = PlanNode(
+                key=node,
+                current_data=previous_resolved,
+                current_type=previous_state.state.output_type,
+                current_state=previous_state,
+                current_depends_on=current_depends_on,
+                current_action=current_action,
+                config_data=output_partial_resolved,
+                config_type=config_state.state.output_type,
+                config_state=config_state,
+                config_depends_on=config_depends_on,
+                config_action=action,
+            )
+            plan_nodes.append(plan_node)
+            return plan_nodes
+
+        args = {
+            "key": node,
+            "current_data": None,
+            "current_type": None,
+            "current_state": None,
+            "current_depends_on": current_depends_on,
+            "current_action": None,
+            "config_data": None,
+            "config_type": None,
+            "config_state": None,
+            "config_depends_on": config_depends_on,
+            "config_action": None,
+        }
+
+        if previous_state:
+            resource = config_session.ns.registry.get_resource(
+                previous_state.resource
+            )
+            previous_resolved = state_dep_graph.nodes[node]["value"]
+
+            previous_snapshot = StateSnapshot(previous_resolved, previous_state)
+
+            null_state = resource.s.null_state
+
+            task_session = self.create_task_session()
+            input_ref = task_session.ns.new("input", null_state.input_type)
+
+            config_bound = StateConfig(input_ref, null_state)
+            task_session.set_data("input", {})
+
+            # A bunch of junk to handle errors nicely
+            error, tb = None, None
+            try:
+                plan_output = await resource.plan(
+                    previous_snapshot, config_bound, task_session
+                )
+            except Exception as err:
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, config_bound, err
+                )
+                _, _, tb = sys.exc_info()
+            if error:
+                try:
+                    raise error.with_traceback(tb)
+                except Exception:
+                    stack.rewrite_tb(*sys.exc_info())
+            # End error junk
+
+            # Allow different refs for graph vs. session by returning a tuple of refs
+            if isinstance(plan_output, tuple) and len(plan_output) == 2:
+                output_ref, graph_ref = plan_output
+            else:
+                output_ref, graph_ref = plan_output, plan_output
+
+            error, tb = None, None
+            try:
+                # In theory this should _not_ allow unknowns, but keeping it less strict for now.
+                # Update: removed unknowns, they should not be needed
+                # Update2: These are needed for now
+                output_resolved = task_session.resolve(
+                    output_ref, decode=False, allow_unknowns=True
+                )
+            except Exception as err:
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, config_bound, err
+                )
+                _, _, tb = sys.exc_info()
+            if error:
+                try:
+                    raise error.with_traceback(tb)
+                except Exception:
+                    stack.rewrite_tb(*sys.exc_info())
+
+            action = ExecuteTaskSession(
+                task_session=task_session,
+                task_input_key="input",
+                output_key=node,
+                output_ref=output_ref,
+                graph_ref=graph_ref,
+                config_state=resource.s.null_state,
+                previous_state=previous_state,
+                resource=resource,
+                input_symbol=Object(
+                    {}, config_bound.type, task_session.ns.registry
+                ),
+            )
+
+            args.update(
+                {
+                    "current_data": previous_resolved,
+                    "current_type": previous_state.output_type,
+                    "current_state": previous_state,
+                    "current_action": action,
+                }
+            )
+        elif previous_exists and not config_exists:
+            args.update(
+                {
+                    "current_data": state_dep_graph.nodes[node]["value"],
+                    "current_type": state_dep_graph.nodes[node]["type"],
+                    "current_state": None,
+                    "current_action": DeleteValue(node),
+                    # If the old value is not stateful, there are no dependencies to deleting it.
+                    "current_depends_on": [],
+                }
+            )
+
+        if config_state:
+            resource = config_session.ns.registry.get_resource(
+                config_state.resource
+            )
+            config_partial_resolved = output_session.resolve(
+                config_bound_state.input, decode=False, allow_unknowns=True
+            )
+
+            previous_snapshot = StateSnapshot({}, resource.s.null_state)
+
+            task_session = self.create_task_session()
+            input_ref = task_session.ns.new("input", config_state.state.input_type)
+            task_session.set_data("input", config_partial_resolved)
+
+            config_bound = StateConfig(input_ref, config_state)
+
+            # A bunch of junk to handle errors nicely
+            error, tb = None, None
+            try:
+                plan_output = await resource.plan(
+                    previous_snapshot, config_bound, task_session
+                )
+            except Exception as err:
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, config_bound, err
+                )
+                _, _, tb = sys.exc_info()
+            if error:
+                try:
+                    raise error.with_traceback(tb)
+                except Exception:
+                    stack.rewrite_tb(*sys.exc_info())
+            # End error junk
+            # Allow different refs for graph vs. session by returning a tuple of refs
+            if isinstance(plan_output, tuple) and len(plan_output) == 2:
+                output_ref, graph_ref = plan_output
+            else:
+                output_ref, graph_ref = plan_output, plan_output
+
+            output_partial_resolved = task_session.resolve(
+                output_ref, allow_unknowns=True, decode=False
+            )
+
+            output_session.set_data(node, output_partial_resolved)
+
+            action = ExecuteTaskSession(
+                task_session=task_session,
+                task_input_key="input",
+                output_key=node,
+                output_ref=output_ref,
+                graph_ref=graph_ref,
+                config_state=config_state,
+                previous_state=resource.s.null_state,
+                resource=resource,
+                input_symbol=config_bound_state.input,
+            )
+
+            args.update(
+                {
+                    "config_data": output_partial_resolved,
+                    "config_type": config_state.state.output_type,
+                    "config_state": config_state,
+                    "config_action": action,
+                }
+            )
+        elif config_exists:
+            ref = config_session.ns.ref(node)
+            action = SetValue(node, ref)
+
+            args.update(
+                {
+                    "config_data": config_session.resolve(
+                        ref, decode=False, allow_unknowns=True
+                    ),
+                    "config_type": config_session.ns.resolve(node),
+                    "config_state": None,
+                    "config_action": action,
+                }
+            )
+
+        plan_node = PlanNode(**args)
+        plan_nodes.append(plan_node)
+
+        return plan_nodes
+
     async def plan(
         self,
         config_session: ResourceSession,
         state_graph: Optional[ResourceGraph] = None,
     ) -> Plan:
+
+        from statey.executor import AsyncIOTaskGraph, AsyncIOGraphExecutor
+
+        if state_graph is None:
+            state_graph = ResourceGraph()
 
         # Ugly error handling :(
         error, tb = None, None
@@ -573,393 +1073,38 @@ class DefaultMigrator(Migrator):
 
         plan_nodes = []
 
-        for node in chain(topological_sort(config_dep_graph), state_only_nodes):
-            previous_exists = node in state_nodes
-            previous_state = None
-            if node in state_dep_graph.nodes:
-                previous_state = state_dep_graph.nodes[node]["state"]
+        task_graph = nx.DiGraph()
 
-            config_exists = node in config_nodes
-            config_bound_state = None
-            config_state = None
+        async def coro(node):
+            plan_nodes.extend(await self.plan_node(
+                node=node,
+                config_session=config_session,
+                state_graph=state_graph,
+                config_dep_graph=config_dep_graph,
+                state_dep_graph=state_dep_graph,
+                output_session=output_session
+            ))
+
+        for node in chain(config_dep_graph.nodes, state_only_nodes):
+            task_graph.add_node(node, coroutine=coro(node))
+
+        task_graph.add_edges_from(((a, b) for a, b, _ in config_dep_graph.edges))
+        task_graph_obj = AsyncIOTaskGraph(task_graph)
+        executor = AsyncIOGraphExecutor()
+
+        exec_info = await executor.execute_async(task_graph_obj)
+        # Ugly error handling :(
+        error, tb = None, None
+        try:
+            exec_info.raise_for_failure()
+        except Exception as err:
+            error = exc.ErrorDuringPlanning(err)
+            _, _, tb = sys.exc_info()
+        if error:
             try:
-                config_bound_state = output_session.get_state(node)
-            except exc.SymbolKeyError:
-                pass
-            else:
-                config_state = config_bound_state.state
-
-            current_depends_on = (
-                list(state_dep_graph.pred[node]) if previous_exists else []
-            )
-            config_depends_on = (
-                list(config_dep_graph.pred[node]) if config_exists else []
-            )
-
-            # We can handle this node with one action--otherwise we need two, though
-            # one or both may just be state update operations.
-            if (
-                config_state is not None
-                and previous_state is not None
-                and config_state.resource == previous_state.resource
-            ):
-                resource = output_session.ns.registry.get_resource(
-                    config_state.resource
-                )
-                previous_resolved = state_dep_graph.nodes[node]["value"]
-
-                config_partial_resolved = output_session.resolve(
-                    config_bound_state.input, decode=False, allow_unknowns=True
-                )
-                previous_snapshot = StateSnapshot(previous_resolved, previous_state)
-
-                task_session_base = self.create_task_session()
-                input_ref = task_session_base.ns.new(
-                    "input", config_state.state.input_type
-                )
-                task_session_base.set_data("input", config_partial_resolved)
-
-                task_session = task_session_base.clone()
-
-                bound_config = StateConfig(input_ref, config_state)
-
-                # A bunch of junk to handle errors nicely
-                error, tb = None, None
-                current_action = None
-                try:
-                    # plan_output = await resource.plan(
-                    #     previous_snapshot, bound_config, task_session
-                    # )
-
-                    try:
-                        plan_output = await resource.plan(
-                            previous_snapshot, bound_config, task_session
-                        )
-                    except exc.NullRequired:
-                        null_bound_config = StateConfig({}, resource.s.null_state)
-
-                        old_task_session = self.create_task_session()
-                        old_task_session.ns.new(
-                            "input", resource.s.null_state.input_type
-                        )
-                        old_task_session.set_data("input", {})
-                        # old_task_session = task_session_base.clone()
-                        og_plan_output = await resource.plan(
-                            previous_snapshot, null_bound_config, old_task_session
-                        )
-
-                        if (
-                            isinstance(og_plan_output, tuple)
-                            and len(og_plan_output) == 2
-                        ):
-                            og_output_ref, og_graph_ref = og_plan_output
-                        else:
-                            og_output_ref, og_graph_ref = og_plan_output, og_plan_output
-
-                        null_snapshot = StateSnapshot({}, resource.s.null_state)
-                        task_session = task_session_base.clone()
-                        plan_output = await resource.plan(
-                            null_snapshot, bound_config, task_session
-                        )
-
-                        current_action = ExecuteTaskSession(
-                            task_session=old_task_session,
-                            task_input_key="input",
-                            output_key=node,
-                            output_ref=og_output_ref,
-                            graph_ref=og_graph_ref,
-                            config_state=resource.s.null_state,
-                            previous_state=previous_state,
-                            resource=resource,
-                            input_symbol=null_snapshot.obj,
-                        )
-
-                except Exception as err:
-                    error = exc.ErrorDuringPlanningNode(
-                        node, previous_snapshot, bound_config, err
-                    )
-                    _, _, tb = sys.exc_info()
-                if error:
-                    try:
-                        raise error.with_traceback(tb)
-                    except Exception:
-                        stack.rewrite_tb(*sys.exc_info())
-                # End error junk
-
-                # Allow different refs for graph vs. session by returning a tuple of refs
-                if isinstance(plan_output, tuple) and len(plan_output) == 2:
-                    output_ref, graph_ref = plan_output
-                else:
-                    output_ref, graph_ref = plan_output, plan_output
-
-                output_partial_resolved = task_session.resolve(
-                    output_ref, allow_unknowns=True, decode=False
-                )
-                output_session.set_data(node, output_partial_resolved)
-
-                test_graph = task_session.task_graph(ResourceGraph(), node)
-                # This indicates there are no tasks in the session and the state has not changed.
-                if (
-                    not test_graph.nodes
-                    and previous_state.state.name == config_state.state.name
-                    and previous_state.state.type == config_state.state.type
-                    and current_depends_on == config_depends_on
-                ):
-                    try:
-                        resolved_graph_ref = task_session.resolve(
-                            graph_ref, decode=False
-                        )
-                    # The graph reference isn't fully resolved yet, we still need
-                    # to execute the task session
-                    except exc.UnknownError:
-                        pass
-                    else:
-                        if resolved_graph_ref == previous_resolved:
-                            state_obj = Object(
-                                resolved_graph_ref,
-                                config_state.state.output_type,
-                                config_session.ns.registry,
-                            )
-                            # Since we are not setting this key in the graph, we can
-                            # act like the configuration has no dependencies during
-                            # planning. This essentially lets us avoid circular
-                            # dependencies because these no-op resources will never
-                            # depend on anything.
-                            plan_node = PlanNode(
-                                key=node,
-                                current_data=previous_resolved,
-                                current_type=previous_state.state.output_type,
-                                current_state=previous_state,
-                                current_depends_on=(),
-                                current_action=None,
-                                config_data=resolved_graph_ref,
-                                config_type=config_state.state.output_type,
-                                config_state=config_state,
-                                config_depends_on=(),
-                                config_action=SetValue(
-                                    node, state_obj, set_graph=False
-                                ),
-                            )
-                            plan_nodes.append(plan_node)
-                            continue
-
-                action = ExecuteTaskSession(
-                    task_session=task_session,
-                    task_input_key="input",
-                    output_key=node,
-                    output_ref=output_ref,
-                    graph_ref=graph_ref,
-                    config_state=config_state,
-                    previous_state=previous_state,
-                    resource=resource,
-                    input_symbol=config_bound_state.input,
-                )
-
-                plan_node = PlanNode(
-                    key=node,
-                    current_data=previous_resolved,
-                    current_type=previous_state.state.output_type,
-                    current_state=previous_state,
-                    current_depends_on=current_depends_on,
-                    current_action=current_action,
-                    config_data=output_partial_resolved,
-                    config_type=config_state.state.output_type,
-                    config_state=config_state,
-                    config_depends_on=config_depends_on,
-                    config_action=action,
-                )
-                plan_nodes.append(plan_node)
-                continue
-
-            args = {
-                "key": node,
-                "current_data": None,
-                "current_type": None,
-                "current_state": None,
-                "current_depends_on": current_depends_on,
-                "current_action": None,
-                "config_data": None,
-                "config_type": None,
-                "config_state": None,
-                "config_depends_on": config_depends_on,
-                "config_action": None,
-            }
-
-            if previous_state:
-                resource = config_session.ns.registry.get_resource(
-                    previous_state.resource
-                )
-                previous_resolved = state_dep_graph.nodes[node]["value"]
-
-                previous_snapshot = StateSnapshot(previous_resolved, previous_state)
-
-                null_state = resource.s.null_state
-
-                task_session = self.create_task_session()
-                input_ref = task_session.ns.new("input", null_state.input_type)
-
-                config_bound = StateConfig(input_ref, null_state)
-                task_session.set_data("input", {})
-
-                # A bunch of junk to handle errors nicely
-                error, tb = None, None
-                try:
-                    plan_output = await resource.plan(
-                        previous_snapshot, config_bound, task_session
-                    )
-                except Exception as err:
-                    error = exc.ErrorDuringPlanningNode(
-                        node, previous_snapshot, config_bound, err
-                    )
-                    _, _, tb = sys.exc_info()
-                if error:
-                    try:
-                        raise error.with_traceback(tb)
-                    except Exception:
-                        stack.rewrite_tb(*sys.exc_info())
-                # End error junk
-
-                # Allow different refs for graph vs. session by returning a tuple of refs
-                if isinstance(plan_output, tuple) and len(plan_output) == 2:
-                    output_ref, graph_ref = plan_output
-                else:
-                    output_ref, graph_ref = plan_output, plan_output
-
-                error, tb = None, None
-                try:
-                    # In theory this should _not_ allow unknowns, but keeping it less strict for now.
-                    # Update: removed unknowns, they should not be needed
-                    # Update2: These are needed for now
-                    output_resolved = task_session.resolve(
-                        output_ref, decode=False, allow_unknowns=True
-                    )
-                except Exception as err:
-                    error = exc.ErrorDuringPlanningNode(
-                        node, previous_snapshot, config_bound, err
-                    )
-                    _, _, tb = sys.exc_info()
-                if error:
-                    try:
-                        raise error.with_traceback(tb)
-                    except Exception:
-                        stack.rewrite_tb(*sys.exc_info())
-
-                action = ExecuteTaskSession(
-                    task_session=task_session,
-                    task_input_key="input",
-                    output_key=node,
-                    output_ref=output_ref,
-                    graph_ref=graph_ref,
-                    config_state=resource.s.null_state,
-                    previous_state=previous_state,
-                    resource=resource,
-                    input_symbol=Object(
-                        {}, config_bound.type, task_session.ns.registry
-                    ),
-                )
-
-                args.update(
-                    {
-                        "current_data": previous_resolved,
-                        "current_type": previous_state.output_type,
-                        "current_state": previous_state,
-                        "current_action": action,
-                    }
-                )
-            elif previous_exists:
-                args.update(
-                    {
-                        "current_data": state_dep_graph.nodes[node]["value"],
-                        "current_type": state_dep_graph.nodes[node]["type"],
-                        "current_state": None,
-                        "current_action": DeleteValue(node),
-                        # If the old value is not stateful, there are no dependencies to deleting it.
-                        "current_depends_on": [],
-                    }
-                )
-
-            if config_state:
-                resource = config_session.ns.registry.get_resource(
-                    config_state.resource
-                )
-                config_partial_resolved = output_session.resolve(
-                    config_bound_state.input, decode=False, allow_unknowns=True
-                )
-
-                previous_snapshot = StateSnapshot({}, resource.s.null_state)
-
-                task_session = self.create_task_session()
-                input_ref = task_session.ns.new("input", config_state.state.input_type)
-                task_session.set_data("input", config_partial_resolved)
-
-                config_bound = StateConfig(input_ref, config_state)
-
-                # A bunch of junk to handle errors nicely
-                error, tb = None, None
-                try:
-                    plan_output = await resource.plan(
-                        previous_snapshot, config_bound, task_session
-                    )
-                except Exception as err:
-                    error = exc.ErrorDuringPlanningNode(
-                        node, previous_snapshot, config_bound, err
-                    )
-                    _, _, tb = sys.exc_info()
-                if error:
-                    try:
-                        raise error.with_traceback(tb)
-                    except Exception:
-                        stack.rewrite_tb(*sys.exc_info())
-                # End error junk
-                # Allow different refs for graph vs. session by returning a tuple of refs
-                if isinstance(plan_output, tuple) and len(plan_output) == 2:
-                    output_ref, graph_ref = plan_output
-                else:
-                    output_ref, graph_ref = plan_output, plan_output
-
-                output_partial_resolved = task_session.resolve(
-                    output_ref, allow_unknowns=True, decode=False
-                )
-
-                output_session.set_data(node, output_partial_resolved)
-
-                action = ExecuteTaskSession(
-                    task_session=task_session,
-                    task_input_key="input",
-                    output_key=node,
-                    output_ref=output_ref,
-                    graph_ref=graph_ref,
-                    config_state=config_state,
-                    previous_state=resource.s.null_state,
-                    resource=resource,
-                    input_symbol=config_bound_state.input,
-                )
-
-                args.update(
-                    {
-                        "config_data": output_partial_resolved,
-                        "config_type": config_state.state.output_type,
-                        "config_state": config_state,
-                        "config_action": action,
-                    }
-                )
-            elif config_exists:
-                ref = config_session.ns.ref(node)
-                action = SetValue(node, ref)
-
-                args.update(
-                    {
-                        "config_data": config_session.resolve(
-                            ref, decode=False, allow_unknowns=True
-                        ),
-                        "config_type": config_session.ns.resolve(node),
-                        "config_state": None,
-                        "config_action": action,
-                    }
-                )
-
-            plan_node = PlanNode(**args)
-            plan_nodes.append(plan_node)
+                raise error.with_traceback(tb)
+            except Exception:
+                stack.rewrite_tb(*sys.exc_info())
 
         plan = Plan(tuple(plan_nodes), config_session, state_graph)
         # This will ensure that the task graph is a valid DAG, not perfect but it will

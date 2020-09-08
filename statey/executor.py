@@ -10,14 +10,146 @@ import networkx as nx
 import pluggy
 from networkx.algorithms.dag import descendants
 
+from statey import exc
 from statey.hooks import hookspec, create_plugin_manager
 from statey.resource import ResourceGraph
 from statey.syms import utils, session
-from statey.task import Task, TaskStatus, TaskInfo, ErrorInfo
+from statey.task import Task, TaskStatus, TaskInfo, ErrorInfo, CoroutineTask
+
+
+class TaskGraph(abc.ABC):
+    """
+    Abstract base class for a task graph that a TaskGraphExecutor can execute
+    """
+    @abc.abstractmethod
+    def set_status(
+        self,
+        key: str,
+        status: TaskStatus,
+        error: Optional[ErrorInfo] = None,
+        skipped_by: Optional[str] = None,
+    ) -> None:
+        """
+        Set the status of a given task
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_task(self, key: str) -> Task:
+        """
+        Get the task with the given key
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_info(self, key: str) -> TaskInfo:
+        """
+        Get the task with the given key
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_descendants(self, key: str) -> Sequence[str]:
+        """
+        Get all descendant tasks of `key`
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_ready_tasks(self) -> Sequence[str]:
+        """
+        Get the tasks that are ready to schedule
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def keys(self) -> Sequence[str]:
+        """
+        Get all tasks in this graph
+        """
+        raise NotImplementedError
 
 
 @dc.dataclass(frozen=True)
-class TaskGraph:
+class AsyncIOTaskGraph(TaskGraph):
+    """
+    Wrapper class for a flat task graph, offering API methods to manipulate it, usually with
+    an executor
+    """
+
+    task_graph: nx.DiGraph
+
+    def __post_init__(self) -> None:
+        """
+        Fill initial states for all tasks
+        """
+        for node in self.task_graph:
+            self.task_graph.nodes[node]["info"] = TaskInfo(TaskStatus.NOT_STARTED)
+
+    def set_status(
+        self,
+        key: str,
+        status: TaskStatus,
+        error: Optional[ErrorInfo] = None,
+        skipped_by: Optional[str] = None,
+    ) -> None:
+        """
+        Set the status of a given task
+        """
+        self.task_graph.nodes[key]["info"] = TaskInfo(
+            status, error=error, skipped_by=skipped_by
+        )
+
+    def get_task(self, key: str) -> Task:
+        """
+        Get the task with the given key
+        """
+        if "task" not in self.task_graph.nodes[key]:
+            coro = self.task_graph.nodes[key]["coroutine"]
+            self.task_graph.nodes[key]["task"] = CoroutineTask(coro)
+        return self.task_graph.nodes[key]["task"]
+
+    def get_info(self, key: str) -> TaskInfo:
+        """
+        Get the task with the given key
+        """
+        return self.task_graph.nodes[key]["info"]
+
+    def get_descendants(self, key: str) -> Sequence[str]:
+        """
+        Get all descendant tasks of `key`
+        """
+        return descendants(self.task_graph, key)
+
+    def get_ready_tasks(self) -> Sequence[str]:
+        """
+        Get the tasks that are ready to schedule
+        """
+        done_tasks = {
+            node
+            for node in self.task_graph.nodes
+            if self.get_info(node).status.value > TaskStatus.SKIPPED.value
+        }
+        not_started_tasks = {
+            node
+            for node in self.task_graph.nodes
+            if self.get_info(node).status == TaskStatus.NOT_STARTED
+        }
+        out = []
+        for task_key in not_started_tasks:
+            # We will mark tasks as ready if all their predecessors are done;
+            # it's left to the executor to skip other tasks as needed
+            if set(self.task_graph.pred[task_key]) - done_tasks:
+                continue
+            out.append(task_key)
+        return out
+
+    def keys(self) -> Sequence[str]:
+        return list(self.task_graph.nodes)
+
+
+@dc.dataclass(frozen=True)
+class ResourceTaskGraph(TaskGraph):
     """
 	Wrapper class for a flat task graph, offering API methods to manipulate it, usually with
 	an executor
@@ -41,35 +173,20 @@ class TaskGraph:
         error: Optional[ErrorInfo] = None,
         skipped_by: Optional[str] = None,
     ) -> None:
-        """
-		Set the status of a given task
-		"""
         self.task_graph.nodes[key]["info"] = TaskInfo(
             status, error=error, skipped_by=skipped_by
         )
 
     def get_task(self, key: str) -> Task:
-        """
-		Get the task with the given key
-		"""
         return self.task_graph.nodes[key]["task"]
 
     def get_info(self, key: str) -> TaskInfo:
-        """
-		Get the task with the given key
-		"""
         return self.task_graph.nodes[key]["info"]
 
     def get_descendants(self, key: str) -> Sequence[str]:
-        """
-		Get all descendant tasks of `key`
-		"""
         return descendants(self.task_graph, key)
 
     def get_ready_tasks(self) -> Sequence[str]:
-        """
-		Get the tasks that are ready to schedule
-		"""
         done_tasks = {
             node
             for node in self.task_graph.nodes
@@ -88,6 +205,9 @@ class TaskGraph:
                 continue
             out.append(task_key)
         return out
+
+    def keys(self) -> Sequence[str]:
+        return list(self.task_graph.nodes)
 
 
 class ExecutionStrategy(enum.Enum):
@@ -115,6 +235,31 @@ class ExecutionInfo(utils.Cloneable):
     cancelled_by_errors: Sequence[BaseException] = dc.field(default_factory=list)
     start_timestamp: datetime = dc.field(default_factory=datetime.utcnow)
     end_timestamp: datetime = dc.field(default=None)
+
+    def is_success(self) -> bool:
+        """
+        Indicate whether this execution was a success
+        """
+        tasks_by_status = self.tasks_by_status()
+        return set(tasks_by_status) <= {TaskStatus.SUCCESS}
+
+    def tasks_by_status(self) -> Dict[TaskStatus, Sequence[str]]:
+        """
+        Sort tasks by status and return the names of tasks for each status
+        """
+        out = {}
+        for key in self.task_graph.keys():
+            info = self.task_graph.get_info(key)
+            out.setdefault(info.status, []).append(key)
+        return out
+
+    def raise_for_failure(self) -> None:
+        """
+        Raise an error to indicate that this execution was not successful, if
+        relevant.
+        """
+        if not self.is_success():
+            raise exc.ExecutionError(self)
 
 
 class TaskGraphHooks:
@@ -192,9 +337,9 @@ class AsyncTaskGraphExecutor(TaskGraphExecutor):
     async def execute_async(
         self,
         task_graph: TaskGraph,
-        exec_info: ExecutionInfo,
+        exec_info: Optional[ExecutionInfo] = None,
         strategy: ExecutionStrategy = ExecutionStrategy.EAGER
-    ) -> None:
+    ) -> ExecutionInfo:
         """
         Wrap all task executions into a single coroutine. This should _not_
         handle signals
@@ -392,9 +537,12 @@ class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
     async def execute_async(
         self,
         task_graph: TaskGraph,
-        exec_info: ExecutionInfo,
+        exec_info: Optional[ExecutionInfo] = None,
         strategy: ExecutionStrategy = ExecutionStrategy.EAGER
     ) -> None:
+
+        if exec_info is None:
+            exec_info = ExecutionInfo(task_graph, strategy)
 
         ready_tasks = {
             key: task_graph.get_task(key) for key in task_graph.get_ready_tasks()
@@ -404,6 +552,10 @@ class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
         ]
 
         if not ready_wrappers:
-            return
+            return exec_info
 
         await asyncio.wait(ready_wrappers)
+
+        exec_info.end_timestamp = datetime.utcnow()
+
+        return exec_info

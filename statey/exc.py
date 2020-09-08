@@ -471,3 +471,32 @@ class InvalidModificationAction(ResourceError):
         super().__init__(
             f"Encountered unhandled modification action {modification_type}."
         )
+
+
+class ExecutionError(StateyError):
+    """
+    Error to raise indicating that an execution attempt was not successful
+    """
+    def __init__(self, exec_info: "ExecutionInfo") -> None:
+        from statey.task import TaskStatus
+
+        self.exec_info = exec_info
+        tasks_by_status = exec_info.tasks_by_status()
+
+        traces = {}
+        for key in tasks_by_status.get(TaskStatus.FAILED, []):
+            info = exec_info.task_graph.get_info(key)
+            if info.error is not None:
+                traces[key] = info.error
+
+        trace_lines = []
+        for key, error in traces.items():
+            trace_lines.append(f'{key}: {error.format_error_message()}')
+
+        trace_lines.insert(0, '')
+        trace_str = '\n'.join(trace_lines)
+
+        super().__init__(
+            f"Error encountered during execution of a task graph; tasks "
+            f"by status: {tasks_by_status}. Errors:{trace_str}"
+        )

@@ -367,7 +367,10 @@ class SimpleMachine(SingleStateMachine):
         Get the expected output for the given configuration. Default implementation
         is just passing through config fields and setting the rest as unknown
         """
-        return st.fill_unknowns(config.obj, config.state.output_type)
+        output = st.Unknown[config.state.output_type]
+        if not current.state.null:
+            output = current.obj
+        return st.fill(config.obj, config.state.output_type, output)
 
     # Not defined as abstract methods because subclasses may want to just override
     # the top-level methods instead

@@ -123,6 +123,7 @@ class ResourceState:
 
     state: AbstractState
     resource: str
+    # meta: Dict[str, Any] = dc.field(default_factory=dict)
 
     @property
     def name(self) -> str:

@@ -63,7 +63,16 @@ class DiffConfig(utils.Cloneable):
         Get the comparison function for a given path
         """
         comp = self.get_explicit_comparison(path)
-        return operator.eq if comp is None else comp
+        if comp is None:
+            return operator.eq
+
+        def wrapped(old, new):
+            res = comp(old, new)
+            if res is NotImplemented:
+                return old == new
+            return res
+
+        return wrapped
 
 
 @dc.dataclass(frozen=True)

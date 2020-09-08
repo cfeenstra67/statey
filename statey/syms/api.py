@@ -38,20 +38,32 @@ def map(
     return value._inst.map(func_obj)
 
 
-def declarative(func: Callable[[Any], Any] = utils.MISSING) -> Callable[[Any], Any]:
+def declarative(
+    func: Callable[[Any], Any] = utils.MISSING,
+    name_key: Callable[[str], str] = lambda x: x,
+    ignore: Callable[[str], str] = lambda x: x.startswith('_')
+) -> Callable[[Any], Any]:
     """
     Wrap the given function as a function that declares statey objects
     """
 
     def dec(_func):
+
         @wraps(_func)
-        def wrapper(session, *args, name_key=lambda x: x, **kwargs):
+        def wrapper(
+            session,
+            *args,
+            name_key=name_key,
+            ignore=ignore,
+            **kwargs
+        ):
             @utils.scope_update_handler
             def update_handler(frame, name, value):
                 absolute = name_key(name)
                 # Ignore reassignments
                 if (
-                    isinstance(value, st.Object)
+                    ignore(name)
+                    or isinstance(value, st.Object)
                     and isinstance(value._impl, impl.Reference)
                     and value._impl.path == absolute
                 ):

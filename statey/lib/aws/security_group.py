@@ -77,6 +77,17 @@ class SecurityGroupMachine(st.SimpleMachine):
         out_diff = differ.diff(current_as_config, config.obj, session, diffconfig)
         return out_diff
 
+    def get_action(self, diff: st.Diff) -> st.ModificationAction:
+        if not diff:
+            return st.ModificationAction.NONE
+        if (
+            'name' in diff
+            or 'vpc_id' in diff
+            or 'description' in diff
+        ):
+            return st.ModificationAction.DELETE_AND_RECREATE
+        return st.ModificationAction.MODIFY
+
     async def convert_instance(self, instance: "SecurityGroup") -> Dict[str, Any]:
         out = {"id": instance.id}
         (
@@ -136,6 +147,23 @@ class SecurityGroupMachine(st.SimpleMachine):
             current = await self.convert_instance(group)
             yield current
             yield await self.update_rules(current, config)
+
+    async def modify_task(
+        self,
+        diff: st.Diff,
+        current: SecurityGroupType,
+        config: SecurityGroupConfigType
+    ) -> SecurityGroupType:
+        """
+        Modify the security group
+        """
+        async with self.resource_ctx() as ec2:
+            sg = await ec2.SecurityGroup(current['id'])
+            if 'ingress' in diff or 'egress' in diff:
+                await self.update_rules(current, config)
+                await sg.load()
+                yield await self.convert_instance(sg)
+
 
     async def update_rules(
         self, current: SecurityGroupType, config: SecurityGroupConfigType
