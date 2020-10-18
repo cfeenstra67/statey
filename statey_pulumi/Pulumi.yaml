@@ -1,0 +1,3 @@
+name: statey-connector
+runtime: go
+description: A minimal AWS Go Pulumi program
