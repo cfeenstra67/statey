@@ -2,6 +2,7 @@ package stalumi
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/pulumi/pulumi/sdk/v2/go/common/diag"
 	"github.com/pulumi/pulumi/sdk/v2/go/common/resource"
@@ -10,28 +11,40 @@ import (
 )
 
 var (
-	ctx *Context = nil
-	providers map[tokens.Package]*plugin.Provider = make(map[tokens.Package]*plugin.Provider)
+	contexts map[string]*Context = make(map[string]*Context)
+	contextCreationLock sync.Mutex
 )
 
-func SetupContext(path string, sink, statusSink diag.Sink) error {
-	if ctx == nil {
-		if err := ForceSetupContext(path, sink, statusSink); err != nil {
+func SetupContext(name string, path string, sink, statusSink diag.Sink) error {
+	_, ok := contexts[name]
+	if !ok {
+		contextCreationLock.Lock()
+		// Check again after acquiring lock to see that it wasn't already
+		// created in the mean time.
+		_, ok := contexts[name]
+		if ok {
+			return nil
+		}
+		defer contextCreationLock.Unlock()
+
+		if err := ForceSetupContext(name, path, sink, statusSink); err != nil {
 			return fmt.Errorf("context creation failed: %v", err)
 		}
 	}
 	return nil
 }
 
-func ForceSetupContext(path string, sink, statusSink diag.Sink) error {
-	var err error
-	ctx, err = NewContextFromPath(path, sink, statusSink)
-	// panic(123)
+func ForceSetupContext(name string, path string, sink, statusSink diag.Sink) error {
+	ctx, err := NewContextFromPath(path, sink, statusSink)
+	if err == nil {
+		contexts[name] = ctx
+	}
 	return err
 }
 
-func GetContext() (*Context, error) {
-	if ctx == nil {
+func GetContext(name string) (*Context, error) {
+	ctx, ok := contexts[name]
+	if !ok {
 		return nil, fmt.Errorf("context has not been initialized.")
 	}
 	return ctx, nil
@@ -45,46 +58,23 @@ func GetConfig(name tokens.Package) *resource.PropertyMap {
 	return new(resource.PropertyMap)
 }
 
-func Provider(name tokens.Package) (*plugin.Provider, error) {
-	value, ok := providers[name]
-	if !ok {
-		var err error
-		ctx, err = GetContext()
-		if err != nil {
-			return nil, err
-		}
-		value, err := ctx.Provider(name, nil)
-		if err != nil {
-			return nil, err
-		}
-		providers[name] = value
-		config := GetConfig(name)
-		if err := (*value).Configure(*config); err != nil {
-			return nil, err
-		}
-	}
-	return value, nil
-}
-
-func CloseProviders() error {
-	ctx, err := GetContext()
+func Provider(ctxName string, name tokens.Package) (*plugin.Provider, error) {
+	ctx, err := GetContext(ctxName)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, provider := range providers {
-		ctx.CloseProvider(provider)
-	}
-	return nil
+	return ctx.Provider(name, nil)
 }
 
-func CloseContext() error {
-	if _, err := GetContext(); err != nil {
-		return err
+func CloseContext(name string) error {
+	ctx, err := GetContext(name)
+	if err != nil {
+		return fmt.Errorf("error getting context: %v", err)
 	}
-	if err := CloseProviders(); err != nil {
-		return err
+	if err := ctx.CloseProviders(); err != nil {
+		return fmt.Errorf("error closing providers: %v", err)
 	}
 	ctx.Close()
-	ctx = nil
+	delete(contexts, name)
 	return nil
 }

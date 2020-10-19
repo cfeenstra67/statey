@@ -20,6 +20,7 @@ type Context struct {
 	Main string
 	Sink diag.Sink
 	StatusSink diag.Sink
+	providers map[tokens.Package]*plugin.Provider
 }
 
 func NewContextFromPath(path string, sink, statusSink diag.Sink) (*Context, error) {
@@ -28,7 +29,7 @@ func NewContextFromPath(path string, sink, statusSink diag.Sink) (*Context, erro
 		return nil, fmt.Errorf("error detecting project: %v", err)
 	}
 
-	proj, err := workspace.LoadProject(path)
+	proj, err := workspace.LoadProject(projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("error loading project: %v", err)
 	}
@@ -65,10 +66,41 @@ func (c *Context) InstallPlugins() error {
 }
 
 func (c *Context) Provider(name tokens.Package, version *semver.Version) (*plugin.Provider, error) {
-	provider, err := c.PluginCtx.Host.Provider(name, version)
-	return &provider, err
+	if c.providers == nil {
+		c.providers = make(map[tokens.Package]*plugin.Provider)
+	}
+
+	provider, ok := c.providers[name]
+	if !ok {
+		providerValue, err := c.PluginCtx.Host.Provider(name, version)
+		if err != nil {
+			return nil, fmt.Errorf("error getting provider: %v", err)
+		}
+		c.providers[name] = &providerValue
+		provider = &providerValue
+
+		config := GetConfig(name)
+		if err := providerValue.Configure(*config); err != nil {
+			return nil, fmt.Errorf("error configuring provider: %v", err)
+		}
+	}
+	return provider, nil
 }
 
 func (c *Context) CloseProvider(provider *plugin.Provider) error {
 	return c.PluginCtx.Host.CloseProvider(*provider)
+}
+
+func (c *Context) CloseProviders() error {
+	for key, provider := range c.providers {
+		if err := c.CloseProvider(provider); err != nil {
+			return err
+		}
+		delete(c.providers, key)
+	}
+	return nil
+}
+
+func (c *Context) ListPlugins() []workspace.PluginInfo {
+	return c.PluginCtx.Host.ListPlugins()
 }
