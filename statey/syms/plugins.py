@@ -1,7 +1,7 @@
 import collections
 import dataclasses as dc
 import operator
-from functools import reduce
+from functools import reduce, partial
 from typing import Type as PyType, Dict, Any, Union, Callable, Sequence, Optional
 
 import statey as st
@@ -92,13 +92,17 @@ class ParseSequencePlugin:
     def infer_type(self, obj: Any, registry: "Registry") -> types.Type:
         if not isinstance(obj, (list, tuple)):
             return None
-        element_types = [registry.infer_type(item) for item in obj]
+
+        element_types = []
+        for item in obj:
+            typ = registry.infer_type(item)
+            if typ not in element_types:
+                element_types.append(typ)
+
         if not element_types:
             return None
         if len(element_types) > 1:
-            all_same = reduce(operator.eq, element_types)
-            if not all_same or element_types[0] != types.AnyType():
-                return None
+            return None
         return types.ArrayType(element_types.pop(), False)
 
 
@@ -270,9 +274,10 @@ DEFAULT_PLUGINS = [
     ParseMappingPlugin(types.MapType),
     ValuePredicatePlugin(float, types.FloatType),
     ValuePredicatePlugin(int, types.IntegerType),
-    ValuePredicatePlugin(list, types.ArrayType),
+    ValuePredicatePlugin(list, partial(types.ArrayType, types.Any)),
     ValuePredicatePlugin(str, types.StringType),
     ValuePredicatePlugin(bool, types.BooleanType),
+    ValuePredicatePlugin(range, partial(types.ArrayType, types.Integer)),
     LiteralPlugin(),
     BasicObjectBehaviors(),
     StructFromDictPlugin(),

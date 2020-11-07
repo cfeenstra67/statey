@@ -293,12 +293,21 @@ def get_magic_methods():
         "__eq__": operator.eq,
         "__ne__": operator.ne,
         "__add__": operator.add,
-        "__sub__": operator.sub
+        "__sub__": operator.sub,
+        "__mul__": operator.mul,
+        "__truediv__": operator.truediv,
+        "__floordiv__": operator.floordiv,
+        "__pow__": operator.pow,
+        "__round__": round
     }
 
 
 def get_magic_method_types():
-    return {"__eq__": types.BooleanType(False), "__ne__": types.BooleanType(False)}
+    return {
+        "__eq__": types.BooleanType(False),
+        "__ne__": types.BooleanType(False),
+        "__round__": types.IntegerType(True),
+    }
 
 
 @dc.dataclass(frozen=True)

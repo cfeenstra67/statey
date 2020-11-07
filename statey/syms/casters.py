@@ -75,7 +75,7 @@ class ForceCaster(Caster):
 @dc.dataclass(frozen=True)
 class ArrayElementCaster(ValueCaster):
     """
-
+    Caster for array types
     """
 
     type: types.ArrayType
@@ -90,7 +90,7 @@ class ArrayElementCaster(ValueCaster):
 @dc.dataclass(frozen=True)
 class MapElementCaster(ValueCaster):
     """
-
+    Caster for map types
     """
 
     type: types.MapType
@@ -109,7 +109,7 @@ class MapElementCaster(ValueCaster):
 @dc.dataclass(frozen=True)
 class StructCaster(Caster):
     """
-
+    Caster for struct types
     """
 
     type: types.StructType
@@ -282,11 +282,23 @@ def map_cast(
     return None
 
 
+def number_cast(
+    from_type: types.Type, to_type: types.Type, registry: "Registry"
+) -> Optional[Caster]:
+    """
+    Caster allowing different numerical types to be cast to one another.
+    """
+    if isinstance(from_type, types.NumberType) and isinstance(to_type, types.NumberType):
+        return ForceCaster(to_type)
+    return None
+
+
 PLUGINS = [
-    PredicateCastingPlugin(quasi_equal_cast),
+    PredicateCastingPlugin(number_cast),
     PredicateCastingPlugin(array_cast),
     PredicateCastingPlugin(struct_cast),
     PredicateCastingPlugin(map_cast),
+    PredicateCastingPlugin(quasi_equal_cast),
 ]
 
 

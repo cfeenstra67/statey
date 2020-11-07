@@ -115,7 +115,7 @@ class ArraySemantics(Semantics):
             return self
         el_semantics = self.element_semantics.attr_semantics(attr)
         if el_semantics is not None:
-            typ = ArrayType(el_semantics.type, self.type.nullable)
+            typ = types.ArrayType(el_semantics.type, self.type.nullable)
             return ArraySemantics(typ, el_semantics)
         return None
 

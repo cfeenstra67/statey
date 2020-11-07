@@ -351,6 +351,16 @@ class SingleStateMachine(Machine):
 
         return await self.delete(session, current)
 
+    @transition("DOWN", "DOWN")
+    async def noop_down(
+        self,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+        session: task.TaskSession,
+    ) -> Object:
+
+        return current.obj
+
 
 class SimpleMachine(SingleStateMachine):
     """

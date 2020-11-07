@@ -180,10 +180,10 @@ RESOURCES = [file_resource]
 
 def register(registry: Optional["Registry"] = None) -> None:
     """
-	Register default resources in this module
-	"""
+    Register default resources in this module
+    """
     if registry is None:
         registry = st.registry
 
     for resource in RESOURCES:
-        registry.register_resource(resource)
+        registry.register(resource)

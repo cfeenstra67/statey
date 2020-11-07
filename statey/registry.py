@@ -70,13 +70,6 @@ class Registry(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def register_resource(self, resource: "Resource") -> None:
-        """
-		Register the given resource
-		"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
     def get_resource(self, name: str) -> "Resource":
         """
 		Get the resource with the given name
@@ -346,7 +339,14 @@ class HookBasedRegistry(Registry):
     )
 
     def register(self, plugin: Any) -> None:
-        self.pm.register(plugin)
+        import statey as st
+
+        if isinstance(plugin, st.Resource):
+            self.pm.register(
+                plugin, name=self._get_registered_resource_name(plugin.name)
+            )
+        else:
+            self.pm.register(plugin)
 
     def get_type(
         self, annotation: Any, meta: Optional[Dict[str, Any]] = None
@@ -399,11 +399,6 @@ class HookBasedRegistry(Registry):
 
     def _get_registered_resource_name(self, resource_name: str) -> str:
         return f"resource:{resource_name}"
-
-    def register_resource(self, resource: "Resource") -> None:
-        self.pm.register(
-            resource, name=self._get_registered_resource_name(resource.name)
-        )
 
     def get_resource(self, name: str) -> "Resource":
         resource = self.pm.get_plugin(self._get_registered_resource_name(name))
@@ -535,9 +530,6 @@ class RegistryWrapper(Registry):
 
     def get_differ(self, type: types.Type) -> "Differ":
         return self.wrap("get_differ", self.registry.get_differ)(type)
-
-    def register_resource(self, resource: "Resource") -> None:
-        return self.wrap("register_resource", self.registry.register_resource)(resource)
 
     def get_resource(self, name: str) -> "Resource":
         return self.wrap("get_resource", self.registry.get_resource)(name)

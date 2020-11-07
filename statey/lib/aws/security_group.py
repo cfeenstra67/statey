@@ -260,4 +260,4 @@ def register(registry: Optional["Registry"] = None) -> None:
         registry = st.registry
 
     for resource in RESOURCES:
-        registry.register_resource(resource)
+        registry.register(resource)
