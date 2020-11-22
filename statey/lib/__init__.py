@@ -10,8 +10,10 @@ from statey.lib import sos, pulumi
 
 
 def register(
-    registry: Optional["Registry"] = None, os: bool = True, aws: Optional[bool] = None,
-    pulumi: Optional[bool] = None
+    registry: Optional["Registry"] = None,
+    os: bool = True,
+    aws: Optional[bool] = None,
+    pulumi: Optional[bool] = None,
 ) -> None:
     """
     Register all default library resources

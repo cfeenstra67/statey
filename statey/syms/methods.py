@@ -274,8 +274,9 @@ class BinaryMagicMethod(Method):
         return_type = self.return_type(obj)
 
         def apply_method(other: Any) -> return_type:
-
-            def operate(inst: self.instance_type, other: self.instance_type) -> return_type:
+            def operate(
+                inst: self.instance_type, other: self.instance_type
+            ) -> return_type:
                 return self.operation(inst, other)
 
             operate.__name__ = self.name
@@ -298,7 +299,7 @@ def get_magic_methods():
         "__truediv__": operator.truediv,
         "__floordiv__": operator.floordiv,
         "__pow__": operator.pow,
-        "__round__": round
+        "__round__": round,
     }
 
 
@@ -352,7 +353,6 @@ class ExpectedValueMethod(Method):
     """
 
     def bind(self, obj: Object) -> Any:
-
         def expect(value: Any) -> Object:
             expected_obj = Object(value, obj._type, obj._registry)
             return Object(impl.ExpectedValue(obj, expected_obj))
@@ -408,6 +408,7 @@ class OptionMethod(Method):
     """
     Turn every method call into something like a scala option.map()
     """
+
     type: types.Type
     base_method: Method
 
@@ -424,7 +425,6 @@ class OptionMethod(Method):
             nullable_return = return_type.return_type.with_nullable(True)
 
             def out_handler(*args, **kwargs):
-
                 @utils.native_function
                 def option_handler(data: self.type) -> nullable_return:
                     if data is None:
@@ -449,6 +449,7 @@ class OptionMethods(ObjectMethods):
     """
     Turn every method call into something like a scala option.map()
     """
+
     type: types.Type
     methods: ObjectMethods
 
@@ -470,7 +471,7 @@ OBJECT_METHODS_PLUGINS = [
     BinaryMagicMethods,
     BaseObjectMethods,
     StringMethods(),
-    OptionMethods
+    OptionMethods,
 ]
 
 

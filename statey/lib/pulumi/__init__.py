@@ -3,7 +3,9 @@ from typing import Optional
 try:
     import pylumi
 except ImportError as err:
-    raise RuntimeError(f'`pylumi` is not installed, this extension module cannot be used.')
+    raise RuntimeError(
+        f"`pylumi` is not installed, this extension module cannot be used."
+    )
 
 
 def register(registry: Optional["Registry"] = None) -> None:

@@ -16,15 +16,15 @@ InstanceConfigType = st.Struct[
     # Optional args
     "vpc_security_group_ids" : ~st.Array[st.String],
     "subnet_id" : ~st.String,
-    "tags": ~st.Map[st.String, st.String],
-    "availability_zone": ~st.String,
-    "placement_group": ~st.String,
-    "tenancy": st.String(default='default'),
-    "host_id": ~st.String,
-    "cpu_core_count": ~st.Integer,
-    "cpu_threads_per_core": ~st.Integer,
-    "ebs_optimized": st.Boolean(default=False),
-    "disable_api_termination": st.Boolean(default=False)
+    "tags" : ~st.Map[st.String, st.String],
+    "availability_zone" : ~st.String,
+    "placement_group" : ~st.String,
+    "tenancy" : st.String(default="default"),
+    "host_id" : ~st.String,
+    "cpu_core_count" : ~st.Integer,
+    "cpu_threads_per_core" : ~st.Integer,
+    "ebs_optimized" : st.Boolean(default=False),
+    "disable_api_termination" : st.Boolean(default=False),
 ]
 
 
@@ -32,17 +32,17 @@ InstanceType = st.Struct[
     "ami":str,
     "instance_type":str,
     "key_name":str,
-    "availability_zone": st.String,
-    "tags": st.Map[st.String, st.String],
-    "placement_group": st.String,
-    "host_id": ~st.String,
-    'tenancy': st.String,
-    "cpu_core_count": ~st.Integer,
-    "cpu_threads_per_core": ~st.Integer,
-    "ebs_optimized": st.Boolean,
-    "disable_api_termination": st.Boolean,
+    "availability_zone" : st.String,
+    "tags" : st.Map[st.String, st.String],
+    "placement_group" : st.String,
+    "host_id" : ~st.String,
+    "tenancy" : st.String,
+    "cpu_core_count" : ~st.Integer,
+    "cpu_threads_per_core" : ~st.Integer,
+    "ebs_optimized" : st.Boolean,
+    "disable_api_termination" : st.Boolean,
     # Exported
-    "id": str,
+    "id":str,
     "ebs_optimized":bool,
     "public_ip" : Optional[str],
     "public_dns":str,
@@ -50,7 +50,7 @@ InstanceType = st.Struct[
     "private_dns":str,
     "vpc_security_group_ids" : st.Array[st.String],
     "subnet_id" : st.String,
-    "state": st.String
+    "state" : st.String,
 ]
 
 
@@ -83,7 +83,7 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
             cpu_options,
             out["ebs_optimized"],
             termination_protection,
-            state_info
+            state_info,
         ) = await asyncio.gather(
             instance.image_id,
             instance.ebs_optimized,
@@ -100,24 +100,26 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
             instance.placement,
             instance.cpu_options,
             instance.ebs_optimized,
-            instance.describe_attribute(Attribute='disableApiTermination'),
-            instance.state
+            instance.describe_attribute(Attribute="disableApiTermination"),
+            instance.state,
         )
         out["vpc_security_group_ids"] = [group["GroupId"] for group in security_groups]
-        out["tags"] = {tag['Key']: tag['Value'] for tag in tags or []}
+        out["tags"] = {tag["Key"]: tag["Value"] for tag in tags or []}
         out["placement_group"] = placement["GroupName"]
         out["availability_zone"] = placement["AvailabilityZone"]
-        out['tenancy'] = placement['Tenancy']
-        out['host_id'] = placement.get('HostId')
-        out['disable_api_termination'] = termination_protection['DisableApiTermination']['Value']
-        out['state'] = state_info['Name']
+        out["tenancy"] = placement["Tenancy"]
+        out["host_id"] = placement.get("HostId")
+        out["disable_api_termination"] = termination_protection[
+            "DisableApiTermination"
+        ]["Value"]
+        out["state"] = state_info["Name"]
 
         if cpu_options:
-            out['cpu_core_count'] = cpu_options.get('CoreCount')
-            out['cpu_threads_per_core'] = cpu_options.get('ThreadsPerCore')
+            out["cpu_core_count"] = cpu_options.get("CoreCount")
+            out["cpu_threads_per_core"] = cpu_options.get("ThreadsPerCore")
         else:
-            out['cpu_core_count'] = None
-            out['cpu_threads_per_core'] = None
+            out["cpu_core_count"] = None
+            out["cpu_threads_per_core"] = None
 
         return out
 
@@ -162,8 +164,8 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
         diffconfig.set_comparison("tags", none_as_empty_dict)
 
         def none_as_empty_string(old, new):
-            new = '' if new is None else new
-            old = '' if old is None else old
+            new = "" if new is None else new
+            old = "" if old is None else old
             if new == old:
                 return True
             return NotImplemented
@@ -174,7 +176,9 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
         out_diff = differ.diff(current_as_config, config.obj, session, diffconfig)
         return out_diff
 
-    async def get_expected(self, current: st.StateSnapshot, config: st.StateConfig) -> Any:
+    async def get_expected(
+        self, current: st.StateSnapshot, config: st.StateConfig
+    ) -> Any:
         output = st.Unknown[config.state.output_type]
         if not current.state.null:
             output = current.obj
@@ -187,8 +191,10 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
                 config.obj.vpc_security_group_ids, output.vpc_security_group_ids
             ),
             tags=st.ifnull(config.obj.tags, {}),
-            availability_zone=st.ifnull(config.obj.availability_zone, output.availability_zone),
-            placement_group=st.ifnull(config.obj.placement_group, '')
+            availability_zone=st.ifnull(
+                config.obj.availability_zone, output.availability_zone
+            ),
+            placement_group=st.ifnull(config.obj.placement_group, ""),
         )
 
         return st.fill(replaced, config.state.output_type, output)
@@ -204,8 +210,8 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
                 "KeyName": config["key_name"],
                 "MinCount": 1,
                 "MaxCount": 1,
-                "DisableApiTermination": config['disable_api_termination'],
-                "EbsOptimized": config['ebs_optimized']
+                "DisableApiTermination": config["disable_api_termination"],
+                "EbsOptimized": config["ebs_optimized"],
             }
             if config["vpc_security_group_ids"] is not None:
                 kws["SecurityGroupIds"] = config["vpc_security_group_ids"]
@@ -213,30 +219,27 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
                 kws["SubnetId"] = config["subnet_id"]
 
             tags = config["tags"] or {}
-            tags_list = [{'Key': key, 'Value': value} for key, value in tags.items()]
+            tags_list = [{"Key": key, "Value": value} for key, value in tags.items()]
             specs = []
             if tags_list:
-                specs.append({
-                    'ResourceType': 'instance',
-                    'Tags': tags_list
-                })
+                specs.append({"ResourceType": "instance", "Tags": tags_list})
 
-            kws['TagSpecifications'] = specs
-            placement = kws["Placement"] = {"Tenancy": config['tenancy']}
+            kws["TagSpecifications"] = specs
+            placement = kws["Placement"] = {"Tenancy": config["tenancy"]}
 
             if config["availability_zone"] is not None:
                 placement["AvailabilityZone"] = config["availability_zone"]
 
             if config["placement_group"] is not None:
-                placement["GroupName"] = config['placement_group']
+                placement["GroupName"] = config["placement_group"]
 
-            if config['host_id'] is not None:
-                placement["HostId"] = config['host_id']
+            if config["host_id"] is not None:
+                placement["HostId"] = config["host_id"]
 
-            if config['cpu_core_count'] is not None:
-                opts = kws['CpuOptions'] = {'CoreCount': config['cpu_core_count']}
-                if config['cpu_threads_per_core'] is not None:
-                    opts['ThreadsPerCore'] = config['cpu_threads_per_core']
+            if config["cpu_core_count"] is not None:
+                opts = kws["CpuOptions"] = {"CoreCount": config["cpu_core_count"]}
+                if config["cpu_threads_per_core"] is not None:
+                    opts["ThreadsPerCore"] = config["cpu_threads_per_core"]
 
             (instance,) = await ec2.create_instances(**kws)
             # Checkpoint after creation
@@ -259,54 +262,52 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
         if not diff:
             return st.ModificationAction.NONE
         if (
-            'ami' in diff
-            or 'instance_type' in diff
-            or 'key_name' in diff
-            or 'availability_zone' in diff
-            or 'placement_group' in diff
-            or 'tenancy' in diff
-            or 'host_id' in diff
-            or 'cpu_core_count' in diff
-            or 'cpu_threads_per_core' in diff
+            "ami" in diff
+            or "instance_type" in diff
+            or "key_name" in diff
+            or "availability_zone" in diff
+            or "placement_group" in diff
+            or "tenancy" in diff
+            or "host_id" in diff
+            or "cpu_core_count" in diff
+            or "cpu_threads_per_core" in diff
         ):
             return st.ModificationAction.DELETE_AND_RECREATE
         return st.ModificationAction.MODIFY
 
     async def modify_task(
-        self,
-        diff: st.Diff,
-        current: InstanceType,
-        config: InstanceConfigType,
+        self, diff: st.Diff, current: InstanceType, config: InstanceConfigType,
     ) -> InstanceType:
         """
         Modify the EC2 Instance
         """
         async with self.resource_ctx() as ec2:
 
-            instance = await ec2.Instance(current['id'])
+            instance = await ec2.Instance(current["id"])
             await instance.load()
 
             # This means the new value is not null
-            if 'subnet_id' in diff:
-                kws = {'SubnetId': config['subnet_id']}
-                if config['vpc_security_group_ids'] is not None:
-                    kws['Groups'] = config['vpc_security_group_ids']
+            if "subnet_id" in diff:
+                kws = {"SubnetId": config["subnet_id"]}
+                if config["vpc_security_group_ids"] is not None:
+                    kws["Groups"] = config["vpc_security_group_ids"]
                 new_ni = await ec2.create_network_interface(**kws)
                 current_ni_data = (await instance.network_interfaces_attribute)[0]
-                current_ni = await ec2.NetworkInterface(current_ni_data['NetworkInterfaceId'])
-                await current_ni.detach()
-                await new_ni.attach(
-                    DeviceIndex=0,
-                    InstanceId=current['id']
+                current_ni = await ec2.NetworkInterface(
+                    current_ni_data["NetworkInterfaceId"]
                 )
+                await current_ni.detach()
+                await new_ni.attach(DeviceIndex=0, InstanceId=current["id"])
 
                 await instance.load()
                 yield await self.convert_instance(instance)
 
-            elif 'vpc_security_group_ids' in diff:
+            elif "vpc_security_group_ids" in diff:
                 current_ni_data = (await instance.network_interfaces_attribute)[0]
-                current_ni = await ec2.NetworkInterface(current_ni_data['NetworkInterfaceId'])
-                group_ids = config['vpc_security_group_ids']
+                current_ni = await ec2.NetworkInterface(
+                    current_ni_data["NetworkInterfaceId"]
+                )
+                group_ids = config["vpc_security_group_ids"]
                 if not group_ids:
                     await current_ni.detach()
                 else:
@@ -315,23 +316,25 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
                 await instance.load()
                 yield await self.convert_instance(instance)
 
-            if 'tags' in diff:
-                new_tags = config['tags'] or {}
-                remove_tags = [key for key in current['tags'] if key not in new_tags]
+            if "tags" in diff:
+                new_tags = config["tags"] or {}
+                remove_tags = [key for key in current["tags"] if key not in new_tags]
                 if remove_tags:
-                    await instance.delete_tags(Tags=[{'Key': key} for key in remove_tags])
+                    await instance.delete_tags(
+                        Tags=[{"Key": key} for key in remove_tags]
+                    )
 
-                set_tags = [{'Key': key, 'Value': val} for key, val in new_tags.items()]
+                set_tags = [{"Key": key, "Value": val} for key, val in new_tags.items()]
                 if set_tags:
                     await instance.create_tags(Tags=set_tags)
 
                 await instance.load()
                 yield await self.convert_instance(instance)
 
-            if 'disable_api_termination' in diff:
+            if "disable_api_termination" in diff:
                 await instance.modify_attribute(
-                    Attribute='disableApiTermination',
-                    Value=str(config['disable_api_termination']).lower()
+                    Attribute="disableApiTermination",
+                    Value=str(config["disable_api_termination"]).lower(),
                 )
 
                 await instance.load()
@@ -340,7 +343,9 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
             yield await self.convert_instance(instance)
 
 
-instance_resource = st.MachineResource("aws_instance", InstanceMachine, default_provider)
+instance_resource = st.MachineResource(
+    "aws_instance", InstanceMachine, default_provider
+)
 
 # Resource state factory
 Instance = instance_resource.s
@@ -356,7 +361,7 @@ def register(registry: Optional["Registry"] = None) -> None:
     if registry is None:
         registry = st.registry
 
-    default_provider = registry.get_provider('default')
+    default_provider = registry.get_provider("default")
 
     for resource in RESOURCES:
         default_provider.register(resource)

@@ -15,6 +15,7 @@ class ProviderIdSchema(ma.Schema):
     """
     Schema for a ProviderId
     """
+
     name = ma.fields.Str()
     meta = ma.fields.Dict(keys=ma.fields.Str(), values=ma.fields.Str())
 
@@ -24,6 +25,7 @@ class ProviderId:
     """
     Unique identifier for a provider
     """
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ProviderId":
         data = ProviderIdSchema().load(data)
@@ -49,6 +51,7 @@ class Provider(abc.ABC):
     """
     A provider provides methods for accessing resources and tasks.
     """
+
     id: ProviderId
 
     @abc.abstractmethod
@@ -82,6 +85,7 @@ class ProviderHooks:
     """
     Defines hooks to power the default provider
     """
+
     @hookspec(firstresult=True)
     def get_resource(self, name: str, provider: Provider) -> "Resource":
         """
@@ -109,6 +113,7 @@ class DefaultProviderHooks:
     """
     Default hookimpls for DefaultProvider, separate class to avoid name collisions.
     """
+
     provider: "DefaultProvider"
 
     @hookimpl
@@ -137,7 +142,8 @@ class DefaultProvider(Provider):
     """
     Hook-based 
     """
-    id: ProviderId = dc.field(default=ProviderId('default'))
+
+    id: ProviderId = dc.field(default=ProviderId("default"))
     pm: pluggy.PluginManager = dc.field(
         init=False,
         default_factory=create_default_provider_plugin_manager,

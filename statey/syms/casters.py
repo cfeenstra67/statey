@@ -288,7 +288,9 @@ def number_cast(
     """
     Caster allowing different numerical types to be cast to one another.
     """
-    if isinstance(from_type, types.NumberType) and isinstance(to_type, types.NumberType):
+    if isinstance(from_type, types.NumberType) and isinstance(
+        to_type, types.NumberType
+    ):
         return ForceCaster(to_type)
     return None
 

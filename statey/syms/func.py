@@ -40,13 +40,13 @@ class NativeFunction(Function):
 
     @property
     def signature(self) -> Optional[inspect.Signature]:
-        sig = self.__dict__.get('_signature', utils.MISSING)
+        sig = self.__dict__.get("_signature", utils.MISSING)
         if utils.is_missing(sig):
             try:
                 sig = inspect.signature(self.func)
             except TypeError:
                 sig = None
-            self.__dict__['_signature'] = sig
+            self.__dict__["_signature"] = sig
         return sig
 
     def apply(self, arguments: Dict[str, Any]) -> Any:

@@ -91,12 +91,14 @@ def plan(ctx, module, session_name, task_dag, metatasks):
 
     loop = asyncio.get_event_loop()
 
-    out_plan = loop.run_until_complete(st.helpers.plan(
-        session=session,
-        resource_graph=resource_graph,
-        refresh=True,
-        refresh_progressbar=True
-    ))
+    out_plan = loop.run_until_complete(
+        st.helpers.plan(
+            session=session,
+            resource_graph=resource_graph,
+            refresh=True,
+            refresh_progressbar=True,
+        )
+    )
 
     click.secho(f"Planning completed successfully.", fg="green")
     click.echo()
@@ -175,12 +177,14 @@ def down(ctx, task_dag, metatasks, yes, task_heartbeat, fulltrace):
     # Run plan w/ an empty session
     loop = asyncio.get_event_loop()
     session = st.create_resource_session()
-    out_plan = loop.run_until_complete(st.helpers.plan(
-        session=session,
-        resource_graph=resource_graph,
-        refresh=True,
-        refresh_progressbar=True
-    ))
+    out_plan = loop.run_until_complete(
+        st.helpers.plan(
+            session=session,
+            resource_graph=resource_graph,
+            refresh=True,
+            refresh_progressbar=True,
+        )
+    )
 
     click.secho(f"Planning completed successfully.", fg="green")
     click.echo()

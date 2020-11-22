@@ -592,7 +592,6 @@ class DataArraySerializer(DataSerializer):
         return cls(encoder, type_ser, element_serializer, value_type_ser)
 
 
-
 @dc.dataclass(frozen=True)
 class DataMapSerializer(DataSerializer):
     """
@@ -617,16 +616,16 @@ class DataMapSerializer(DataSerializer):
                 encoded_value = self.encoder.encode(implementation.value)
                 for key, val in encoded_value.items():
                     if isinstance(key, Object):
-                        key_dict = {'object': key._impl.id}
+                        key_dict = {"object": key._impl.id}
                     else:
                         new_impl = impl.Data(key)
-                        key_dict = self.key_serializer.serialize(new_impl)['value']
+                        key_dict = self.key_serializer.serialize(new_impl)["value"]
 
                     if isinstance(value, Object):
-                        value_dict = {'object': value._impl.id}
+                        value_dict = {"object": value._impl.id}
                     else:
                         new_impl = impl.Data(value)
-                        value_dict = self.value_serializer.serialize(new_impl)['value']
+                        value_dict = self.value_serializer.serialize(new_impl)["value"]
 
                     data.append((key_dict, value_dict))
 
@@ -743,7 +742,6 @@ class DataMapSerializer(DataSerializer):
             value_type_ser = registry.get_type_serializer_from_data(data["value_type"])
 
         return cls(encoder, type_ser, element_serializer, value_type_ser)
-
 
 
 @dc.dataclass(frozen=True)

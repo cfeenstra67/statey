@@ -21,6 +21,7 @@ class TaskGraph(abc.ABC):
     """
     Abstract base class for a task graph that a TaskGraphExecutor can execute
     """
+
     @abc.abstractmethod
     def set_status(
         self,
@@ -338,7 +339,7 @@ class AsyncTaskGraphExecutor(TaskGraphExecutor):
         self,
         task_graph: TaskGraph,
         exec_info: Optional[ExecutionInfo] = None,
-        strategy: ExecutionStrategy = ExecutionStrategy.EAGER
+        strategy: ExecutionStrategy = ExecutionStrategy.EAGER,
     ) -> ExecutionInfo:
         """
         Wrap all task executions into a single coroutine. This should _not_
@@ -538,7 +539,7 @@ class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
         self,
         task_graph: TaskGraph,
         exec_info: Optional[ExecutionInfo] = None,
-        strategy: ExecutionStrategy = ExecutionStrategy.EAGER
+        strategy: ExecutionStrategy = ExecutionStrategy.EAGER,
     ) -> None:
 
         if exec_info is None:

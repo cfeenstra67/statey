@@ -13,7 +13,7 @@ async def refresh(
     finalize: bool = False,
     node_cb: Callable[[str], None] = lambda x: None,
     progressbar: bool = False,
-    registry: Optional["Registry"] = None
+    registry: Optional["Registry"] = None,
 ) -> None:
     """
     Refresh a graph, optionally with a callback
@@ -36,7 +36,7 @@ async def refresh_with_progressbar(
     graph: "ResourceGraph",
     finalize: bool = False,
     node_cb: Callable[[str], None] = lambda x: None,
-    registry: Optional["Registry"] = None
+    registry: Optional["Registry"] = None,
 ) -> None:
     """
     refresh with a printed progress bar
@@ -61,7 +61,7 @@ async def plan(
     refresh_cb: Callable[[str], None] = lambda x: None,
     refresh_progressbar: bool = False,
     graph_cb: Callable[["ResourceGraph"], None] = lambda x: None,
-    registry: Optional["Registry"] = None
+    registry: Optional["Registry"] = None,
 ) -> "Plan":
     """
     Run a planning operation, optionally 

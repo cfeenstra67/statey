@@ -65,7 +65,7 @@ class ErrorDuringPlanningNode(PlanError):
         self.config = config
         self.exception = exception
         self.tb = tb
-        formatted_tb = ''.join(traceback.format_tb(tb))
+        formatted_tb = "".join(traceback.format_tb(tb))
         super().__init__(
             f"Exception raised during planning {current.state.resource}[{path}]"
             f" {current.state.name} => {config.state.name}:\n"
@@ -310,7 +310,9 @@ class NoProviderFound(NotFoundError):
     def __init__(self, name: str, params: Dict[str, Any]) -> None:
         self.name = name
         self.params = params
-        super().__init__(f"Unable to find provider with name {name} and params {params}.")
+        super().__init__(
+            f"Unable to find provider with name {name} and params {params}."
+        )
 
 
 class NamespaceError(SymsError):
@@ -492,6 +494,7 @@ class ExecutionError(StateyError):
     """
     Error to raise indicating that an execution attempt was not successful
     """
+
     def __init__(self, exec_info: "ExecutionInfo") -> None:
         from statey.task import TaskStatus
 
@@ -506,10 +509,10 @@ class ExecutionError(StateyError):
 
         trace_lines = []
         for key, error in traces.items():
-            trace_lines.append(f'{key}: {error.format_error_message()}')
+            trace_lines.append(f"{key}: {error.format_error_message()}")
 
-        trace_lines.insert(0, '')
-        trace_str = '\n'.join(trace_lines)
+        trace_lines.insert(0, "")
+        trace_str = "\n".join(trace_lines)
 
         super().__init__(
             f"Error encountered during execution of a task graph; tasks "
@@ -527,6 +530,7 @@ class ResourceNotFound(ProviderError):
     """
     Error indicating a resource could not be found
     """
+
     def __init__(self, name: str, provider: "Provider") -> None:
         self.name = name
         self.provider = provider
@@ -537,6 +541,7 @@ class TaskNotFound(ProviderError):
     """
     Error indicating a task could not be found
     """
+
     def __init__(self, name: str, provider: "Provider") -> None:
         self.name = name
         self.provider = provider

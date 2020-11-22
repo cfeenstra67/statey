@@ -221,9 +221,7 @@ class PythonSession(session.Session):
                     result = Object(impl.Unknown(sym))
                 else:
                     expected = Object(err.expected, sym._type, sym._registry)
-                    result = self.resolve(
-                        expected, decode=False, allow_unknowns=True
-                    )
+                    result = self.resolve(expected, decode=False, allow_unknowns=True)
             else:
                 semantics = self.ns.registry.get_semantics(sym._type)
                 expanded_result = semantics.expand(result)

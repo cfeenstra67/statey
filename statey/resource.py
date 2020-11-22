@@ -173,7 +173,7 @@ class ResourceState:
         out = {
             "resource": self.resource,
             "state": self.state.to_dict(registry),
-            "provider": self.provider.to_dict()
+            "provider": self.provider.to_dict(),
         }
         return ResourceStateSchema().dump(out)
 
@@ -501,7 +501,9 @@ class ResourceGraph:
                 continue
             provider = providers.get(state.provider)
             if provider is None:
-                provider = providers[state.provider] = registry.get_provider(*state.provider)
+                provider = providers[state.provider] = registry.get_provider(
+                    *state.provider
+                )
 
         async def handle_node(key):
             data = self.graph.nodes[key]

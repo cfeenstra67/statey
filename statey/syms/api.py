@@ -41,22 +41,15 @@ def map(
 def declarative(
     func: Callable[[Any], Any] = utils.MISSING,
     name_key: Callable[[str], str] = lambda x: x,
-    ignore: Callable[[str], str] = lambda x: x.startswith('_')
+    ignore: Callable[[str], str] = lambda x: x.startswith("_"),
 ) -> Callable[[Any], Any]:
     """
     Wrap the given function as a function that declares statey objects
     """
 
     def dec(_func):
-
         @wraps(_func)
-        def wrapper(
-            session,
-            *args,
-            name_key=name_key,
-            ignore=ignore,
-            **kwargs
-        ):
+        def wrapper(session, *args, name_key=name_key, ignore=ignore, **kwargs):
             @utils.scope_update_handler
             def update_handler(frame, name, value):
                 absolute = name_key(name)
@@ -160,8 +153,8 @@ def struct_replace(obj: Object, keep_type=True, **kwargs: Dict[str, Any]) -> Obj
     if isinstance(obj, types.Type):
         type_fields = []
 
-        if not hasattr(obj, 'fields'):
-            raise TypeError(f'Invalid input type for replace(): {obj}')
+        if not hasattr(obj, "fields"):
+            raise TypeError(f"Invalid input type for replace(): {obj}")
 
         for field in obj.fields:
             if field.name in kwargs:
@@ -191,7 +184,7 @@ def struct_interpolate_one(
     path: str,
     new_value: Any,
     keep_type: bool = True,
-    path_parser: Optional[path_mod.PathParser] = None
+    path_parser: Optional[path_mod.PathParser] = None,
 ) -> Object:
     """
     Interpolate a new value in a struct object or type, possibly
@@ -206,8 +199,8 @@ def struct_interpolate_one(
         rel_path = path_parser.join(tail)
 
         if isinstance(obj, types.Type):
-            if not hasattr(obj, 'fields'):
-                raise TypeError(f'Invalid type for struct_interpolate: {obj}')
+            if not hasattr(obj, "fields"):
+                raise TypeError(f"Invalid type for struct_interpolate: {obj}")
 
             field_type = obj[head].type
             new_type = struct_interpolate_one(
@@ -215,9 +208,9 @@ def struct_interpolate_one(
                 path=rel_path,
                 new_value=new_value,
                 path_parser=path_parser,
-                keep_type=keep_type
+                keep_type=keep_type,
             )
-            return struct_replace(obj, keep_type,  **{head: new_type})
+            return struct_replace(obj, keep_type, **{head: new_type})
 
         field_value = obj[head]
         new_value = struct_interpolate_one(
@@ -225,7 +218,7 @@ def struct_interpolate_one(
             path=rel_path,
             new_value=new_value,
             path_parser=path_parser,
-            keep_type=keep_type
+            keep_type=keep_type,
         )
         return struct_replace(obj, keep_type, **{head: new_value})
 
@@ -236,7 +229,7 @@ def struct_interpolate(
     obj: Object,
     new_values: Dict[str, Any],
     keep_type: bool = True,
-    path_parser: Optional[path_mod.PathParser] = None
+    path_parser: Optional[path_mod.PathParser] = None,
 ) -> Object:
     """
     Extend struct_interpolate_one to allow providing a dictionary
@@ -252,7 +245,7 @@ def struct_interpolate(
             path=key,
             new_value=value,
             keep_type=keep_type,
-            path_parser=path_parser
+            path_parser=path_parser,
         )
 
     return out
@@ -438,12 +431,14 @@ struct = _StructSymbolFactory()
 def str(input: Any) -> Object:
     @function
     def str(input: st.Any) -> st.String:
-        return __builtins__['str'](input)
+        return __builtins__["str"](input)
+
     return str(input)
 
 
 def int(input: Any) -> Object:
     @function
     def int(input: st.Any) -> st.Integer:
-        return __builtins__['int'](input)
+        return __builtins__["int"](input)
+
     return int(input)

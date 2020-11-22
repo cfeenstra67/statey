@@ -160,7 +160,7 @@ class Diff:
         """
         comps = get_path_from_pathlike(path_like, self.path_parser)
         for diff in self.components:
-            if comps == tuple(diff.path)[:len(comps)]:
+            if comps == tuple(diff.path)[: len(comps)]:
                 return True
         return False
 

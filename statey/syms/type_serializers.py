@@ -39,7 +39,7 @@ class ValueTypeSerializer(TypeSerializer):
         return {"type": self.type_name, "nullable": type.nullable}
 
     def deserialize(self, data: Any) -> types.Type:
-        return self.type_cls(nullable=data.get('nullable', False))
+        return self.type_cls(nullable=data.get("nullable", False))
 
     @classmethod
     @st.hookimpl
@@ -120,15 +120,13 @@ class ArrayTypeSerializer(TypeSerializer):
 
     def serialize(self, type: types.Type) -> Any:
         element_type = self.element_serializer.serialize(type.element_type)
-        return {
-            "type": "array",
-            "items": element_type,
-            "nullable": type.nullable
-        }
+        return {"type": "array", "items": element_type, "nullable": type.nullable}
 
     def deserialize(self, data: Any) -> types.Type:
         element_type = self.element_serializer.deserialize(data["items"])
-        return types.ArrayType(element_type=element_type, nullable=data.get('nullable', False))
+        return types.ArrayType(
+            element_type=element_type, nullable=data.get("nullable", False)
+        )
 
     @classmethod
     @st.hookimpl
@@ -175,7 +173,9 @@ class MapTypeSerializer(TypeSerializer):
         key_type = self.key_serializer.deserialize(data.get("keys", {"type": "string"}))
         value_type = self.value_serializer.deserialize(data["additionalProperties"])
         return types.MapType(
-            key_type=key_type, value_type=value_type, nullable=data.get('nullable', False)
+            key_type=key_type,
+            value_type=value_type,
+            nullable=data.get("nullable", False),
         )
 
     @classmethod
@@ -222,7 +222,7 @@ class StructTypeSerializer(TypeSerializer):
         for key in ordered_fields:
             serializer = self.field_serializers[key]
             serialized = serializer.serialize(type[key].type)
-            if not serialized.pop('nullable', False):
+            if not serialized.pop("nullable", False):
                 required.append(key)
             fields[key] = serialized
 
@@ -230,20 +230,22 @@ class StructTypeSerializer(TypeSerializer):
             "type": "object",
             "nullable": type.nullable,
             "properties": fields,
-            "required": required
+            "required": required,
         }
 
     def deserialize(self, data: Any) -> types.Type:
         fields = []
         for key, field_type in data.get("properties", {}).items():
-            field_type_dict = dict(field_type, nullable=key not in data.get('required', []))
+            field_type_dict = dict(
+                field_type, nullable=key not in data.get("required", [])
+            )
             serializer = self.field_serializers[key]
             fields.append(
-                types.Field(
-                    name=key, type=serializer.deserialize(field_type_dict)
-                )
+                types.Field(name=key, type=serializer.deserialize(field_type_dict))
             )
-        return types.StructType(fields=tuple(fields), nullable=data.get('nullable', False))
+        return types.StructType(
+            fields=tuple(fields), nullable=data.get("nullable", False)
+        )
 
     @classmethod
     @st.hookimpl
@@ -267,7 +269,9 @@ class StructTypeSerializer(TypeSerializer):
         fields = data.get("properties", {})
         field_serializers = {}
         for key, field_type in fields.items():
-            field_type_dict = dict(field_type, nullable=key not in data.get('required', []))
+            field_type_dict = dict(
+                field_type, nullable=key not in data.get("required", [])
+            )
             field_serializers[key] = registry.get_type_serializer_from_data(
                 field_type_dict
             )
@@ -314,7 +318,7 @@ class NativeFunctionTypeSerializer(TypeSerializer):
 
         return_type = self.return_type_serializer.deserialize(data["return_type"])
         return types.NativeFunctionType(fields, return_type).with_nullable(
-            data.get('nullable', False)
+            data.get("nullable", False)
         )
 
     @classmethod

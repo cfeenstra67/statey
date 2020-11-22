@@ -327,13 +327,13 @@ class FunctionType(StructType):
     def with_nullable(self, nullable: bool) -> Type:
         new_inst = dc.replace(self)
         new_inst.__dict__["nullable"] = nullable
-        new_inst.__dict__['meta'] = self.meta.copy()
+        new_inst.__dict__["meta"] = self.meta.copy()
         return new_inst
 
     def with_meta(self, meta: Dict[str, Any]) -> Type:
         new_inst = dc.replace(self)
         new_inst.__dict__["meta"] = meta
-        new_inst.__dict__['nullable'] = self.nullable
+        new_inst.__dict__["nullable"] = self.nullable
         return new_inst
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:

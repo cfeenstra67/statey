@@ -69,12 +69,12 @@ class Registry(abc.ABC):
         """
         raise NotImplementedError
 
-  #   @abc.abstractmethod
-  #   def get_resource(self, name: str) -> "Resource":
-  #       """
-		# Get the resource with the given name
-		# """
-  #       raise NotImplementedError
+    #   @abc.abstractmethod
+    #   def get_resource(self, name: str) -> "Resource":
+    #       """
+    # Get the resource with the given name
+    # """
+    #       raise NotImplementedError
 
     @abc.abstractmethod
     def get_methods(self, type: types.Type) -> "ObjectMethods":
@@ -159,7 +159,9 @@ class Registry(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_provider(self, name: str, params: Optional[Dict[str, Any]] = None) -> "Provider":
+    def get_provider(
+        self, name: str, params: Optional[Dict[str, Any]] = None
+    ) -> "Provider":
         """
         Get a provider with the given name and params
         """
@@ -331,9 +333,7 @@ class RegistryHooks:
         """
 
     @hookspec(historic=True)
-    def register(
-        self, plugin: Any, registry: Registry
-    ) -> None:
+    def register(self, plugin: Any, registry: Registry) -> None:
         """
         Hook called before a plugin is registeed to add additional side effects.
         """
@@ -363,10 +363,7 @@ class HookBasedRegistry(Registry):
 
     def register(self, plugin: Any) -> None:
         self.pm.register(plugin)
-        self.pm.hook.register.call_historic(kwargs=dict(
-            plugin=plugin,
-            registry=self
-        ))
+        self.pm.hook.register.call_historic(kwargs=dict(plugin=plugin, registry=self))
 
     def get_type(
         self, annotation: Any, meta: Optional[Dict[str, Any]] = None
@@ -511,7 +508,9 @@ class HookBasedRegistry(Registry):
             raise exc.NoNamespaceSerializerFoundForData(data)
         return handled
 
-    def get_provider(self, name: str, params: Optional[Dict[str, Any]] = None) -> "Provider":
+    def get_provider(
+        self, name: str, params: Optional[Dict[str, Any]] = None
+    ) -> "Provider":
         if params is None:
             params = {}
         handled = self.pm.hook.get_provider(name=name, params=params, registry=self)
@@ -618,7 +617,9 @@ class RegistryWrapper(Registry):
             self.registry.get_namespace_serializer_from_data,
         )(data)
 
-    def get_provider(self, name: str, params: Optional[Dict[str, Any]] = None) -> "Provider":
+    def get_provider(
+        self, name: str, params: Optional[Dict[str, Any]] = None
+    ) -> "Provider":
         return self.wrap("get_provider", self.registry.get_provider)(name, params)
 
     def register(self, plugin: Any) -> None:

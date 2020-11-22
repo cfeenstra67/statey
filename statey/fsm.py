@@ -134,7 +134,9 @@ class Machine(resource.States, metaclass=MachineMeta):
         self.provider = provider
         # This is temporary, should clean this up
         for state in self.__states__:
-            self.set_resource_state(resource.ResourceState(state, resource_name, provider.id))
+            self.set_resource_state(
+                resource.ResourceState(state, resource_name, provider.id)
+            )
 
     def set_resource_state(self, state: resource.ResourceState) -> None:
         setattr(self, state.state.name, state)
@@ -179,7 +181,9 @@ class Machine(resource.States, metaclass=MachineMeta):
             raise TypeError(
                 f'"{self.resource_name}" does not have any non-null states.'
             )
-        return resource.ResourceState(states[0], self.resource_name, self.provider.id)(*args, **kwargs)
+        return resource.ResourceState(states[0], self.resource_name, self.provider.id)(
+            *args, **kwargs
+        )
 
     @abc.abstractmethod
     async def refresh(self, current: resource.BoundState) -> resource.BoundState:
@@ -355,7 +359,7 @@ class SimpleMachine(SingleStateMachine):
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
-        session: task.TaskSession
+        session: task.TaskSession,
     ) -> Any:
         """
         Get the expected output for the given configuration. Default implementation
@@ -470,7 +474,9 @@ class MachineResource(resource.Resource):
     # This will be set in the constructor
     States = None
 
-    def __init__(self, name: str, machine_cls: PyType[Machine], provider: Provider) -> None:
+    def __init__(
+        self, name: str, machine_cls: PyType[Machine], provider: Provider
+    ) -> None:
         self.States = self.machine_cls = machine_cls
         self.name = name
         self.provider = provider

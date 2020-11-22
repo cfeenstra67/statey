@@ -118,6 +118,7 @@ class CoroutineTask(Task):
     """
     Wrap a coroutine in a task
     """
+
     coro: Coroutine
     description: Optional[str] = None
     _always_eager: bool = False
@@ -405,11 +406,12 @@ class ResourceGraphOperationSpec(abc.ABC):
     """
     Factory for creating resource graph tasks
     """
+
     def bind(
         self,
         session: "TaskSession",
         resource_graph: "ResourceGraph",
-        checkpoint_key: str
+        checkpoint_key: str,
     ) -> ResourceGraphOperation:
         """
         Bind this spec to a task session and resource graph, producing
@@ -423,6 +425,7 @@ class GraphSetKeySpec(ResourceGraphOperationSpec):
     """
     Spec to overwrite a state key
     """
+
     state: "ResourceState"
     remove_dependencies: bool = False
 
@@ -430,7 +433,7 @@ class GraphSetKeySpec(ResourceGraphOperationSpec):
         self,
         session: "TaskSession",
         resource_graph: "ResourceGraph",
-        checkpoint_key: str
+        checkpoint_key: str,
     ) -> ResourceGraphOperation:
         resource = session.ns.registry.get_resource(self.state.resource)
         return GraphSetKey(
@@ -440,7 +443,7 @@ class GraphSetKeySpec(ResourceGraphOperationSpec):
             state=self.state.state,
             key=checkpoint_key,
             resource_graph=resource_graph,
-            finalize=resource.finalize
+            finalize=resource.finalize,
         )
 
 

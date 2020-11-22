@@ -118,7 +118,7 @@ class ExecuteTaskSession(PlanAction):
                 key=self.output_key,
                 resource_graph=resource_graph,
                 input_session=self.task_session,
-                input_symbol=self.graph_ref
+                input_symbol=self.graph_ref,
             )
             graph.add_node(output_key, task=output_graph_task, source=prefix)
         else:
@@ -197,11 +197,7 @@ class SetValue(PlanAction):
         return f"{prefix}:output"
 
     def input_task(self, prefix: str) -> str:
-        if (
-            self.set_graph
-            and self.set_session
-            or not self.set_session
-        ):
+        if self.set_graph and self.set_session or not self.set_session:
             return self.graph_update_task(prefix)
         return self.session_switch_task(prefix)
 
@@ -249,6 +245,7 @@ class ResourceSetValue(PlanAction):
     """
     SetValue for a resource, a no-op action
     """
+
     output_key: str
     output_symbol: Object
     resource: Resource
@@ -293,7 +290,7 @@ class ResourceSetValue(PlanAction):
             resource_graph=resource_graph,
             dependencies=dependencies,
             state=self.state,
-            finalize=self.resource.finalize
+            finalize=self.resource.finalize,
         )
         graph.add_node(graph_task_name, task=graph_task, source=prefix)
 
@@ -325,10 +322,7 @@ class DeleteValue(PlanAction):
     ) -> None:
 
         graph_task_name = self.input_task(prefix)
-        graph_task = GraphDeleteKey(
-            key=self.delete_key,
-            resource_graph=resource_graph
-        )
+        graph_task = GraphDeleteKey(key=self.delete_key, resource_graph=resource_graph)
         graph.add_node(graph_task_name, task=graph_task, source=prefix)
 
 
@@ -448,7 +442,7 @@ class PlanNode:
             ref = node.output_task()
             if ref is None:
                 continue
-            edges[ref, config_input_task] = {'optional': False}
+            edges[ref, config_input_task] = {"optional": False}
 
         for downstream in self.current_depends_on:
             node = other_nodes[downstream]
@@ -475,7 +469,7 @@ class PlanNode:
 
             if not check_set & set(edges):
                 input_ref = node.current_input_task()
-                edges[current_output_task, input_ref] = {'optional': True}
+                edges[current_output_task, input_ref] = {"optional": True}
 
         return [(*key, val) for key, val in edges.items()]
 
@@ -532,6 +526,7 @@ class Plan:
     A plan contains enough information to inspect and execute the sequence
     of tasks to reach the state of config_session from state_graph
     """
+
     nodes: Sequence[PlanNode]
     providers: Sequence[Provider]
     config_session: ResourceSession
@@ -544,7 +539,7 @@ class Plan:
         """
         while not strict:
             try:
-                cycle = nx.find_cycle(graph, orientation='reverse')
+                cycle = nx.find_cycle(graph, orientation="reverse")
             except nx.NetworkXNoCycle:
                 return
 
@@ -552,7 +547,7 @@ class Plan:
 
             for left, right, _ in cycle:
                 edge = graph.edges[left, right]
-                if edge.get('optional'):
+                if edge.get("optional"):
                     graph.remove_edge(left, right)
                     removed = True
                     break
@@ -588,7 +583,7 @@ class Plan:
                 raw_edges.setdefault((edge_from, edge_to), []).append(data)
 
         edges = [
-            (*key, {'optional': all(item.get('optional') for item in vals)})
+            (*key, {"optional": all(item.get("optional") for item in vals)})
             for key, vals in raw_edges.items()
         ]
 
@@ -657,7 +652,7 @@ class DefaultMigrator(Migrator):
         config_dep_graph: nx.DiGraph,
         state_dep_graph: nx.DiGraph,
         output_session: ResourceSession,
-        providers: Dict[ProviderId, Provider]
+        providers: Dict[ProviderId, Provider],
     ) -> Sequence[PlanNode]:
         """
 
@@ -677,12 +672,8 @@ class DefaultMigrator(Migrator):
         else:
             config_state = config_bound_state.state
 
-        current_depends_on = (
-            list(state_dep_graph.pred[node]) if previous_exists else []
-        )
-        config_depends_on = (
-            list(config_dep_graph.pred[node]) if config_exists else []
-        )
+        current_depends_on = list(state_dep_graph.pred[node]) if previous_exists else []
+        config_depends_on = list(config_dep_graph.pred[node]) if config_exists else []
 
         plan_nodes = []
 
@@ -695,9 +686,9 @@ class DefaultMigrator(Migrator):
         ):
             provider = providers.get(config_state.provider)
             if provider is None:
-                provider = providers[config_state.provider] = output_session.ns.registry.get_provider(
-                    *config_state.provider
-                )
+                provider = providers[
+                    config_state.provider
+                ] = output_session.ns.registry.get_provider(*config_state.provider)
                 await provider.setup()
 
             resource = provider.get_resource(config_state.resource)
@@ -709,9 +700,7 @@ class DefaultMigrator(Migrator):
             previous_snapshot = StateSnapshot(previous_resolved, previous_state)
 
             task_session_base = self.create_task_session()
-            input_ref = task_session_base.ns.new(
-                "input", config_state.state.input_type
-            )
+            input_ref = task_session_base.ns.new("input", config_state.state.input_type)
             task_session_base.set_data("input", config_partial_resolved)
 
             task_session = task_session_base.clone()
@@ -731,19 +720,14 @@ class DefaultMigrator(Migrator):
                     null_bound_config = StateConfig({}, resource.s.null_state)
 
                     old_task_session = self.create_task_session()
-                    old_task_session.ns.new(
-                        "input", resource.s.null_state.input_type
-                    )
+                    old_task_session.ns.new("input", resource.s.null_state.input_type)
                     old_task_session.set_data("input", {})
                     # old_task_session = task_session_base.clone()
                     og_plan_output = await resource.plan(
                         previous_snapshot, null_bound_config, old_task_session
                     )
 
-                    if (
-                        isinstance(og_plan_output, tuple)
-                        and len(og_plan_output) == 2
-                    ):
+                    if isinstance(og_plan_output, tuple) and len(og_plan_output) == 2:
                         og_output_ref, og_graph_ref = og_plan_output
                     else:
                         og_output_ref, og_graph_ref = og_plan_output, og_plan_output
@@ -793,9 +777,7 @@ class DefaultMigrator(Migrator):
             # This indicates there are no tasks in the session.
             if not test_graph.nodes:
                 try:
-                    resolved_graph_ref = task_session.resolve(
-                        graph_ref, decode=False
-                    )
+                    resolved_graph_ref = task_session.resolve(graph_ref, decode=False)
                 # The graph reference isn't fully resolved yet, we still need
                 # to execute the task session
                 except exc.UnknownError:
@@ -825,7 +807,7 @@ class DefaultMigrator(Migrator):
                         config_action=ResourceSetValue(
                             node, state_obj, resource, config_state
                         ),
-                        enforce_dependencies=False
+                        enforce_dependencies=False,
                     )
                     plan_nodes.append(plan_node)
                     return plan_nodes
@@ -875,9 +857,9 @@ class DefaultMigrator(Migrator):
         if previous_state:
             provider = providers.get(previous_state.provider)
             if provider is None:
-                provider = providers[previous_state.provider] = config_session.ns.registry.get_provider(
-                    *previous_state.provider
-                )
+                provider = providers[
+                    previous_state.provider
+                ] = config_session.ns.registry.get_provider(*previous_state.provider)
                 await provider.setup()
 
             resource = provider.get_resource(previous_state.resource)
@@ -945,9 +927,7 @@ class DefaultMigrator(Migrator):
                 config_state=resource.s.null_state,
                 previous_state=previous_state,
                 resource=resource,
-                input_symbol=Object(
-                    {}, config_bound.type, task_session.ns.registry
-                ),
+                input_symbol=Object({}, config_bound.type, task_session.ns.registry),
             )
 
             args.update(
@@ -973,9 +953,9 @@ class DefaultMigrator(Migrator):
         if config_state:
             provider = providers.get(config_state.provider)
             if provider is None:
-                provider = providers[config_state.provider] = config_session.ns.registry.get_provider(
-                    *config_state.provider
-                )
+                provider = providers[
+                    config_state.provider
+                ] = config_session.ns.registry.get_provider(*config_state.provider)
                 await provider.setup()
 
             resource = provider.get_resource(config_state.resource)
@@ -1101,15 +1081,17 @@ class DefaultMigrator(Migrator):
         task_graph = nx.DiGraph()
 
         async def coro(node):
-            plan_nodes.extend(await self.plan_node(
-                node=node,
-                config_session=config_session,
-                state_graph=state_graph,
-                config_dep_graph=config_dep_graph,
-                state_dep_graph=state_dep_graph,
-                output_session=output_session,
-                providers=providers
-            ))
+            plan_nodes.extend(
+                await self.plan_node(
+                    node=node,
+                    config_session=config_session,
+                    state_graph=state_graph,
+                    config_dep_graph=config_dep_graph,
+                    state_dep_graph=state_dep_graph,
+                    output_session=output_session,
+                    providers=providers,
+                )
+            )
 
         for node in chain(config_dep_graph.nodes, state_only_nodes):
             task_graph.add_node(node, coroutine=coro(node))

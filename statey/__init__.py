@@ -25,20 +25,12 @@ from statey.fsm import (
     MachineResource,
     SingleStateMachine,
     SimpleMachine,
-    ModificationAction
+    ModificationAction,
 )
 
-from statey.plan import (
-    Plan,
-    PlanAction,
-    Migrator,
-    DefaultMigrator
-)
+from statey.plan import Plan, PlanAction, Migrator, DefaultMigrator
 
-from statey.provider import (
-    Provider,
-    ProviderId
-)
+from statey.provider import Provider, ProviderId
 
 from statey.syms.diff import Diff, DiffConfig, Differ
 
@@ -94,7 +86,7 @@ from statey.syms.api import (
     struct_add,
     struct_interpolate,
     str,
-    int
+    int,
 )
 
 from statey.resource import (
