@@ -253,6 +253,15 @@ class PulumiResourceMachine(st.SingleStateMachine):
 
         return st.fill(data_obj, typ, get_value)
 
+    def clean_check_resp(self, resp: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Clean the check() response
+        """
+        resp = resp.copy()
+        for key in ['__defaults']:
+            resp.pop(key, None)
+        return resp
+
     def get_action(
         self,
         current: st.StateSnapshot,
@@ -265,6 +274,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
             current.data,
             object_to_pulumi_json(config.obj, session),
         )
+        check_resp = self.clean_check_resp(check_resp)
         if errs:
             raise PulumiValidationError(errs)
 
@@ -300,6 +310,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
             current.data,
             object_to_pulumi_json(config.obj, session),
         )
+        check_resp = self.clean_check_resp(check_resp)
         if errs:
             raise PulumiValidationError(errs)
 
@@ -338,6 +349,8 @@ class PulumiResourceMachine(st.SingleStateMachine):
             inputs=data,
             state=data,
         )
+        if not resp["Outputs"]:
+            return None
         return self.make_output(resp["Outputs"], pulumi_id, self.UP.output_type)
 
     async def create(
@@ -359,6 +372,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
             check_resp, errs = self.provider.pulumi_provider.check(
                 pylumi.URN(self.resource_name), {}, config
             )
+            check_resp = self.clean_check_resp(check_resp)
             if errs:
                 raise PulumiValidationError(errs)
             resp = self.provider.pulumi_provider.create(
@@ -394,6 +408,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
             check_resp, errs = self.provider.pulumi_provider.check(
                 pylumi.URN(self.resource_name, pulumi_id), current, config
             )
+            check_resp = self.clean_check_resp(check_resp)
             if errs:
                 raise PulumiValidationError(errs)
 
