@@ -153,7 +153,7 @@ class FloatType(DataClassMixin, NumberType):
 
 
 @dc.dataclass(frozen=True, repr=False)
-class BooleanType(DataClassMixin, NumberType):
+class BooleanType(DataClassMixin, ValueType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="boolean")

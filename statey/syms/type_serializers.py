@@ -39,7 +39,7 @@ class ValueTypeSerializer(TypeSerializer):
         return {"type": self.type_name, "nullable": type.nullable}
 
     def deserialize(self, data: Any) -> types.Type:
-        return self.type_cls(nullable=data["nullable"])
+        return self.type_cls(nullable=data.get('nullable', False))
 
     @classmethod
     @st.hookimpl
@@ -77,7 +77,7 @@ class FloatTypeSerializer(ValueTypeSerializer):
 	"""
 
     type_cls = types.FloatType
-    type_name = "float"
+    type_name = "number"
 
 
 @dc.dataclass(frozen=True)
@@ -101,6 +101,16 @@ class StringTypeSerializer(ValueTypeSerializer):
 
 
 @dc.dataclass(frozen=True)
+class AnyTypeSerializer(ValueTypeSerializer):
+    """
+    Value type serializer for Any
+    """
+
+    type_cls = types.AnyType
+    type_name = "any"
+
+
+@dc.dataclass(frozen=True)
 class ArrayTypeSerializer(TypeSerializer):
     """
 	Type serializer for arrays
@@ -112,13 +122,13 @@ class ArrayTypeSerializer(TypeSerializer):
         element_type = self.element_serializer.serialize(type.element_type)
         return {
             "type": "array",
-            "nullable": type.nullable,
-            "element_type": element_type,
+            "items": element_type,
+            "nullable": type.nullable
         }
 
     def deserialize(self, data: Any) -> types.Type:
-        element_type = self.element_serializer.deserialize(data["element_type"])
-        return types.ArrayType(element_type=element_type, nullable=data["nullable"])
+        element_type = self.element_serializer.deserialize(data["items"])
+        return types.ArrayType(element_type=element_type, nullable=data.get('nullable', False))
 
     @classmethod
     @st.hookimpl
@@ -137,7 +147,7 @@ class ArrayTypeSerializer(TypeSerializer):
     ) -> "TypeSerializer":
         if data.get("type") != "array":
             return None
-        element_type_data = data["element_type"]
+        element_type_data = data["items"]
         element_serializer = registry.get_type_serializer_from_data(element_type_data)
         return cls(element_serializer)
 
@@ -155,17 +165,17 @@ class MapTypeSerializer(TypeSerializer):
         key_type = self.key_serializer.serialize(type.key_type)
         value_type = self.value_serializer.serialize(type.value_type)
         return {
-            "type": "map",
+            "type": "object",
             "nullable": type.nullable,
-            "key_type": key_type,
-            "value_type": value_type,
+            "keys": key_type,
+            "additionalProperties": value_type,
         }
 
     def deserialize(self, data: Any) -> types.Type:
-        key_type = self.key_serializer.deserialize(data["key_type"])
-        value_type = self.value_serializer.deserialize(data["value_type"])
+        key_type = self.key_serializer.deserialize(data.get("keys", {"type": "string"}))
+        value_type = self.value_serializer.deserialize(data["additionalProperties"])
         return types.MapType(
-            key_type=key_type, value_type=value_type, nullable=data["nullable"]
+            key_type=key_type, value_type=value_type, nullable=data.get('nullable', False)
         )
 
     @classmethod
@@ -184,11 +194,11 @@ class MapTypeSerializer(TypeSerializer):
     def get_type_serializer_from_data(
         cls, data: Any, registry: "Registry"
     ) -> "TypeSerializer":
-        if data.get("type") != "map":
+        if data.get("type") != "object" or "additionalProperties" not in data:
             return None
-        key_type_data = data["key_type"]
+        key_type_data = data.get("keys", {"type": "string"})
         key_serializer = registry.get_type_serializer_from_data(key_type_data)
-        value_type_data = data["value_type"]
+        value_type_data = data["additionalProperties"]
         value_serializer = registry.get_type_serializer_from_data(value_type_data)
         return cls(key_serializer, value_serializer)
 
@@ -202,27 +212,38 @@ class StructTypeSerializer(TypeSerializer):
     field_serializers: Dict[str, TypeSerializer]
 
     def serialize(self, type: types.Type) -> Any:
-        fields = []
+        fields = {}
 
         field_names = [field.name for field in type.fields]
         ordered_fields = sorted(self.field_serializers, key=field_names.index)
 
+        required = []
+
         for key in ordered_fields:
             serializer = self.field_serializers[key]
-            fields.append({"name": key, "type": serializer.serialize(type[key].type)})
+            serialized = serializer.serialize(type[key].type)
+            if not serialized.pop('nullable', False):
+                required.append(key)
+            fields[key] = serialized
 
-        return {"type": "struct", "nullable": type.nullable, "fields": fields}
+        return {
+            "type": "object",
+            "nullable": type.nullable,
+            "properties": fields,
+            "required": required
+        }
 
     def deserialize(self, data: Any) -> types.Type:
         fields = []
-        for field in data["fields"]:
-            serializer = self.field_serializers[field["name"]]
+        for key, field_type in data.get("properties", {}).items():
+            field_type_dict = dict(field_type, nullable=key not in data.get('required', []))
+            serializer = self.field_serializers[key]
             fields.append(
                 types.Field(
-                    name=field["name"], type=serializer.deserialize(field["type"])
+                    name=key, type=serializer.deserialize(field_type_dict)
                 )
             )
-        return types.StructType(fields=tuple(fields), nullable=data["nullable"])
+        return types.StructType(fields=tuple(fields), nullable=data.get('nullable', False))
 
     @classmethod
     @st.hookimpl
@@ -241,13 +262,14 @@ class StructTypeSerializer(TypeSerializer):
     def get_type_serializer_from_data(
         cls, data: Any, registry: "Registry"
     ) -> "TypeSerializer":
-        if data.get("type") != "struct":
+        if data.get("type") != "object" or "additionalProperties" in data:
             return None
-        fields = data["fields"]
+        fields = data.get("properties", {})
         field_serializers = {}
-        for field in data["fields"]:
-            field_serializers[field["name"]] = registry.get_type_serializer_from_data(
-                field["type"]
+        for key, field_type in fields.items():
+            field_type_dict = dict(field_type, nullable=key not in data.get('required', []))
+            field_serializers[key] = registry.get_type_serializer_from_data(
+                field_type_dict
             )
         return cls(field_serializers)
 
@@ -292,7 +314,7 @@ class NativeFunctionTypeSerializer(TypeSerializer):
 
         return_type = self.return_type_serializer.deserialize(data["return_type"])
         return types.NativeFunctionType(fields, return_type).with_nullable(
-            data["nullable"]
+            data.get('nullable', False)
         )
 
     @classmethod
@@ -331,6 +353,7 @@ TYPE_SERIALIZER_CLASSES = [
     FloatTypeSerializer,
     BooleanTypeSerializer,
     StringTypeSerializer,
+    AnyTypeSerializer,
     ArrayTypeSerializer,
     MapTypeSerializer,
     StructTypeSerializer,

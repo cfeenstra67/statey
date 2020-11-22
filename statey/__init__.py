@@ -35,21 +35,9 @@ from statey.plan import (
     DefaultMigrator
 )
 
-from statey.syms.api import (
-    F,
-    join,
-    struct,
-    function,
-    map,
-    declarative,
-    struct_replace,
-    fill,
-    fill_unknowns,
-    filter_struct,
-    ifnull,
-    struct_drop,
-    struct_add,
-    struct_interpolate
+from statey.provider import (
+    Provider,
+    ProviderId
 )
 
 from statey.syms.diff import Diff, DiffConfig, Differ
@@ -58,7 +46,7 @@ from statey.syms.fmt import f
 
 from statey.syms.func import Function
 
-from statey.syms.impl import Unknown
+from statey.syms.impl import Reference, Unknown
 
 from statey.syms.object_ import Object
 
@@ -77,6 +65,7 @@ from statey.syms.types import (
     ArrayType,
     MapType,
     BooleanType,
+    NumberType,
     Field,
     EmptyType,
     Integer,
@@ -87,6 +76,25 @@ from statey.syms.types import (
     Boolean,
     Any,
     Map,
+)
+
+from statey.syms.api import (
+    F,
+    join,
+    struct,
+    function,
+    map,
+    declarative,
+    struct_replace,
+    fill,
+    fill_unknowns,
+    filter_struct,
+    ifnull,
+    struct_drop,
+    struct_add,
+    struct_interpolate,
+    str,
+    int
 )
 
 from statey.resource import (
@@ -102,7 +110,7 @@ from statey.resource import (
     Resource,
 )
 
-from statey.task import TaskSession, create_task_session
+from statey.task import Task, TaskSession, create_task_session
 
 
 def set_registry(new_registry: Registry) -> None:

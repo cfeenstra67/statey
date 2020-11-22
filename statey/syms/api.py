@@ -9,7 +9,7 @@ from functools import wraps
 from typing import Any, Sequence, Dict, Callable, Type, Tuple, Union, Optional
 
 import statey as st
-from statey.syms import utils, types, func, impl, Object, path as path_mod
+from statey.syms import utils, types, func, impl, Object, path as path_mod, session
 from statey.syms.plugins import ParseDataClassPlugin, EncodeDataClassPlugin
 
 
@@ -433,3 +433,17 @@ class _StructSymbolFactory:
 
 
 struct = _StructSymbolFactory()
+
+
+def str(input: Any) -> Object:
+    @function
+    def str(input: st.Any) -> st.String:
+        return __builtins__['str'](input)
+    return str(input)
+
+
+def int(input: Any) -> Object:
+    @function
+    def int(input: st.Any) -> st.Integer:
+        return __builtins__['int'](input)
+    return int(input)

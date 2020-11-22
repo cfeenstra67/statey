@@ -7,6 +7,7 @@ from typing import Optional, Callable
 
 import statey as st
 from statey.executor import AsyncIOGraphExecutor
+from statey.helpers import providers_context
 from statey.plan import DefaultMigrator
 from statey.cli.graph_utils import Inspector, ExecutorLoggingPlugin
 from statey.cli.state_manager import FileStateManager
@@ -148,7 +149,8 @@ def up(ctx, yes, task_heartbeat, fulltrace):
 
     try:
         click.echo()
-        exec_info = executor.execute(task_graph)
+        with providers_context(plan.providers):
+            exec_info = executor.execute(task_graph)
         click.echo()
 
         exec_summary = inspector.execution_summary(exec_info, ctx.obj["metatasks"])
@@ -217,7 +219,8 @@ def down(ctx, task_dag, metatasks, yes, task_heartbeat, fulltrace):
 
     try:
         click.echo()
-        exec_info = executor.execute(task_graph)
+        with providers_context(out_plan.providers):
+            exec_info = executor.execute(task_graph)
         click.echo()
 
         exec_summary = inspector.execution_summary(exec_info, metatasks)

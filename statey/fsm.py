@@ -10,6 +10,7 @@ import networkx as nx
 
 import statey as st
 from statey import resource, task, exc
+from statey.provider import Provider
 from statey.syms import utils, types, Object, diff
 
 
@@ -128,11 +129,12 @@ class Machine(resource.States, metaclass=MachineMeta):
     Class with a metaclass to automatically collect states and transitions into class variables.
     """
 
-    def __init__(self, resource_name: str) -> None:
+    def __init__(self, resource_name: str, provider: Provider) -> None:
         self.resource_name = resource_name
+        self.provider = provider
         # This is temporary, should clean this up
         for state in self.__states__:
-            self.set_resource_state(resource.ResourceState(state, resource_name))
+            self.set_resource_state(resource.ResourceState(state, resource_name, provider.id))
 
     def set_resource_state(self, state: resource.ResourceState) -> None:
         setattr(self, state.state.name, state)
@@ -140,7 +142,7 @@ class Machine(resource.States, metaclass=MachineMeta):
     @property
     def null_state(self) -> resource.ResourceState:
         state = next((s for s in self.__states__ if s.null))
-        return resource.ResourceState(state, self.resource_name)
+        return resource.ResourceState(state, self.resource_name, self.provider.id)
 
     async def plan(
         self,
@@ -177,7 +179,7 @@ class Machine(resource.States, metaclass=MachineMeta):
             raise TypeError(
                 f'"{self.resource_name}" does not have any non-null states.'
             )
-        return resource.ResourceState(states[0], self.resource_name)(*args, **kwargs)
+        return resource.ResourceState(states[0], self.resource_name, self.provider.id)(*args, **kwargs)
 
     @abc.abstractmethod
     async def refresh(self, current: resource.BoundState) -> resource.BoundState:
@@ -258,36 +260,23 @@ class SingleStateMachine(Machine):
         """
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def get_action(
+        self,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+        session: task.TaskSession,
+    ) -> ModificationAction:
+        """
+        From the current, and config values, determine which modification action should be taken.
+        """
+        raise NotImplementedError
+
     async def refresh_config(self, config: "Object") -> "Object":
         """
         Transform a configuration before planning
         """
         return config
-
-    def get_action(self, diff: diff.Diff) -> ModificationAction:
-        """
-        With the given diff, determine which action must be taken to get to the configured
-        state. This is only called when both the current and configured state are UP.
-
-        Overriding this method is optional, by default it will always delete and recreate
-        the resource.
-        """
-        if not diff:
-            return ModificationAction.NONE
-        return ModificationAction.DELETE_AND_RECREATE
-
-    def get_diff(
-        self,
-        current: resource.StateSnapshot,
-        config: resource.StateConfig,
-        session: task.TaskSession,
-    ) -> diff.Diff:
-        """
-        Produce a diff given the current, config and session data
-        """
-        differ = session.ns.registry.get_differ(config.state.input_type)
-        current_as_config = st.filter_struct(current.obj, config.type)
-        return differ.diff(current_as_config, config.obj, session)
 
     async def refresh(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
         if current.state.name == self.null_state.name:
@@ -307,9 +296,7 @@ class SingleStateMachine(Machine):
 
         config = config.clone(obj=await self.refresh_config(config.obj))
 
-        diff = self.get_diff(current, config, session)
-
-        action = self.get_action(diff)
+        action = self.get_action(current, config, session)
 
         if action == ModificationAction.NONE:
             return current.obj
@@ -323,10 +310,6 @@ class SingleStateMachine(Machine):
 
         if action == ModificationAction.DELETE_AND_RECREATE:
             raise exc.NullRequired
-            # ref = await self.delete(session, current)
-            # snapshotted = session["post_deletion_snapshot"] << self.DOWN.snapshot(ref)
-            # joined_config = config.clone(obj=st.join(config.obj, snapshotted))
-            # return await self.create(session, joined_config)
 
         raise exc.InvalidModificationAction(action)
 
@@ -372,6 +355,7 @@ class SimpleMachine(SingleStateMachine):
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
+        session: task.TaskSession
     ) -> Any:
         """
         Get the expected output for the given configuration. Default implementation
@@ -407,11 +391,48 @@ class SimpleMachine(SingleStateMachine):
             raise NotImplementedError(f"{name} has not been defined in this class.")
         return getattr(self, name)
 
+    def get_action_from_diff(self, diff: diff.Diff) -> ModificationAction:
+        """
+        With the given diff, determine which action must be taken to get to the configured
+        state. This is only called when both the current and configured state are UP.
+
+        Overriding this method is optional, by default it will always delete and recreate
+        the resource.
+        """
+        if not diff:
+            return ModificationAction.NONE
+        return ModificationAction.DELETE_AND_RECREATE
+
+    def get_diff(
+        self,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+        session: task.TaskSession,
+    ) -> diff.Diff:
+        """
+        Produce a diff given the current, config and session data
+        """
+        differ = session.ns.registry.get_differ(config.state.input_type)
+        current_as_config = st.filter_struct(current.obj, config.type)
+        return differ.diff(current_as_config, config.obj, session)
+
+    def get_action(
+        self,
+        current: resource.StateSnapshot,
+        config: resource.StateConfig,
+        session: task.TaskSession,
+    ) -> ModificationAction:
+        """
+        Split get_action into get_diff and get_action_from_diff
+        """
+        diff = self.get_diff(current, config, session)
+        return self.get_action(diff)
+
     async def create(
         self, session: task.TaskSession, config: resource.StateConfig
     ) -> "Object":
         current = resource.StateSnapshot({}, self.null_state.state)
-        expected = await self.get_expected(current, config)
+        expected = await self.get_expected(current, config, session)
         create_task = self._get_optional_method("create_task")
         return session["create"] << (task.new(create_task)(config.obj) >> expected)
 
@@ -428,7 +449,7 @@ class SimpleMachine(SingleStateMachine):
         current: resource.StateSnapshot,
         config: resource.StateConfig,
     ) -> "Object":
-        expected = await self.get_expected(current, config)
+        expected = await self.get_expected(current, config, session)
         modify_task = self._get_optional_method("modify_task")
         diff = self.get_diff(current, config, session)
         partial_modify = partial(modify_task, diff)
@@ -449,9 +470,10 @@ class MachineResource(resource.Resource):
     # This will be set in the constructor
     States = None
 
-    def __init__(self, name: str, machine_cls: PyType[Machine]) -> None:
+    def __init__(self, name: str, machine_cls: PyType[Machine], provider: Provider) -> None:
         self.States = self.machine_cls = machine_cls
         self.name = name
+        self.provider = provider
         super().__init__()
 
     async def plan(

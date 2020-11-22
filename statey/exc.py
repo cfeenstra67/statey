@@ -1,4 +1,5 @@
-from typing import Any, Optional, Sequence
+import traceback
+from typing import Any, Optional, Sequence, Dict
 
 import marshmallow as ma
 
@@ -41,8 +42,9 @@ class ErrorDuringPlanning(PlanError):
     Generic error wrapping during plan()
     """
 
-    def __init__(self, exception: Exception) -> None:
+    def __init__(self, exception: Exception, tb) -> None:
         self.exception = exception
+        self.tb = tb
         super().__init__(
             f"Exception raised during planning: {type(exception).__name__}:"
             f" {exception}."
@@ -56,16 +58,18 @@ class ErrorDuringPlanningNode(PlanError):
     """
 
     def __init__(
-        self, path: str, current: Any, config: Any, exception: Exception
+        self, path: str, current: Any, config: Any, exception: Exception, tb
     ) -> None:
         self.path = path
         self.current = current
         self.config = config
         self.exception = exception
+        self.tb = tb
+        formatted_tb = ''.join(traceback.format_tb(tb))
         super().__init__(
             f"Exception raised during planning {current.state.resource}[{path}]"
-            f" {current.state.name} => {config.state.name}:"
-            f" {type(exception).__name__}: {exception}."
+            f" {current.state.name} => {config.state.name}:\n"
+            f"{formatted_tb}{type(exception).__name__}: {exception}"
         )
 
 
@@ -183,7 +187,7 @@ class NoTypeSerializerFoundForData(NoTypeSerializerFound):
 
     def __init__(self, data: Any) -> None:
         self.data = data
-        super().__init__(f"No resource registered for data: {data}.")
+        super().__init__(f"No type serializer registered for data: {data}.")
 
 
 class NoObjectImplementationSerializerFound(NotFoundError):
@@ -296,6 +300,17 @@ class NoNamespaceSerializerFoundForData(NoNamespaceSerializerFound):
     def __init__(self, data: Any) -> None:
         self.data = data
         super().__init__(f"No namespace serializer found for data: {data}")
+
+
+class NoProviderFound(NotFoundError):
+    """
+    Error indicating we could not get a provider for the given params.
+    """
+
+    def __init__(self, name: str, params: Dict[str, Any]) -> None:
+        self.name = name
+        self.params = params
+        super().__init__(f"Unable to find provider with name {name} and params {params}.")
 
 
 class NamespaceError(SymsError):
@@ -500,3 +515,29 @@ class ExecutionError(StateyError):
             f"Error encountered during execution of a task graph; tasks "
             f"by status: {tasks_by_status}. Errors:{trace_str}"
         )
+
+
+class ProviderError(StateyError):
+    """
+    Errors relating to providers.
+    """
+
+
+class ResourceNotFound(ProviderError):
+    """
+    Error indicating a resource could not be found
+    """
+    def __init__(self, name: str, provider: "Provider") -> None:
+        self.name = name
+        self.provider = provider
+        super().__init__(f'Provider {provider} could not locate resource "{name}".')
+
+
+class TaskNotFound(ProviderError):
+    """
+    Error indicating a task could not be found
+    """
+    def __init__(self, name: str, provider: "Provider") -> None:
+        self.name = name
+        self.provider = provider
+        super().__init__(f'Provider {provider} could not locate task "{name}".')

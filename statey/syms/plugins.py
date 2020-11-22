@@ -278,6 +278,7 @@ DEFAULT_PLUGINS = [
     ValuePredicatePlugin(str, types.StringType),
     ValuePredicatePlugin(bool, types.BooleanType),
     ValuePredicatePlugin(range, partial(types.ArrayType, types.Integer)),
+    ValuePredicatePlugin((lambda x: x is Any), types.AnyType),
     LiteralPlugin(),
     BasicObjectBehaviors(),
     StructFromDictPlugin(),

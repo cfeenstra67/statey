@@ -23,6 +23,7 @@ def register_default_plugins(
     type_plugins: bool = True,
     semantics: bool = True,
     type_serializers: bool = True,
+    providers: bool = True,
     resources: bool = True,
     differs: bool = True,
     methods: bool = True,
@@ -100,6 +101,11 @@ def register_default_plugins(
         )
 
         register_session_serializers(registry)
+
+    if providers:
+        from statey.provider import register as register_providers
+
+        register_providers(registry)
 
     if resources:
         from statey.lib import register as register_resources

@@ -69,12 +69,12 @@ class Registry(abc.ABC):
         """
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def get_resource(self, name: str) -> "Resource":
-        """
-		Get the resource with the given name
-		"""
-        raise NotImplementedError
+  #   @abc.abstractmethod
+  #   def get_resource(self, name: str) -> "Resource":
+  #       """
+		# Get the resource with the given name
+		# """
+  #       raise NotImplementedError
 
     @abc.abstractmethod
     def get_methods(self, type: types.Type) -> "ObjectMethods":
@@ -155,6 +155,13 @@ class Registry(abc.ABC):
     def get_namespace_serializer_from_data(self, data: Any) -> "NamespaceSerializer":
         """
         Get a namespace serializer from the given data
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_provider(self, name: str, params: Optional[Dict[str, Any]] = None) -> "Provider":
+        """
+        Get a provider with the given name and params
         """
         raise NotImplementedError
 
@@ -240,7 +247,7 @@ class RegistryHooks:
     @hookspec(firstresult=True)
     def get_object(self, value: Any, registry: Registry) -> "Object":
         """
-        Hook to create an object from an arbitrary value
+        Hook to create an objecxrt from an arbitrary value
         """
 
     @hookspec(firstresult=True)
@@ -315,6 +322,22 @@ class RegistryHooks:
         Hook to get a namespace serializer from data
         """
 
+    @hookspec(firstresult=True)
+    def get_provider(
+        self, name: str, params: Dict[str, Any], registry: Registry
+    ) -> "Provider":
+        """
+        Hook to get a provider from a name and params
+        """
+
+    @hookspec(historic=True)
+    def register(
+        self, plugin: Any, registry: Registry
+    ) -> None:
+        """
+        Hook called before a plugin is registeed to add additional side effects.
+        """
+
 
 def create_registry_plugin_manager():
     """
@@ -339,14 +362,11 @@ class HookBasedRegistry(Registry):
     )
 
     def register(self, plugin: Any) -> None:
-        import statey as st
-
-        if isinstance(plugin, st.Resource):
-            self.pm.register(
-                plugin, name=self._get_registered_resource_name(plugin.name)
-            )
-        else:
-            self.pm.register(plugin)
+        self.pm.register(plugin)
+        self.pm.hook.register.call_historic(kwargs=dict(
+            plugin=plugin,
+            registry=self
+        ))
 
     def get_type(
         self, annotation: Any, meta: Optional[Dict[str, Any]] = None
@@ -400,11 +420,11 @@ class HookBasedRegistry(Registry):
     def _get_registered_resource_name(self, resource_name: str) -> str:
         return f"resource:{resource_name}"
 
-    def get_resource(self, name: str) -> "Resource":
-        resource = self.pm.get_plugin(self._get_registered_resource_name(name))
-        if resource is None:
-            raise exc.NoResourceFound(name)
-        return resource
+    # def get_resource(self, name: str) -> "Resource":
+    #     resource = self.pm.get_plugin(self._get_registered_resource_name(name))
+    #     if resource is None:
+    #         raise exc.NoResourceFound(name)
+    #     return resource
 
     def get_differ(self, type: types.Type) -> "Differ":
         handled = self.pm.hook.get_differ(type=type, registry=self)
@@ -491,6 +511,14 @@ class HookBasedRegistry(Registry):
             raise exc.NoNamespaceSerializerFoundForData(data)
         return handled
 
+    def get_provider(self, name: str, params: Optional[Dict[str, Any]] = None) -> "Provider":
+        if params is None:
+            params = {}
+        handled = self.pm.hook.get_provider(name=name, params=params, registry=self)
+        if handled is None:
+            raise exc.NoProviderFound(name, params)
+        return handled
+
 
 class RegistryWrapper(Registry):
     """
@@ -531,8 +559,8 @@ class RegistryWrapper(Registry):
     def get_differ(self, type: types.Type) -> "Differ":
         return self.wrap("get_differ", self.registry.get_differ)(type)
 
-    def get_resource(self, name: str) -> "Resource":
-        return self.wrap("get_resource", self.registry.get_resource)(name)
+    # def get_resource(self, name: str) -> "Resource":
+    #     return self.wrap("get_resource", self.registry.get_resource)(name)
 
     def get_methods(self, type: types.Type) -> "ObjectMethods":
         return self.wrap("get_methods", self.registry.get_methods)(type)
@@ -589,6 +617,9 @@ class RegistryWrapper(Registry):
             "get_namespace_serializer_from_data",
             self.registry.get_namespace_serializer_from_data,
         )(data)
+
+    def get_provider(self, name: str, params: Optional[Dict[str, Any]] = None) -> "Provider":
+        return self.wrap("get_provider", self.registry.get_provider)(name, params)
 
     def register(self, plugin: Any) -> None:
         return self.wrap("register", self.registry.register)(plugin)

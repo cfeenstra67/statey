@@ -17,6 +17,8 @@ import networkx as nx
 
 import statey as st
 from statey import exc
+from statey.helpers import async_providers_context
+from statey.provider import ProviderId, Provider, ProviderIdSchema
 from statey.task import TaskSession
 from statey.syms import types, utils, session, impl, Object
 
@@ -113,6 +115,7 @@ class ResourceStateSchema(ma.Schema):
 
     state = ma.fields.Nested(StateSchema(), required=True, default=None)
     resource = ma.fields.Str(required=True, default=None)
+    provider = ma.fields.Nested(ProviderIdSchema(), required=True, default=None)
 
 
 @dc.dataclass(frozen=True)
@@ -123,7 +126,7 @@ class ResourceState:
 
     state: AbstractState
     resource: str
-    # meta: Dict[str, Any] = dc.field(default_factory=dict)
+    provider: ProviderId
 
     @property
     def name(self) -> str:
@@ -170,6 +173,7 @@ class ResourceState:
         out = {
             "resource": self.resource,
             "state": self.state.to_dict(registry),
+            "provider": self.provider.to_dict()
         }
         return ResourceStateSchema().dump(out)
 
@@ -180,7 +184,8 @@ class ResourceState:
 		"""
         data = ResourceStateSchema().load(data)
         state = State.from_dict(data["state"], registry)
-        return cls(resource=data["resource"], state=state)
+        provider_id = ProviderId.from_dict(data["provider"])
+        return cls(resource=data["resource"], state=state, provider=provider_id)
 
 
 @dc.dataclass(frozen=True)
@@ -282,6 +287,7 @@ class States(abc.ABC):
 	"""
 
     resource_name: str
+    provider: Provider
 
     @property
     @abc.abstractmethod
@@ -300,17 +306,15 @@ class Resource(abc.ABC):
 	"""
 
     name: str
+    provider: Provider
     States: PyType[States]
-
-    def __init__(self) -> None:
-        self._s = self.States(self.name)
 
     @property
     def s(self) -> States:
         """
 		Returns information about the possible states of this resource
 		"""
-        return self._s
+        return self.States(self.name, self.provider)
 
     @abc.abstractmethod
     async def plan(
@@ -489,12 +493,23 @@ class ResourceGraph:
 		generator that yields keys as they finish refreshing successfully.
 		"""
 
+        providers = {}
+
+        for node in self.graph.nodes:
+            state = self.graph.nodes[node]["state"]
+            if state is None:
+                continue
+            provider = providers.get(state.provider)
+            if provider is None:
+                provider = providers[state.provider] = registry.get_provider(*state.provider)
+
         async def handle_node(key):
             data = self.graph.nodes[key]
             state = data["state"]
-            if data["state"] is None:
+            if state is None:
                 return
-            resource = registry.get_resource(state.resource)
+            provider = providers[state.provider]
+            resource = provider.get_resource(state.resource)
             result = await resource.refresh(StateSnapshot(data["value"], state))
             if finalize:
                 result = await resource.finalize(result)
@@ -506,12 +521,14 @@ class ResourceGraph:
                 remove_dependencies=False,
             )
 
+        providers_list = list(providers.values())
         node_list = list(self.graph.nodes)
         coros = list(map(handle_node, node_list))
 
-        for key, coro in zip(node_list, asyncio.as_completed(coros)):
-            await coro
-            yield key
+        async with async_providers_context(providers_list):
+            for key, coro in zip(node_list, asyncio.as_completed(coros)):
+                await coro
+                yield key
 
     def clone(self) -> "ResourceGraph":
         return type(self)(self.graph.copy())

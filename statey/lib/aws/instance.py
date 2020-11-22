@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 import botocore
 
 import statey as st
+from statey.provider import default_provider
 from statey.lib.aws.base import AWSMachine
 
 
@@ -339,7 +340,7 @@ class InstanceMachine(st.SimpleMachine, AWSMachine):
             yield await self.convert_instance(instance)
 
 
-instance_resource = st.MachineResource("aws_instance", InstanceMachine)
+instance_resource = st.MachineResource("aws_instance", InstanceMachine, default_provider)
 
 # Resource state factory
 Instance = instance_resource.s
@@ -355,5 +356,7 @@ def register(registry: Optional["Registry"] = None) -> None:
     if registry is None:
         registry = st.registry
 
+    default_provider = registry.get_provider('default')
+
     for resource in RESOURCES:
-        registry.register(resource)
+        default_provider.register(resource)

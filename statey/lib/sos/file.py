@@ -12,6 +12,7 @@ from statey import (
     StateSnapshot,
     StateConfig,
 )
+from statey.provider import default_provider
 from statey.syms import types, utils, Object, impl
 
 
@@ -169,7 +170,7 @@ class FileMachine(Machine):
 
 # Declaring global resources
 
-file_resource = MachineResource("file", FileMachine)
+file_resource = MachineResource("file", FileMachine, default_provider)
 
 # Resource state factory
 File = file_resource.s

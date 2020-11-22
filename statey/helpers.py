@@ -1,20 +1,19 @@
-from typing import Callable, Optional
+import asyncio
+import contextlib
+import sys
+from typing import Callable, Optional, Sequence
 
 import click
 
 import statey as st
-from statey.plan import Migrator, Plan, DefaultMigrator
-from statey.registry import Registry
-from statey.resource import ResourceGraph
-from statey.syms.session import Session
 
 
 async def refresh(
-    graph: ResourceGraph,
+    graph: "ResourceGraph",
     finalize: bool = False,
     node_cb: Callable[[str], None] = lambda x: None,
     progressbar: bool = False,
-    registry: Optional[Registry] = None
+    registry: Optional["Registry"] = None
 ) -> None:
     """
     Refresh a graph, optionally with a callback
@@ -34,10 +33,10 @@ _refresh = refresh
 
 
 async def refresh_with_progressbar(
-    graph: ResourceGraph,
+    graph: "ResourceGraph",
     finalize: bool = False,
     node_cb: Callable[[str], None] = lambda x: None,
-    registry: Optional[Registry] = None
+    registry: Optional["Registry"] = None
 ) -> None:
     """
     refresh with a printed progress bar
@@ -55,18 +54,20 @@ async def refresh_with_progressbar(
 
 
 async def plan(
-    session: Session,
-    resource_graph: Optional[ResourceGraph] = None,
+    session: "Session",
+    resource_graph: Optional["ResourceGraph"] = None,
     refresh: bool = True,
-    migrator: Optional[Migrator] = None,
+    migrator: Optional["Migrator"] = None,
     refresh_cb: Callable[[str], None] = lambda x: None,
     refresh_progressbar: bool = False,
-    graph_cb: Callable[[ResourceGraph], None] = lambda x: None,
-    registry: Optional[Registry] = None
-) -> Plan:
+    graph_cb: Callable[["ResourceGraph"], None] = lambda x: None,
+    registry: Optional["Registry"] = None
+) -> "Plan":
     """
     Run a planning operation, optionally 
     """
+    from statey.plan import DefaultMigrator
+
     if registry is None:
         registry = st.registry
 
@@ -80,3 +81,46 @@ async def plan(
         graph_cb(resource_graph)
 
     return await migrator.plan(session, resource_graph)
+
+
+@contextlib.asynccontextmanager
+async def async_providers_context(providers: Sequence["Provider"]):
+    """
+    Set up and tear down all necessary providers using a context manager
+    pattern.
+    """
+
+    @contextlib.asynccontextmanager
+    async def single_wrapper(provider):
+        await provider.setup()
+        try:
+            yield
+        finally:
+            await provider.teardown()
+
+    async with contextlib.AsyncExitStack() as stack:
+
+        coros = []
+
+        for provider in providers:
+            coros.append(stack.enter_async_context(single_wrapper(provider)))
+
+        await asyncio.gather(*coros)
+
+        yield
+
+
+@contextlib.contextmanager
+def providers_context(providers: Sequence["Provider"]):
+    """
+    Synchronous providers context
+    """
+    async_ctx = async_providers_context(providers)
+
+    loop = asyncio.get_event_loop()
+
+    loop.run_until_complete(async_ctx.__aenter__())
+    try:
+        yield
+    finally:
+        loop.run_until_complete(async_ctx.__aexit__(*sys.exc_info()))

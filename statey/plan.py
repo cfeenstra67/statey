@@ -1,4 +1,6 @@
 import abc
+import asyncio
+import contextlib
 import dataclasses as dc
 import sys
 from functools import reduce
@@ -9,6 +11,7 @@ import networkx as nx
 from networkx.algorithms.dag import topological_sort, is_directed_acyclic_graph
 
 from statey import exc
+from statey.provider import Provider, ProviderId
 from statey.resource import (
     ResourceSession,
     BoundState,
@@ -525,7 +528,12 @@ class PlanNode:
 
 @dc.dataclass(frozen=True)
 class Plan:
+    """
+    A plan contains enough information to inspect and execute the sequence
+    of tasks to reach the state of config_session from state_graph
+    """
     nodes: Sequence[PlanNode]
+    providers: Sequence[Provider]
     config_session: ResourceSession
     state_graph: ResourceGraph
 
@@ -648,7 +656,8 @@ class DefaultMigrator(Migrator):
         state_graph: ResourceGraph,
         config_dep_graph: nx.DiGraph,
         state_dep_graph: nx.DiGraph,
-        output_session: ResourceSession
+        output_session: ResourceSession,
+        providers: Dict[ProviderId, Provider]
     ) -> Sequence[PlanNode]:
         """
 
@@ -684,9 +693,14 @@ class DefaultMigrator(Migrator):
             and previous_state is not None
             and config_state.resource == previous_state.resource
         ):
-            resource = output_session.ns.registry.get_resource(
-                config_state.resource
-            )
+            provider = providers.get(config_state.provider)
+            if provider is None:
+                provider = providers[config_state.provider] = output_session.ns.registry.get_provider(
+                    *config_state.provider
+                )
+                await provider.setup()
+
+            resource = provider.get_resource(config_state.resource)
             previous_resolved = state_dep_graph.nodes[node]["value"]
 
             config_partial_resolved = output_session.resolve(
@@ -753,10 +767,10 @@ class DefaultMigrator(Migrator):
                     )
 
             except Exception as err:
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, bound_config, err
-                )
                 _, _, tb = sys.exc_info()
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, bound_config, err, tb
+                )
             if error:
                 try:
                     raise error.with_traceback(tb)
@@ -859,9 +873,14 @@ class DefaultMigrator(Migrator):
         }
 
         if previous_state:
-            resource = config_session.ns.registry.get_resource(
-                previous_state.resource
-            )
+            provider = providers.get(previous_state.provider)
+            if provider is None:
+                provider = providers[previous_state.provider] = config_session.ns.registry.get_provider(
+                    *previous_state.provider
+                )
+                await provider.setup()
+
+            resource = provider.get_resource(previous_state.resource)
             previous_resolved = state_dep_graph.nodes[node]["value"]
 
             previous_snapshot = StateSnapshot(previous_resolved, previous_state)
@@ -881,10 +900,10 @@ class DefaultMigrator(Migrator):
                     previous_snapshot, config_bound, task_session
                 )
             except Exception as err:
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, config_bound, err
-                )
                 _, _, tb = sys.exc_info()
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, config_bound, err, tb
+                )
             if error:
                 try:
                     raise error.with_traceback(tb)
@@ -907,10 +926,10 @@ class DefaultMigrator(Migrator):
                     output_ref, decode=False, allow_unknowns=True
                 )
             except Exception as err:
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, config_bound, err
-                )
                 _, _, tb = sys.exc_info()
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, config_bound, err, tb
+                )
             if error:
                 try:
                     raise error.with_traceback(tb)
@@ -952,9 +971,14 @@ class DefaultMigrator(Migrator):
             )
 
         if config_state:
-            resource = config_session.ns.registry.get_resource(
-                config_state.resource
-            )
+            provider = providers.get(config_state.provider)
+            if provider is None:
+                provider = providers[config_state.provider] = config_session.ns.registry.get_provider(
+                    *config_state.provider
+                )
+                await provider.setup()
+
+            resource = provider.get_resource(config_state.resource)
             config_partial_resolved = output_session.resolve(
                 config_bound_state.input, decode=False, allow_unknowns=True
             )
@@ -974,10 +998,10 @@ class DefaultMigrator(Migrator):
                     previous_snapshot, config_bound, task_session
                 )
             except Exception as err:
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, config_bound, err
-                )
                 _, _, tb = sys.exc_info()
+                error = exc.ErrorDuringPlanningNode(
+                    node, previous_snapshot, config_bound, err, tb
+                )
             if error:
                 try:
                     raise error.with_traceback(tb)
@@ -1052,8 +1076,8 @@ class DefaultMigrator(Migrator):
         try:
             config_dep_graph = config_session.dependency_graph()
         except Exception as err:
-            error = exc.ErrorDuringPlanning(err)
             _, _, tb = sys.exc_info()
+            error = exc.ErrorDuringPlanning(err, tb)
         if error:
             try:
                 raise error.with_traceback(tb)
@@ -1072,6 +1096,7 @@ class DefaultMigrator(Migrator):
         state_only_nodes = state_nodes - config_nodes
 
         plan_nodes = []
+        providers = {}
 
         task_graph = nx.DiGraph()
 
@@ -1082,7 +1107,8 @@ class DefaultMigrator(Migrator):
                 state_graph=state_graph,
                 config_dep_graph=config_dep_graph,
                 state_dep_graph=state_dep_graph,
-                output_session=output_session
+                output_session=output_session,
+                providers=providers
             ))
 
         for node in chain(config_dep_graph.nodes, state_only_nodes):
@@ -1092,21 +1118,25 @@ class DefaultMigrator(Migrator):
         task_graph_obj = AsyncIOTaskGraph(task_graph)
         executor = AsyncIOGraphExecutor()
 
-        exec_info = await executor.execute_async(task_graph_obj)
+        try:
+            exec_info = await executor.execute_async(task_graph_obj)
+        finally:
+            providers = tuple(providers.values())
+            await asyncio.gather(*(provider.teardown() for provider in providers))
         # Ugly error handling :(
         error, tb = None, None
         try:
             exec_info.raise_for_failure()
         except Exception as err:
-            error = exc.ErrorDuringPlanning(err)
             _, _, tb = sys.exc_info()
+            error = exc.ErrorDuringPlanning(err, tb)
         if error:
             try:
                 raise error.with_traceback(tb)
             except Exception:
                 stack.rewrite_tb(*sys.exc_info())
 
-        plan = Plan(tuple(plan_nodes), config_session, state_graph)
+        plan = Plan(tuple(plan_nodes), providers, config_session, state_graph)
         # This will ensure that the task graph is a valid DAG, not perfect but it will
         # do for now
         plan.task_graph()
