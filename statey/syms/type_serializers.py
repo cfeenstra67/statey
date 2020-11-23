@@ -36,7 +36,10 @@ class ValueTypeSerializer(TypeSerializer):
     type_name: str
 
     def serialize(self, type: types.Type) -> Any:
-        return {"type": self.type_name, "nullable": type.nullable}
+        result = {"type": self.type_name}
+        if type.nullable:
+            result["nullable"] = True
+        return result
 
     def deserialize(self, data: Any) -> types.Type:
         return self.type_cls(nullable=data.get("nullable", False))
@@ -120,7 +123,10 @@ class ArrayTypeSerializer(TypeSerializer):
 
     def serialize(self, type: types.Type) -> Any:
         element_type = self.element_serializer.serialize(type.element_type)
-        return {"type": "array", "items": element_type, "nullable": type.nullable}
+        result = {"type": "array", "items": element_type}
+        if type.nullable:
+            result["nullable"] = True
+        return result
 
     def deserialize(self, data: Any) -> types.Type:
         element_type = self.element_serializer.deserialize(data["items"])
@@ -162,12 +168,19 @@ class MapTypeSerializer(TypeSerializer):
     def serialize(self, type: types.Type) -> Any:
         key_type = self.key_serializer.serialize(type.key_type)
         value_type = self.value_serializer.serialize(type.value_type)
-        return {
+        result = {
             "type": "object",
-            "nullable": type.nullable,
-            "keys": key_type,
             "additionalProperties": value_type,
         }
+
+        # This is assumed to always be the case in JSON schemas, so omit this
+        # information if it's just a simple string
+        if key_type != {"type": "string"}:
+            result["keys"] = key_type
+
+        if type.nullable:
+            result["nullable"] = True
+        return result
 
     def deserialize(self, data: Any) -> types.Type:
         key_type = self.key_serializer.deserialize(data.get("keys", {"type": "string"}))
@@ -226,12 +239,14 @@ class StructTypeSerializer(TypeSerializer):
                 required.append(key)
             fields[key] = serialized
 
-        return {
+        result = {
             "type": "object",
-            "nullable": type.nullable,
             "properties": fields,
             "required": required,
         }
+        if type.nullable:
+            result["nullable"] = True
+        return result
 
     def deserialize(self, data: Any) -> types.Type:
         fields = []
@@ -299,12 +314,14 @@ class NativeFunctionTypeSerializer(TypeSerializer):
             serializer = self.arg_serializers[key]
             fields.append({"name": key, "type": serializer.serialize(arg_types[key])})
 
-        return {
+        result = {
             "type": "native_function",
-            "nullable": type.nullable,
             "args": fields,
             "return_type": self.return_type_serializer.serialize(type.return_type),
         }
+        if type.nullable:
+            result["nullable"] = True
+        return result
 
     def deserialize(self, data: Any) -> types.Type:
         fields = []

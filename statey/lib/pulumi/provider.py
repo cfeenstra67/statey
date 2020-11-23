@@ -547,12 +547,13 @@ class PulumiProvider(st.Provider):
         self._resource_cache = {}
 
     async def setup(self) -> None:
-        ctx = self.context = pylumi.Context()
-        ctx.setup()
-        provider = self.pulumi_provider = ctx.provider(self.schema.name, self.id.meta)
-        provider.configure()
         pool = self.thread_pool = ThreadPoolExecutor()
         pool.__enter__()
+
+        ctx = self.context = pylumi.Context()
+        provider = self.pulumi_provider = ctx.provider(self.schema.name, self.id.meta)
+        ctx.setup()
+        provider.configure()
 
     async def teardown(self) -> None:
         self.context.teardown()
