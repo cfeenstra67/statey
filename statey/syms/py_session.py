@@ -82,7 +82,7 @@ class ResolutionStack:
         start: Any,
         repr: Callable[[Any], str] = repr,
         parent_size: int = 0,
-        depth: int = 10
+        depth: int = 10,
     ) -> Sequence[str]:
         sym = self.get_object(start)
         lines = []
@@ -90,10 +90,12 @@ class ResolutionStack:
         child_parent_size = len(successors)
         fmt = (lambda x: tw.indent(x, "  ")) if parent_size > 1 else (lambda x: x)
         if len(successors) > depth:
-            lines.append(f'({len(successors) - depth} more objects collapsed...)')
+            lines.append(f"({len(successors) - depth} more objects collapsed...)")
 
         for sym_id in successors[:depth]:
-            sym_stack = self._format_dag_stack(dag, sym_id, repr, child_parent_size, depth - 1)
+            sym_stack = self._format_dag_stack(
+                dag, sym_id, repr, child_parent_size, depth - 1
+            )
             lines.append(fmt(sym_stack))
         prefix = "-" if child_parent_size > 0 else "*"
         lines.append(f"{prefix} {repr(sym)}")

@@ -421,7 +421,7 @@ class ResolutionError(SessionError):
         self.exception = exception
         self.tb = tb
         obj = self.stack.get_object(self.stack.symbol_id)
-        formatted_tb = ''.join(traceback.format_tb(tb))
+        formatted_tb = "".join(traceback.format_tb(tb))
         super().__init__(
             f"Resolution stack:\n{stack.format_stack()}\n"
             f"Encountered exception while resolving {obj}:\n"

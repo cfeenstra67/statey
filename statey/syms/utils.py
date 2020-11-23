@@ -200,7 +200,7 @@ class PossiblySymbolicField(ma.fields.Field):
             except exc.NoCasterFound as err:
                 raise ma.ValidationError(
                     f"Invalid symbol type (expected {self.type}, got {value._type}).",
-                    field_name=self.name
+                    field_name=self.name,
                 ) from err
             return caster.cast(value)
         return value

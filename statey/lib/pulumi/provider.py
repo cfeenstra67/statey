@@ -132,7 +132,8 @@ class PulumiProviderSchemaParser:
         fixed_data = self._fix_broken_refs(data)
 
         import json
-        with open('get_schema_test.json', 'w+') as f:
+
+        with open("get_schema_test.json", "w+") as f:
             json.dump(fixed_data, f, indent=2, sort_keys=True)
 
         out = {}
@@ -285,7 +286,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
         """
         resp = resp.copy()
 
-        for key in ['__defaults']:
+        for key in ["__defaults"]:
             resp.pop(key, None)
 
         out = {}
@@ -327,17 +328,17 @@ class PulumiResourceMachine(st.SingleStateMachine):
             check_resp,
         )
 
-        if not diff_resp['DetailedDiff']:
+        if not diff_resp["DetailedDiff"]:
             return st.ModificationAction.NONE
 
         replace_kinds = {
             pylumi.DiffType.ADD_REPLACE,
             pylumi.DiffType.DELETE_REPLACE,
-            pylumi.DiffType.UPDATE_REPLACE
+            pylumi.DiffType.UPDATE_REPLACE,
         }
 
-        for key, val in diff_resp['DetailedDiff'].items():
-            kind = pylumi.DiffType(val['Kind'])
+        for key, val in diff_resp["DetailedDiff"].items():
+            kind = pylumi.DiffType(val["Kind"])
             if kind in replace_kinds:
                 return st.ModificationAction.DELETE_AND_RECREATE
 
@@ -434,7 +435,9 @@ class PulumiResourceMachine(st.SingleStateMachine):
             check_resp, errs = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.check,
-                pylumi.URN(self.resource_name), {}, config
+                pylumi.URN(self.resource_name),
+                {},
+                config,
             )
             check_resp = self.clean_check_resp(check_resp)
             if errs:
@@ -475,7 +478,9 @@ class PulumiResourceMachine(st.SingleStateMachine):
             check_resp, errs = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.check,
-                pylumi.URN(self.resource_name, pulumi_id), current, config
+                pylumi.URN(self.resource_name, pulumi_id),
+                current,
+                config,
             )
             check_resp = self.clean_check_resp(check_resp)
             if errs:
