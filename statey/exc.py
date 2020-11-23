@@ -416,13 +416,16 @@ class ResolutionError(SessionError):
     Error indicating that some exception was encountered during resolution
     """
 
-    def __init__(self, stack: "ResolutionStack", exception: Exception) -> None:
+    def __init__(self, stack: "ResolutionStack", exception: Exception, tb) -> None:
         self.stack = stack
         self.exception = exception
+        self.tb = tb
         obj = self.stack.get_object(self.stack.symbol_id)
+        formatted_tb = ''.join(traceback.format_tb(tb))
         super().__init__(
             f"Resolution stack:\n{stack.format_stack()}\n"
-            f"Encountered exception while resolving {obj}: {type(exception).__name__}: {exception}."
+            f"Encountered exception while resolving {obj}:\n"
+            f"{formatted_tb}{type(exception).__name__}: {exception}."
         )
 
 

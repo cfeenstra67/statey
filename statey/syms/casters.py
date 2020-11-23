@@ -151,9 +151,10 @@ def quasi_equal_cast(
     """
     Predicate returning True when the types are the same other than metadata
     """
-    if from_type == to_type.with_meta(
-        from_type.meta
-    ) or from_type == to_type.with_nullable(False).with_meta(from_type.meta):
+    if (
+        from_type.with_meta(to_type.meta) == to_type
+        or from_type.with_nullable(True).with_meta(to_type.meta) == to_type
+    ):
         return ForceCaster(to_type)
     return None
 
@@ -288,10 +289,13 @@ def number_cast(
     """
     Caster allowing different numerical types to be cast to one another.
     """
-    if isinstance(from_type, types.NumberType) and isinstance(
-        to_type, types.NumberType
+    if (
+        type(from_type) != type(to_type)
+        and isinstance(from_type, types.NumberType)
+        and isinstance(to_type, types.NumberType)
     ):
-        return ForceCaster(to_type)
+        to_as_from = to_type.with_nullable(from_type.nullable).with_meta(from_type.meta)
+        return registry.get_caster(to_as_from, to_type)
     return None
 
 

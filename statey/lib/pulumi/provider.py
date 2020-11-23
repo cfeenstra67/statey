@@ -1,4 +1,6 @@
+import asyncio
 import dataclasses as dc
+from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence, Dict, Any, Optional
 
 import jsonschema
@@ -52,10 +54,11 @@ class PulumiProviderSchemaParser:
         for key in keys:
 
             doc_types = doc[key]
+            this_out = out.setdefault(key, {})
 
             for key, val in list(doc_types.items()):
                 comps = key.split("/")
-                current = out
+                current = this_out
                 for comp in comps[:-1]:
                     current = current.setdefault(comp, {})
 
@@ -127,6 +130,10 @@ class PulumiProviderSchemaParser:
         resources = data["resources"].copy()
 
         fixed_data = self._fix_broken_refs(data)
+
+        import json
+        with open('get_schema_test.json', 'w+') as f:
+            json.dump(fixed_data, f, indent=2, sort_keys=True)
 
         out = {}
         for key, schema in resources.items():
@@ -205,6 +212,25 @@ class PulumiResourceMachine(st.SingleStateMachine):
         data = {
             field.name: data[field.name] for field in typ.fields if field.name in data
         }
+        # Add in default values for any required but missing fields
+        for field in typ.fields:
+            if field.name in data and data[field.name] is None:
+                del data[field.name]
+
+            if field.type.nullable or field.name in data:
+                continue
+
+            if isinstance(field.type, st.NumberType):
+                data[field.name] = 0
+            elif isinstance(field.type, st.StringType):
+                data[field.name] = ""
+            elif isinstance(field.type, st.BooleanType):
+                data[field.name] = False
+            elif isinstance(field.type, st.ArrayType):
+                data[field.name] = []
+            elif isinstance(field.type, (st.MapType, st.StructType)):
+                data[field.name] = {}
+
         encoder = st.registry.get_encoder(typ)
         return encoder.encode(data)
 
@@ -258,18 +284,30 @@ class PulumiResourceMachine(st.SingleStateMachine):
         Clean the check() response
         """
         resp = resp.copy()
+
         for key in ['__defaults']:
             resp.pop(key, None)
-        return resp
 
-    def get_action(
+        out = {}
+        for key, val in resp.items():
+            if isinstance(val, dict):
+                val = self.clean_check_resp(val)
+            out[key] = val
+
+        return out
+
+    async def get_action(
         self,
         current: st.StateSnapshot,
         config: st.StateConfig,
         session: st.TaskSession,
     ) -> st.ModificationAction:
 
-        check_resp, errs = self.provider.pulumi_provider.check(
+        loop = asyncio.get_running_loop()
+
+        check_resp, errs = await loop.run_in_executor(
+            self.provider.thread_pool,
+            self.provider.pulumi_provider.check,
             pylumi.URN(self.resource_name),
             current.data,
             object_to_pulumi_json(config.obj, session),
@@ -280,24 +318,36 @@ class PulumiResourceMachine(st.SingleStateMachine):
 
         current_data = current.data.copy()
         pulumi_id = current_data.pop("PulumiID")
-        diff_resp = self.provider.pulumi_provider.diff(
+        diff_resp = await loop.run_in_executor(
+            self.provider.thread_pool,
+            self.provider.pulumi_provider.diff,
             pylumi.URN(self.resource_name, pulumi_id),
             pulumi_id,
             current_data,
             check_resp,
         )
 
-        if diff_resp["DeleteBeforeReplace"]:
-            return st.ModificationAction.DELETE_AND_RECREATE
+        if not diff_resp['DetailedDiff']:
+            return st.ModificationAction.NONE
 
-        if diff_resp["Changes"] > 1:
-            return st.ModificationAction.MODIFY
+        replace_kinds = {
+            pylumi.DiffType.ADD_REPLACE,
+            pylumi.DiffType.DELETE_REPLACE,
+            pylumi.DiffType.UPDATE_REPLACE
+        }
 
-        return st.ModificationAction.NONE
+        for key, val in diff_resp['DetailedDiff'].items():
+            kind = pylumi.DiffType(val['Kind'])
+            if kind in replace_kinds:
+                return st.ModificationAction.DELETE_AND_RECREATE
+
+        return st.ModificationAction.MODIFY
 
     async def get_expected(
         self, current: st.StateSnapshot, config: st.StateConfig, session: st.TaskSession
     ) -> Any:
+
+        loop = asyncio.get_running_loop()
 
         current_is_up = current.state.name == "UP"
         config_is_up = config.state.name == "UP"
@@ -305,7 +355,9 @@ class PulumiResourceMachine(st.SingleStateMachine):
         if not config_is_up:
             return {}
 
-        check_resp, errs = self.provider.pulumi_provider.check(
+        check_resp, errs = await loop.run_in_executor(
+            self.provider.thread_pool,
+            self.provider.pulumi_provider.check,
             pylumi.URN(self.resource_name),
             current.data,
             object_to_pulumi_json(config.obj, session),
@@ -315,11 +367,13 @@ class PulumiResourceMachine(st.SingleStateMachine):
             raise PulumiValidationError(errs)
 
         if not current_is_up:
-            resp = self.provider.pulumi_provider.create(
+            resp = await loop.run_in_executor(
+                self.provider.thread_pool,
+                self.provider.pulumi_provider.create,
                 pylumi.URN(self.resource_name),
                 check_resp,
                 self.provider.operation_timeout,
-                preview=True,
+                True,
             )
             return self.make_expected_output(
                 resp["Properties"], config, self.UP.output_type
@@ -327,7 +381,9 @@ class PulumiResourceMachine(st.SingleStateMachine):
 
         current_data = current.data.copy()
         pulumi_id = current_data.pop("PulumiID")
-        diff_resp = self.provider.pulumi_provider.diff(
+        diff_resp = await loop.run_in_executor(
+            self.provider.thread_pool,
+            self.provider.pulumi_provider.diff,
             pylumi.URN(self.resource_name, pulumi_id),
             pulumi_id,
             current_data,
@@ -341,13 +397,17 @@ class PulumiResourceMachine(st.SingleStateMachine):
         return self.make_expected_output(output, config, self.UP.output_type)
 
     async def refresh_state(self, data: Any) -> Optional[Any]:
+        loop = asyncio.get_running_loop()
+
         data = data.copy()
         pulumi_id = data.pop("PulumiID")
-        resp = self.provider.pulumi_provider.read(
+        resp = await loop.run_in_executor(
+            self.provider.thread_pool,
+            self.provider.pulumi_provider.read,
             pylumi.URN(self.resource_name, pulumi_id),
             pulumi_id,
-            inputs=data,
-            state=data,
+            data,
+            data,
         )
         if not resp["Outputs"]:
             return None
@@ -369,13 +429,19 @@ class PulumiResourceMachine(st.SingleStateMachine):
         output_type = self.UP.output_type
 
         async def create_task(config: input_type) -> output_type:
-            check_resp, errs = self.provider.pulumi_provider.check(
+            loop = asyncio.get_running_loop()
+
+            check_resp, errs = await loop.run_in_executor(
+                self.provider.thread_pool,
+                self.provider.pulumi_provider.check,
                 pylumi.URN(self.resource_name), {}, config
             )
             check_resp = self.clean_check_resp(check_resp)
             if errs:
                 raise PulumiValidationError(errs)
-            resp = self.provider.pulumi_provider.create(
+            resp = await loop.run_in_executor(
+                self.provider.thread_pool,
+                self.provider.pulumi_provider.create,
                 pylumi.URN(self.resource_name),
                 check_resp,
                 self.provider.operation_timeout,
@@ -402,22 +468,27 @@ class PulumiResourceMachine(st.SingleStateMachine):
         output_type = self.UP.output_type
 
         async def modify_task(current: output_type, config: input_type) -> output_type:
+            loop = asyncio.get_running_loop()
             current = current.copy()
             pulumi_id = current.pop("PulumiID")
 
-            check_resp, errs = self.provider.pulumi_provider.check(
+            check_resp, errs = await loop.run_in_executor(
+                self.provider.thread_pool,
+                self.provider.pulumi_provider.check,
                 pylumi.URN(self.resource_name, pulumi_id), current, config
             )
             check_resp = self.clean_check_resp(check_resp)
             if errs:
                 raise PulumiValidationError(errs)
 
-            resp = self.provider.pulumi_provider.update(
+            resp = await loop.run_in_executor(
+                self.provider.thread_pool,
+                self.provider.pulumi_provider.update,
                 pylumi.URN(self.resource_name, pulumi_id),
-                id=pulumi_id,
-                olds=current,
-                news=check_resp,
-                timeout=self.provider.operation_timeout,
+                pulumi_id,
+                current,
+                check_resp,
+                self.provider.operation_timeout,
             )
             return self.make_output(resp["Properties"], resp["ID"], output_type)
 
@@ -436,13 +507,17 @@ class PulumiResourceMachine(st.SingleStateMachine):
         output_type = self.UP.output_type
 
         async def delete_task(current: output_type) -> null_type:
+            loop = asyncio.get_running_loop()
             current = current.copy()
             pulumi_id = current.pop("PulumiID")
-            resp = self.provider.pulumi_provider.delete(
+
+            resp = await loop.run_in_executor(
+                self.provider.thread_pool,
+                self.provider.pulumi_provider.delete,
                 pylumi.URN(self.resource_name, pulumi_id),
                 pulumi_id,
                 current,
-                timeout=self.provider.operation_timeout,
+                self.provider.operation_timeout,
             )
             return {}
 
@@ -462,10 +537,12 @@ class PulumiProvider(st.Provider):
     ) -> None:
 
         self.id = id
-        self.context = None
-        self.pulumi_provider = None
         self.schema = schema
         self.operation_timeout = operation_timeout
+
+        self.context = None
+        self.pulumi_provider = None
+        self.thread_pool = None
 
         self._resource_cache = {}
 
@@ -474,10 +551,13 @@ class PulumiProvider(st.Provider):
         ctx.setup()
         provider = self.pulumi_provider = ctx.provider(self.schema.name, self.id.meta)
         provider.configure()
+        pool = self.thread_pool = ThreadPoolExecutor()
+        pool.__enter__()
 
     async def teardown(self) -> None:
         self.context.teardown()
-        self.context = self.pulumi_provider = None
+        self.thread_pool.__exit__(None, None, None)
+        self.context = self.pulumi_provider = self.thread_pool = None
 
     def get_resource(self, name: str) -> st.Resource:
         if name not in self.schema.resources:

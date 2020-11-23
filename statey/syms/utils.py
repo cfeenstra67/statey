@@ -178,6 +178,7 @@ class PossiblySymbolicField(ma.fields.Field):
         # Just pass this through when serializing
         if isinstance(value, Object):
             return value
+        self.field.name = self.name
         return self.field._serialize(value, attr, obj, **kwargs)
 
     def _deserialize(
@@ -189,6 +190,7 @@ class PossiblySymbolicField(ma.fields.Field):
     ) -> Any:
         from statey.syms import types, Object
 
+        self.field.name = self.name
         if not isinstance(value, Object):
             return self.field._deserialize(value, attr, data, **kwargs)
 
@@ -197,7 +199,8 @@ class PossiblySymbolicField(ma.fields.Field):
                 caster = self.registry.get_caster(value._type, self.type)
             except exc.NoCasterFound as err:
                 raise ma.ValidationError(
-                    f"Invalid symbol type (expected {self.type}, got {value._type})."
+                    f"Invalid symbol type (expected {self.type}, got {value._type}).",
+                    field_name=self.name
                 ) from err
             return caster.cast(value)
         return value

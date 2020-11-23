@@ -265,7 +265,7 @@ class SingleStateMachine(Machine):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_action(
+    async def get_action(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
@@ -300,7 +300,7 @@ class SingleStateMachine(Machine):
 
         config = config.clone(obj=await self.refresh_config(config.obj))
 
-        action = self.get_action(current, config, session)
+        action = await self.get_action(current, config, session)
 
         if action == ModificationAction.NONE:
             return current.obj
@@ -420,7 +420,7 @@ class SimpleMachine(SingleStateMachine):
         current_as_config = st.filter_struct(current.obj, config.type)
         return differ.diff(current_as_config, config.obj, session)
 
-    def get_action(
+    async def get_action(
         self,
         current: resource.StateSnapshot,
         config: resource.StateConfig,
@@ -430,7 +430,7 @@ class SimpleMachine(SingleStateMachine):
         Split get_action into get_diff and get_action_from_diff
         """
         diff = self.get_diff(current, config, session)
-        return self.get_action(diff)
+        return self.get_action_from_diff(diff)
 
     async def create(
         self, session: task.TaskSession, config: resource.StateConfig

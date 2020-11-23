@@ -82,26 +82,30 @@ class ResolutionStack:
         start: Any,
         repr: Callable[[Any], str] = repr,
         parent_size: int = 0,
+        depth: int = 10
     ) -> Sequence[str]:
         sym = self.get_object(start)
         lines = []
         successors = list(dag.succ[start])
         child_parent_size = len(successors)
         fmt = (lambda x: tw.indent(x, "  ")) if parent_size > 1 else (lambda x: x)
-        for sym_id in successors:
-            sym_stack = self._format_dag_stack(dag, sym_id, repr, child_parent_size)
+        if len(successors) > depth:
+            lines.append(f'({len(successors) - depth} more objects collapsed...)')
+
+        for sym_id in successors[:depth]:
+            sym_stack = self._format_dag_stack(dag, sym_id, repr, child_parent_size, depth - 1)
             lines.append(fmt(sym_stack))
         prefix = "-" if child_parent_size > 0 else "*"
         lines.append(f"{prefix} {repr(sym)}")
         return "\n".join(lines)
 
     def format_dag_stack(
-        self, dag: nx.DiGraph, repr: Callable[[Any], str] = repr
+        self, dag: nx.DiGraph, repr: Callable[[Any], str] = repr, depth: int = 3
     ) -> str:
         """
         Format the given DAG into a stack string
         """
-        return self._format_dag_stack(dag, self.symbol_id, repr=repr)
+        return self._format_dag_stack(dag, self.symbol_id, repr=repr, depth=depth)
 
     def get_stack_dag(self) -> nx.DiGraph:
         """
@@ -112,12 +116,12 @@ class ResolutionStack:
         utils.subgraph_retaining_dependencies(dag_copy, descendants)
         return dag_copy
 
-    def format_stack(self, repr: Callable[[Any], str] = repr) -> str:
+    def format_stack(self, repr: Callable[[Any], str] = repr, depth: int = 3) -> str:
         """
         Format this resolution stack into a string
         """
         dag = self.get_stack_dag()
-        return self.format_dag_stack(dag, repr=repr)
+        return self.format_dag_stack(dag, repr=repr, depth=depth)
 
 
 class PythonSession(session.Session):
@@ -249,7 +253,7 @@ class PythonSession(session.Session):
             except Exception as err:
                 _, _, tb = sys.exc_info()
                 resolution_stack = ResolutionStack(dag, symbol_id)
-                exception = exc.ResolutionError(resolution_stack, err)
+                exception = exc.ResolutionError(resolution_stack, err, tb)
             raise exception.with_traceback(tb)
 
         for symbol_id in list(topological_sort(dag)):

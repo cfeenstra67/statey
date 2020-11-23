@@ -288,6 +288,9 @@ class StructSemantics(Semantics):
     def expand(self, value: Any) -> Any:
         if not self.field_semantics or value is None:
             return value
+        # If it is nullable it can't be expanded further
+        if isinstance(value, Object) and self.type.nullable:
+            return value
 
         out = {}
         for name, semantics in self.field_semantics.items():

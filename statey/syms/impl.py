@@ -62,7 +62,8 @@ class ObjectImplementation(base.AttributeAccess):
         """
         Render a string representation of an object with this implementation
         """
-        return f"{type(obj).__name__}[{obj._type}]({repr(self)})"
+        return f"{type(obj).__name__}({repr(self)})"
+        # return f"{type(obj).__name__}[{obj._type}]({repr(self)})"
 
     def type(self) -> types.Type:
         """
@@ -161,7 +162,8 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
         return self.ns.registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f"{type(self).__name__}[{obj._type}]({self.path})"
+        return f"{type(self).__name__}({self.path})"
+        # return f"{type(self).__name__}[{obj._type}]({self.path})"
 
 
 class StandaloneObjectImplementation(ObjectImplementation):
@@ -231,7 +233,8 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         return self.value_type
 
     def object_repr(self, obj: "Object") -> str:
-        return f"{type(self).__name__}[{obj._type}]({repr(self.value)})"
+        return f"{type(self).__name__}({repr(self.value)})"
+        # return f"{type(self).__name__}[{obj._type}]({repr(self.value)})"
 
     def get_attr(self, obj: Object, attr: str) -> Any:
         encoded_value = self.get_encoded_value(obj._type, obj._registry)
@@ -288,7 +291,11 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
                 continue
             arg = dag.nodes[sym._impl.id]["result"]
             arg_encoder = session.ns.registry.get_encoder(sym._type)
-            decoded_arg = arg_encoder.decode(arg)
+            try:
+                decoded_arg = arg_encoder.decode(arg)
+            except:
+                print("FAIL", key, sym, arg, encoded_args)
+                raise
             semantics = obj._registry.get_semantics(sym._type)
             semantics.map_objects(unknowns.append, arg)
             kwargs[key] = decoded_arg
@@ -308,7 +315,8 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
         kwarg_reprs = ", ".join(
             "=".join([key, repr(val)]) for key, val in self.arguments.items()
         )
-        return f"{type(self.func).__name__}Call[{obj._type}]({self.func.name}({kwarg_reprs}))"
+        return f"{type(self.func).__name__}Call({self.func.name}({kwarg_reprs}))"
+        # return f"{type(self.func).__name__}Call[{obj._type}]({self.func.name}({kwarg_reprs}))"
 
 
 @dc.dataclass(frozen=True)
@@ -384,7 +392,8 @@ class Future(FunctionalBehaviorMixin, ObjectImplementation):
         return self.return_type
 
     def object_repr(self, obj: Object) -> str:
-        return f"{type(self).__name__}[{obj._type}]({self.result.result})"
+        return f"{type(self).__name__}({self.result.result})"
+        # return f"{type(self).__name__}[{obj._type}]({self.result.result})"
 
 
 @dc.dataclass(frozen=True)
@@ -474,7 +483,8 @@ class Unknown(ObjectImplementation):
 
     def object_repr(self, obj: "Object") -> str:
         post = "" if self.obj is None else f"({self.obj})"
-        return f"{type(self).__name__}[{obj._type}]{post}"
+        return f"{type(self).__name__}{post}"
+        # return f"{type(self).__name__}[{obj._type}]{post}"
 
 
 @dc.dataclass(frozen=True)
@@ -520,7 +530,8 @@ class Struct(FunctionalMappingMixin, ObjectImplementation):
         field_reprs = ", ".join(
             "=".join([field.name, repr(field.value)]) for field in self.fields
         )
-        return f"{type(self).__name__}[{obj._type}]({field_reprs})"
+        return f"{type(self).__name__}({field_reprs})"
+        # return f"{type(self).__name__}[{obj._type}]({field_reprs})"
 
 
 @dc.dataclass(frozen=True)
@@ -588,4 +599,5 @@ class ExpectedValue(ObjectImplementation):
         return self.obj._registry
 
     def object_repr(self, obj: "Object") -> str:
-        return f"{type(self).__name__}[{obj._type}]({self.expected}, from={self.obj})"
+        return f"{type(self).__name__}({self.expected}, from={self.obj})"
+        # return f"{type(self).__name__}[{obj._type}]({self.expected}, from={self.obj})"
