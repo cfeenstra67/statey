@@ -65,12 +65,11 @@ def set_items(scope_func):
         pytest.param(
             factorial_func(10), "9", 34, factorial_func_deps(10), id="factorial_10"
         ),
-        # This is slow :( TODO: figure out why
-        # pytest.param(
-        #     factorial_func(100),
-        #     '99', 218922995834555169026, factorial_func_deps(100),
-        #     id='factorial_100'
-        # ),
+        pytest.param(
+            factorial_func(100),
+            '99', 218922995834555169026, factorial_func_deps(100),
+            id='factorial_100'
+        ),
         pytest.param(
             set_items(
                 lambda session, ref: {
