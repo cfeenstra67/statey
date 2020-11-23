@@ -925,7 +925,7 @@ class FunctionCallSerializer(ObjectImplementationSerializer):
         loaded_kwargs = {
             key: objects[obj_id] for key, obj_id in loaded_data["arguments"].items()
         }
-        return impl.FunctionCall(loaded_func, (), loaded_kwargs)
+        return impl.FunctionCall(loaded_func, loaded_kwargs)
 
     @classmethod
     @st.hookimpl

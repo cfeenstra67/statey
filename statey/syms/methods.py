@@ -38,8 +38,10 @@ class InstanceMethod(Method):
     func: func.Function
 
     def bind(self, obj: Object) -> Any:
-        new_impl = impl.FunctionCall(self.func, (obj,))
-        return Object(new_impl, registry=obj._registry)
+        return utils.bind_function_call(
+            self.func, (obj,),
+            registry=obj._registry
+        )
 
     def return_type(self, obj: Object) -> Any:
         return self.func.type.return_type

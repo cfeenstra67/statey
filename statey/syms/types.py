@@ -8,6 +8,9 @@ import pluggy
 from statey import create_plugin_manager
 
 
+UNHASHABLE = object()
+
+
 class TypeStringToken(enum.Enum):
     """
 	Different possible tokens in a type string
@@ -31,6 +34,25 @@ class TypeStringRenderer:
 
     def render(self, value: str, token: TypeStringToken) -> str:
         return value
+
+
+def hashable_meta(meta: Dict[str, Any]) -> int:
+    """
+    Generate a hash for a `meta` dictionary. Note that this will omit non-hashable
+    values so it will always succeed, but may not always generate the perfect hash
+    """
+    items = []
+    for key, val in meta.items():
+        try:
+            hash(val)
+        # If the type isn't hashable, we'll just hash the type instead. We
+        # can't use the 
+        except TypeError:
+            items.append((key, UNHASHABLE, type(val)))
+        else:
+            items.append((key, val))
+
+    return frozenset(items)
 
 
 class Type(abc.ABC):
@@ -91,6 +113,9 @@ class Type(abc.ABC):
         """
         return self.with_nullable(True)
 
+    def __hash__(self) -> int:
+        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta)))
+
 
 class DataClassMixin(abc.ABC):
     """
@@ -131,6 +156,8 @@ class AnyType(DataClassMixin, Type):
     def name(self) -> str:
         return "any"
 
+    __hash__ = Type.__hash__
+
 
 class NumberType(ValueType):
     """
@@ -143,6 +170,8 @@ class IntegerType(DataClassMixin, NumberType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="integer")
+    
+    __hash__ = Type.__hash__
 
 
 @dc.dataclass(frozen=True, repr=False)
@@ -151,6 +180,8 @@ class FloatType(DataClassMixin, NumberType):
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="float")
 
+    __hash__ = Type.__hash__
+
 
 @dc.dataclass(frozen=True, repr=False)
 class BooleanType(DataClassMixin, ValueType):
@@ -158,12 +189,16 @@ class BooleanType(DataClassMixin, ValueType):
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="boolean")
 
+    __hash__ = Type.__hash__
+
 
 @dc.dataclass(frozen=True, repr=False)
 class StringType(DataClassMixin, ValueType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="string")
+
+    __hash__ = Type.__hash__
 
 
 @dc.dataclass(frozen=True, repr=False)
@@ -206,6 +241,9 @@ class ArrayType(DataClassMixin, Type):
         Return a copy of this type with the given element type
         """
         return dc.replace(self, element_type=element_type)
+
+    def __hash__(self) -> int:
+        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), self.element_type))
 
 
 @dc.dataclass(frozen=True)
@@ -306,6 +344,9 @@ class StructType(DataClassMixin, Type):
         new_inst.__dict__["fields"] = tuple(fields)
         return new_inst
 
+    def __hash__(self) -> int:
+        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), tuple(self.fields)))
+
 
 EmptyType = StructType((), True)
 
@@ -389,6 +430,9 @@ class FunctionType(StructType):
         """
         return StructType(self.args, all(arg.type.nullable for arg in self.args))
 
+    def __hash__(self) -> int:
+        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), tuple(self.args), self.return_type))
+
 
 @dc.dataclass(frozen=True, repr=False)
 class NativeFunctionType(FunctionType):
@@ -406,6 +450,8 @@ class NativeFunctionType(FunctionType):
     @property
     def name(self) -> str:
         return "native_function"
+
+    __hash__ = FunctionType.__hash__
 
 
 @dc.dataclass(frozen=True, repr=False)
@@ -472,6 +518,9 @@ class MapType(DataClassMixin, Type):
         Return a copy of this type with the given key type
         """
         return dc.replace(self, value_type=value_type)
+
+    def __hash__(self) -> int:
+        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), self.key_type, self.value_type))
 
 
 # Some exported objects

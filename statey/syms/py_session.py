@@ -115,7 +115,10 @@ class ResolutionStack:
         """
         descendants = list(nx.descendants(self.dag, self.symbol_id)) + [self.symbol_id]
         dag_copy = self.dag.copy()
-        utils.subgraph_retaining_dependencies(dag_copy, descendants)
+        try:
+            utils.subgraph_retaining_dependencies(dag_copy, descendants)
+        except nx.NetworkXUnfeasible:
+            dag_copy = dag_copy.subgraph(descendants)
         return dag_copy
 
     def format_stack(self, repr: Callable[[Any], str] = repr, depth: int = 3) -> str:
@@ -180,9 +183,10 @@ class PythonSession(session.Session):
 
         return value
 
-    def _build_symbol_dag(self, symbol: Object, graph: nx.DiGraph) -> nx.DiGraph:
+    def _build_symbol_dag(self, symbol: Object, graph: nx.DiGraph, check_dag: bool = True) -> nx.DiGraph:
 
         syms = [(symbol, ())]
+        added = set()
 
         while syms:
             sym, downstreams = syms.pop(0)
@@ -191,6 +195,10 @@ class PythonSession(session.Session):
                 processed = True
             else:
                 graph.add_node(sym._impl.id, symbol=sym)
+                added.add(sym._impl.id)
+
+            if downstreams:
+                added.add(sym._impl.id)
 
             for symbol_id in downstreams:
                 graph.add_edge(sym._impl.id, symbol_id)
@@ -201,11 +209,19 @@ class PythonSession(session.Session):
             for upstream in sym._inst.depends_on(self):
                 syms.append((upstream, (sym._impl.id,)))
 
-        # Check that this is in fact a DAG and has no cycles
-        if not is_directed_acyclic_graph(graph):
-            raise ValueError(f"{graph} is not a DAG.")
+        if check_dag:
+            # Check that this is in fact a DAG and has no cycles
+            self._raise_not_dag(graph, list(added))
 
-        return graph
+        return added
+
+    def _raise_not_dag(self, graph: nx.DiGraph, sources=None) -> None:
+        try:
+            nx.find_cycle(graph, sources)
+        except nx.NetworkXNoCycle:
+            pass
+        else:
+            raise ValueError(f'Graph is not a DAG!')
 
     @stack.internalcode
     def _process_symbol_dag(
@@ -213,6 +229,8 @@ class PythonSession(session.Session):
     ) -> None:
         @stack.internalcode
         def handle_symbol_id(symbol_id):
+            # if symbol_id in stack:
+            #     raise ValueError('circular reference detected')
 
             sym = dag.nodes[symbol_id]["symbol"]
             if "result" in dag.nodes[symbol_id]:
@@ -233,11 +251,16 @@ class PythonSession(session.Session):
                 expanded_result = semantics.expand(result)
 
                 def resolve_child(x):
-                    self._build_symbol_dag(x, dag)
+                    added = self._build_symbol_dag(x, dag, check_dag=False)
                     dag.add_edge(x._impl.id, symbol_id)
+                    self._raise_not_dag(dag, list(added | {x._impl.id}))
 
-                    ancestors = set(nx.ancestors(dag, x._impl.id))
-                    for sym_id in topological_sort(dag.subgraph(ancestors).copy()):
+                    ancestors = set(dag.pred[x._impl.id])
+                    for node in list(ancestors):
+                        if "result" in dag.nodes[node]:
+                            ancestors.remove(node)
+
+                    for sym_id in list(topological_sort(dag.subgraph(ancestors))):
                         wrapped_handle_symbol_id(sym_id)
 
                     return wrapped_handle_symbol_id(x._impl.id)
@@ -266,14 +289,14 @@ class PythonSession(session.Session):
     ) -> Any:
 
         graph = nx.DiGraph()
-        dag = self._build_symbol_dag(symbol, graph)
+        self._build_symbol_dag(symbol, graph)
 
         try:
-            self._process_symbol_dag(dag, allow_unknowns)
+            self._process_symbol_dag(graph, allow_unknowns)
         except Exception:
             stack.rewrite_tb(*sys.exc_info())
 
-        encoded = dag.nodes[symbol._impl.id]["result"]
+        encoded = graph.nodes[symbol._impl.id]["result"]
         if not decode:
             return encoded
 
@@ -287,7 +310,9 @@ class PythonSession(session.Session):
 
         for key in self.ns.keys():
             ref = self.ns.ref(key)
-            self._build_symbol_dag(ref, dag)
+            self._build_symbol_dag(ref, dag, check_dag=False)
+
+        self._raise_not_dag(graph)
 
         try:
             self._process_symbol_dag(dag, allow_unknowns=True)

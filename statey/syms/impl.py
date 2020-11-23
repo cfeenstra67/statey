@@ -110,8 +110,10 @@ class FunctionalMappingMixin:
     """
 
     def map(self, obj: Object, function: func.Function) -> Object:
-        new_impl = FunctionCall(function, (obj,))
-        return Object(new_impl, function.type.return_type, obj._registry)
+        return utils.wrap_function_call(
+            function, (obj,),
+            registry=obj._registry
+        )
 
 
 class FunctionalBehaviorMixin(FunctionalMappingMixin, FunctionalAttributeAccessMixin):
@@ -260,18 +262,11 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
     """
 
     func: func.Function
-    args: dc.InitVar[Sequence[Object]] = ()
-    kwargs: dc.InitVar[Optional[Dict[str, Object]]] = None
-    arguments: Dict[str, Object] = dc.field(init=False, default=None)
+    arguments: Dict[str, Object] = None
 
-    def __post_init__(
-        self, args: Sequence[Object], kwargs: Optional[Dict[str, Object]]
-    ) -> None:
-        if kwargs is None:
-            kwargs = {}
-        self.__dict__["arguments"] = utils.bind_function_args(
-            self.func.type, args, kwargs
-        )
+    def __post_init__(self) -> None:
+        if self.arguments is None:
+            self.__dict__['arguments'] = {}
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         yield from self.arguments.values()
@@ -279,23 +274,14 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
         unknowns = []
 
-        args_type = self.func.type.args_type
-
-        args_encoder = session.ns.registry.get_encoder(args_type)
-        encoded_args = args_encoder.encode(self.arguments) or {}
-
         kwargs = {}
-        for key, sym in encoded_args.items():
-            if key not in self.arguments:
+        for key, sym in self.arguments.items():
+            if not isinstance(sym, Object):
                 kwargs[key] = sym
                 continue
             arg = dag.nodes[sym._impl.id]["result"]
             arg_encoder = session.ns.registry.get_encoder(sym._type)
-            try:
-                decoded_arg = arg_encoder.decode(arg)
-            except:
-                print("FAIL", key, sym, arg, encoded_args)
-                raise
+            decoded_arg = arg_encoder.decode(arg)
             semantics = obj._registry.get_semantics(sym._type)
             semantics.map_objects(unknowns.append, arg)
             kwargs[key] = decoded_arg

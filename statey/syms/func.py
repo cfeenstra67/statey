@@ -14,11 +14,11 @@ class Function(abc.ABC):
     type: types.FunctionType
     name: str
 
-    def __call__(self, *args: Sequence[Any], **kwargs: Dict[str, Any]) -> Any:
+    def __call__(self, *args: Sequence[Any], **kwargs: Dict[str, Any]) -> Object:
         """
 		Create a FunctionCall object by applying this function to the given arguments.
 		"""
-        return Object(utils.wrap_function_call(self, args, kwargs))
+        return utils.wrap_function_call(self, args, kwargs)
 
     @abc.abstractmethod
     def apply(self, arguments: Dict[str, Any]) -> Any:

@@ -382,7 +382,11 @@ def wrap_function_call(
             func_type = types.NativeFunctionType(tuple(fields), return_type)
             function_obj = func_module.NativeFunction(func_type, func)
 
-    return Object(impl.FunctionCall(function_obj, args, kwargs), registry=registry)
+    arguments = bind_function_args(function_obj.type, args, kwargs)
+    args_encoder = registry.get_encoder(function_obj.type.args_type)
+    encoded_arguments = args_encoder.encode(arguments)
+
+    return Object(impl.FunctionCall(function_obj, encoded_arguments), registry=registry)
 
 
 def bind_function_args(

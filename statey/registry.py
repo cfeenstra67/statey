@@ -382,6 +382,7 @@ class HookBasedRegistry(Registry):
         annotation = utils.infer_annotation(obj)
         return self.get_type(annotation)
 
+    @lru_cache(maxsize=1000)
     def get_encoder(self, type: types.Type, serializable: bool = False) -> "Encoder":
         handled = self.pm.hook.get_encoder(
             type=type, registry=self, serializable=serializable
@@ -390,12 +391,14 @@ class HookBasedRegistry(Registry):
             raise exc.NoEncoderFound(type, serializable)
         return handled
 
+    @lru_cache(maxsize=1000)
     def get_semantics(self, type: types.Type) -> "Semantics":
         handled = self.pm.hook.get_semantics(type=type, registry=self)
         if handled is None:
             raise exc.NoSemanticsFound(type)
         return handled
 
+    @lru_cache(maxsize=1000)
     def get_type_serializer(self, type: types.Type) -> "TypeSerializer":
         handled = self.pm.hook.get_type_serializer(type=type, registry=self)
         if handled is None:
@@ -408,27 +411,21 @@ class HookBasedRegistry(Registry):
             raise exc.NoTypeSerializerFoundForData(data)
         return handled
 
+    @lru_cache(maxsize=1000)
     def get_differ(self, type: types.Type) -> "Differ":
         handled = self.pm.hook.get_differ(type=type, registry=self)
         if handled is None:
             raise exc.NoDifferFound(type)
         return handled
 
-    def _get_registered_resource_name(self, resource_name: str) -> str:
-        return f"resource:{resource_name}"
-
-    # def get_resource(self, name: str) -> "Resource":
-    #     resource = self.pm.get_plugin(self._get_registered_resource_name(name))
-    #     if resource is None:
-    #         raise exc.NoResourceFound(name)
-    #     return resource
-
+    @lru_cache(maxsize=1000)
     def get_differ(self, type: types.Type) -> "Differ":
         handled = self.pm.hook.get_differ(type=type, registry=self)
         if handled is None:
             raise exc.NoDifferFound(type)
         return handled
 
+    @lru_cache(maxsize=1000)
     def get_methods(self, type: types.Type) -> "ObjectMethods":
         from statey.syms.methods import CompositeObjectMethods
 
@@ -452,6 +449,7 @@ class HookBasedRegistry(Registry):
             raise exc.NoObjectImplementationSerializerFoundForImpl(impl, type)
         return handled
 
+    @lru_cache(maxsize=1000)
     def get_caster(self, from_type: types.Type, to_type: types.Type) -> "Object":
         handled = self.pm.hook.get_caster(
             from_type=from_type, to_type=to_type, registry=self

@@ -63,6 +63,15 @@ class Object(base.Proxy):
             impl = obj._impl
             type = type or obj._type
 
+        if registry is None:
+            try:
+                registry = impl.registry()
+            except NotImplementedError:
+                pass
+
+        if registry is None:
+            registry = st.registry
+
         if type is not None and not isinstance(type, st.Type):
             # Convert an annotation to a type
             type = registry.get_type(type)
@@ -78,15 +87,6 @@ class Object(base.Proxy):
                 f"Object implementation {impl} does not have an implied type, one must "
                 f"be passed manually."
             )
-
-        if registry is None:
-            try:
-                registry = impl.registry()
-            except NotImplementedError:
-                pass
-
-        if registry is None:
-            registry = st.registry
 
         self.__dict__["_impl"] = impl
         self.__dict__["_type"] = type
