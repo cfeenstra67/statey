@@ -537,19 +537,21 @@ class ExpectedValue(ObjectImplementation):
     #     return Object(new_impl)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
+
         def handle(result):
 
             if isinstance(result, Object):
-                semantics = self.obj._registry.get_semantics(self.obj._type)
-                expected_attr = semantics.get_attr(self.expected, attr)
-                new_impl = ExpectedValue(result, expected_attr)
+                new_impl = ExpectedValue(result, self.expected[attr])
                 return Object(new_impl, result._type, result._registry)
 
             if callable(result):
 
                 @wraps(result)
                 def wrapper(*args, **kwargs):
-                    return handle(result(*args, **kwargs))
+                    res = result(*args, **kwargs)
+                    expected_res = self.expected[attr](*args, **kwargs)
+                    new_impl = ExpectedValue(res, expected_res)
+                    return Object(new_impl, res._type, res._registry)
 
                 return wrapper
 

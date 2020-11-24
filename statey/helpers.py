@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import sys
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Dict, Any
 
 import click
 
@@ -124,3 +124,19 @@ def providers_context(providers: Sequence["Provider"]):
         yield
     finally:
         loop.run_until_complete(async_ctx.__aexit__(*sys.exc_info()))
+
+
+def set_provider_defaults(provider: str, config: Dict[str, Any]) -> None:
+    """
+    Set the configuration for a provider by calling get_provider() with the given configuraiton.
+    """
+    @st.registry.register
+    class SetProviderDefaults:
+
+        @st.hookimpl
+        def get_provider_config(name, params, registry):
+            if name != provider:
+                return None
+            conf = config.copy()
+            conf.update(params)
+            return conf

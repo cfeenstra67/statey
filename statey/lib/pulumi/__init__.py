@@ -7,6 +7,9 @@ except ImportError as err:
         f"`pylumi` is not installed, this extension module cannot be used."
     )
 
+from statey.lib.pulumi.provider import PulumiProvider
+from statey.lib.pulumi.resource import PulumiResourceMachine
+
 
 def register(registry: Optional["Registry"] = None) -> None:
     from . import provider

@@ -481,9 +481,12 @@ def ascii_dag(graph: nx.DiGraph, key: Callable[[str], str] = lambda x: x) -> str
 
     for node in reversed(list(nx.topological_sort(graph))):
         parent_nodes = [nodes[path] for path in graph.succ[node]]
+        # print("PARENTS", node, graph.succ[node], parent_nodes)
         ascii_node = nodes[node] = AsciiDagNode(key(node), parents=parent_nodes)
         if not graph.pred[node]:
             tips.append(ascii_node)
+
+    # print("TIPS", tips, nodes)
 
     ascii_graph.show_nodes(tips)
     return outfile.getvalue()
@@ -516,7 +519,7 @@ class PlanSummary:
         return "\n\n".join(summaries)
 
     def task_dag_string(self) -> str:
-        task_graph = self.plan.task_graph().task_graph
+        task_graph = self.plan.task_graph.task_graph.copy()
         keep = set()
 
         for node in task_graph:
@@ -632,15 +635,19 @@ class Inspector:
         nodes = []
 
         for node in plan.nodes:
-            task_graph = node.get_task_graph(plan.state_graph, plan.config_session)
+            task_graph_nodes = [
+                task_node for task_node in plan.task_graph.task_graph.nodes
+                if task_node.startswith(f'{node.key}:')
+            ]
 
             remove = set()
-            for sub_node in task_graph.nodes:
-                task = task_graph.nodes[sub_node]["task"]
+            for sub_node in task_graph_nodes:
+                task = plan.task_graph.get_task(sub_node)
                 if not show_metatasks and task.is_metatask():
                     remove.add(sub_node)
 
-            keep = set(task_graph.nodes) - remove
+            keep = set(task_graph_nodes) - remove
+            task_graph = plan.task_graph.task_graph.copy()
             utils.subgraph_retaining_dependencies(task_graph, keep)
 
             summary = PlanNodeSummary(task_graph, node)

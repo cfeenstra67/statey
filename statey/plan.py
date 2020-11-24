@@ -531,6 +531,7 @@ class Plan:
     providers: Sequence[Provider]
     config_session: ResourceSession
     state_graph: ResourceGraph
+    task_graph: "ResourceTaskGraph" = dc.field(init=False, default=None)
 
     def check_dag(self, graph: nx.DiGraph, strict: bool = False) -> None:
         """
@@ -558,7 +559,7 @@ class Plan:
         # This will raise a properly formatted error
         utils.check_dag(dag)
 
-    def task_graph(self, strict: bool = False) -> "ResourceTaskGraph":
+    def new_task_graph(self, strict: bool = False) -> "ResourceTaskGraph":
         """
 		Render a full task graph from this plan
 		"""
@@ -596,14 +597,23 @@ class Plan:
 
         return ResourceTaskGraph(full_graph, output_session, state_graph)
 
+    def build_task_graph(self, force: bool = False, **kwargs) -> None:
+        """
+        Create the task graph for this plan if it does not already exist
+        """
+        if self.task_graph is not None and not force:
+            return
+
+        self.__dict__['task_graph'] = self.new_task_graph(**kwargs)
+
     def is_empty(self, include_metatasks: bool = False) -> bool:
         """
         Indicate whether this plan is empty, meaning any tasks it contains
         are metatasks or there are no tasks at all
         """
-        graph = self.task_graph()
-        for node in graph.task_graph.nodes:
-            task = graph.get_task(node)
+        self.build_task_graph()
+        for node in self.task_graph.task_graph.nodes:
+            task = self.task_graph.get_task(node)
             if include_metatasks or not task.is_metatask():
                 return False
         return True
@@ -1121,5 +1131,5 @@ class DefaultMigrator(Migrator):
         plan = Plan(tuple(plan_nodes), providers, config_session, state_graph)
         # This will ensure that the task graph is a valid DAG, not perfect but it will
         # do for now
-        plan.task_graph()
+        plan.build_task_graph()
         return plan

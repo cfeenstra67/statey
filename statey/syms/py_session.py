@@ -11,6 +11,7 @@ from networkx.algorithms.dag import (
     topological_sort,
 )
 
+import statey as st
 from statey import exc
 from statey.syms import types, utils, session, impl, Object, stack
 
@@ -197,11 +198,11 @@ class PythonSession(session.Session):
                 graph.add_node(sym._impl.id, symbol=sym)
                 added.add(sym._impl.id)
 
-            if downstreams:
-                added.add(sym._impl.id)
-
             for symbol_id in downstreams:
-                graph.add_edge(sym._impl.id, symbol_id)
+                if (sym._impl.id, symbol_id) not in graph.edges:
+                    graph.add_edge(sym._impl.id, symbol_id)
+                    added.add(symbol_id)
+                    added.add(sym._impl.id)
 
             if processed:
                 continue
@@ -209,7 +210,7 @@ class PythonSession(session.Session):
             for upstream in sym._inst.depends_on(self):
                 syms.append((upstream, (sym._impl.id,)))
 
-        if check_dag:
+        if check_dag and added:
             # Check that this is in fact a DAG and has no cycles
             self._raise_not_dag(graph, list(added))
 
@@ -252,8 +253,11 @@ class PythonSession(session.Session):
 
                 def resolve_child(x):
                     added = self._build_symbol_dag(x, dag, check_dag=False)
-                    dag.add_edge(x._impl.id, symbol_id)
-                    self._raise_not_dag(dag, list(added | {x._impl.id}))
+                    if (x._impl.id, symbol_id) not in dag.edges:
+                        dag.add_edge(x._impl.id, symbol_id)
+                        self._raise_not_dag(dag, list(added | {x._impl.id}))
+                    elif added:
+                        self._raise_not_dag(dag, list(added))
 
                     ancestors = set(dag.pred[x._impl.id])
                     for node in list(ancestors):
@@ -284,11 +288,14 @@ class PythonSession(session.Session):
         for symbol_id in list(topological_sort(dag)):
             wrapped_handle_symbol_id(symbol_id)
 
+    def _digraph(self) -> nx.DiGraph:
+        return nx.DiGraph()
+
     def resolve(
         self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
     ) -> Any:
 
-        graph = nx.DiGraph()
+        graph = self._digraph()
         self._build_symbol_dag(symbol, graph)
 
         try:
@@ -306,7 +313,7 @@ class PythonSession(session.Session):
     def dependency_graph(self) -> nx.MultiDiGraph:
         graph = nx.MultiDiGraph()
 
-        dag = nx.DiGraph()
+        dag = self._digraph()
 
         for key in self.ns.keys():
             ref = self.ns.ref(key)
@@ -318,6 +325,9 @@ class PythonSession(session.Session):
             self._process_symbol_dag(dag, allow_unknowns=True)
         except Exception:
             stack.rewrite_tb(*sys.exc_info())
+
+        # Make a copy of `dag` since it will be mutated
+        dag = dag.copy()
 
         ref_symbol_ids = set()
 
@@ -356,8 +366,74 @@ class PythonSession(session.Session):
         return new_inst
 
 
+class CachingPythonSession(PythonSession):
+    """
+    PythonSession that holds a single graph per instance
+    """
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.graph = nx.DiGraph()
+
+    def clone(self) -> session.Session:
+        new_inst = super().clone()
+        new_inst.graph = self.graph.copy()
+        return new_inst
+
+    def _invalidate_symbol(self, obj_id: Any) -> None:
+        if obj_id not in self.graph.nodes:
+            return
+
+        for node in list(nx.descendants(self.graph, obj_id)):
+            if "result" in self.graph.nodes[node]:
+                del self.graph.nodes["result"]
+            # self.graph.remove_node(node)
+
+        self.graph.remove_node(obj_id)
+
+    def _clean_unknowns(self) -> None:
+        for node in list(self.graph.nodes):
+            if node not in self.graph.nodes:
+                continue
+            data = self.graph.nodes[node]
+            if "result" in data and isinstance(data["result"], st.Object):
+                self._invalidate_symbol(node)
+
+    def resolve(
+        self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
+    ) -> Any:
+        res = super().resolve(symbol, allow_unknowns, decode)
+        if allow_unknowns:
+            self._clean_unknowns()
+        return res
+
+    def set_data(self, key: str, data: Any) -> None:
+        invalidate = False
+        if key in self.data:
+            try:
+                current = self.resolve(self.ns.ref(key))
+            except st.exc.ResolutionError:
+                invalidate = True
+
+            if not invalidate and isinstance(data, Object):
+                try:
+                    new_value = self.resolve(data)
+                except st.exc.ResolutionError:
+                    invalidate = True
+                else:
+                    invalidate = new_value != current
+
+        if invalidate:
+            self._invalidate_symbol(self.ns.ref(key)._impl.id)
+
+        super().set_data(key, data)
+
+    def delete_data(self, key: str) -> None:
+        super().delete_data(key, data)
+        self._invalidate_key(key)
+
+
 def create_session() -> session.Session:
     """
 	Default factory for creating the best session given the runtime
 	"""
-    return PythonSession(PythonNamespace())
+    return CachingPythonSession(PythonNamespace())

@@ -126,3 +126,36 @@ def test_session(session, scope, result_key, result, edges):
     graph = session.dependency_graph()
     edges_set = {(from_node, to_node) for from_node, to_node, _ in graph.edges}
     assert edges_set == edges
+
+
+
+def test_caching_session():
+    from statey.syms.py_session import CachingPythonSession, PythonNamespace
+
+    session = CachingPythonSession(PythonNamespace())
+
+    a = session["a"] << st.Unknown[int] >> 3
+    b = session["b"] << a + 7
+    c = session["c"] << st.Unknown[int]
+    d = session["d"] << b + c
+
+    assert session.resolve(b, allow_unknowns=True) == 10
+
+    expected_d = session.resolve(d, allow_unknowns=True)
+
+    assert isinstance(expected_d, st.Object)
+    assert isinstance(expected_d._impl, st.Unknown)
+
+    with pytest.raises(st.exc.ResolutionError):
+        session.resolve(a)
+
+    with pytest.raises(st.exc.ResolutionError):
+        session.resolve(d)
+
+    session.set_data("a", 12)
+
+    assert session.resolve(b) == 19
+
+    session.set_data("c", 102)
+
+    assert session.resolve(d) == 121

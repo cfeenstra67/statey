@@ -6,6 +6,7 @@ import shutil
 from typing import Optional, Callable
 
 import statey as st
+import statey.cli.setup_hooks
 from statey.executor import AsyncIOGraphExecutor
 from statey.helpers import providers_context
 from statey.plan import DefaultMigrator
@@ -147,7 +148,7 @@ def up(ctx, yes, task_heartbeat, fulltrace):
     executor = AsyncIOGraphExecutor()
     executor.pm.register(ExecutorLoggingPlugin(ctx.obj["metatasks"], task_heartbeat))
 
-    task_graph = plan.task_graph()
+    task_graph = plan.task_graph
 
     try:
         click.echo()
@@ -219,7 +220,7 @@ def down(ctx, task_dag, metatasks, yes, task_heartbeat, fulltrace):
     executor = AsyncIOGraphExecutor()
     executor.pm.register(ExecutorLoggingPlugin(metatasks, task_heartbeat))
 
-    task_graph = out_plan.task_graph()
+    task_graph = out_plan.task_graph
 
     try:
         click.echo()
@@ -254,6 +255,9 @@ def refresh(ctx):
 @click.argument("paths", nargs=-1)
 @click.pass_context
 def query(ctx, paths, compact):
+    """
+
+    """
     resource_graph = ctx.obj["state_manager"].load(st.registry)
     path_parser = st.PathParser()
 
@@ -274,6 +278,45 @@ def query(ctx, paths, compact):
             print(json.dumps(session.resolve(obj)))
         else:
             print(json.dumps(session.resolve(obj), indent=2, sort_keys=True))
+
+
+@cli.command()
+@click.argument("provider")
+@click.option("-r", "--resource", type=str, default=None)
+@click.pass_context
+def inspect(ctx, provider, resource):
+    """
+
+    """
+    try:
+        provider_obj = st.registry.get_provider(provider, {'region': 'us-east-2'})
+    except st.exc.NoProviderFound as err:
+        click.secho(f'Unable to load provider "{provider}".', fg='red')
+        raise click.Abort from err
+
+    if resource is None:
+        resource_names = list(provider_obj.schema.resources)
+        click.echo('\n'.join(resource_names))
+        return
+
+    try:
+        resource_obj = provider_obj.get_resource(resource)
+    except st.exc.NoResourceFound as err:
+        click.secho(f'Unable to load resource "{resource}" from provider "{provider}".')
+        raise click.Abort from err
+
+    name_style = {'fg': 'green', 'bold': True}
+
+    output_type_serializer = st.registry.get_type_serializer(resource_obj.States.UP.output_type)
+    output_json = output_type_serializer.serialize(resource_obj.States.UP.output_type)
+
+    input_type_serializer = st.registry.get_type_serializer(resource_obj.States.UP.input_type)
+    input_json = input_type_serializer.serialize(resource_obj.States.UP.input_type)
+
+    click.echo(click.style('Name:', **name_style) + f' {resource}')
+    click.echo(click.style('Provider:', **name_style) + f' {provider}')
+    click.echo(click.style('Inputs:', **name_style) + '\n' + json.dumps(input_json, indent=2, sort_keys=True))
+    click.echo(click.style('Outputs:', **name_style) + '\n' + json.dumps(output_json, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

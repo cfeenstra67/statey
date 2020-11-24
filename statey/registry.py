@@ -332,6 +332,14 @@ class RegistryHooks:
         Hook to get a provider from a name and params
         """
 
+    @hookspec(firstresult=True)
+    def get_provider_config(
+        self, name: str, params: Dict[str, Any], registry: Registry
+    ) -> Dict[str, Any]:
+        """
+        Hook to modify or set a default provider configuration
+        """
+
     @hookspec(historic=True)
     def register(self, plugin: Any, registry: Registry) -> None:
         """
@@ -511,7 +519,10 @@ class HookBasedRegistry(Registry):
     ) -> "Provider":
         if params is None:
             params = {}
-        handled = self.pm.hook.get_provider(name=name, params=params, registry=self)
+        config = self.pm.hook.get_provider_config(name=name, params=params, registry=self)
+        if config is None:
+            config = {}
+        handled = self.pm.hook.get_provider(name=name, params=config, registry=self)
         if handled is None:
             raise exc.NoProviderFound(name, params)
         return handled
