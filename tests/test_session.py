@@ -67,8 +67,10 @@ def set_items(scope_func):
         ),
         pytest.param(
             factorial_func(100),
-            '99', 218922995834555169026, factorial_func_deps(100),
-            id='factorial_100'
+            "99",
+            218922995834555169026,
+            factorial_func_deps(100),
+            id="factorial_100",
         ),
         pytest.param(
             set_items(
@@ -126,7 +128,6 @@ def test_session(session, scope, result_key, result, edges):
     graph = session.dependency_graph()
     edges_set = {(from_node, to_node) for from_node, to_node, _ in graph.edges}
     assert edges_set == edges
-
 
 
 def test_caching_session():
