@@ -1,4 +1,0 @@
-mod 'puppet-nginx', '1.1.0'
-mod 'puppetlabs-stdlib', '6.3.0'
-mod 'puppetlabs-concat', '6.2.0'
-mod 'anaconda', git: 'https://github.com/bkreider/anaconda.git'
