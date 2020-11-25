@@ -1,45 +1,27 @@
-import asyncio
+import logging
+
 import click
-import json
-import importlib
 import shutil
-from typing import Optional, Callable
 
 import statey as st
-import statey.cli.setup_hooks
-from statey.executor import AsyncIOGraphExecutor
-from statey.helpers import providers_context
-from statey.plan import DefaultMigrator
-from statey.cli.graph_utils import Inspector, ExecutorLoggingPlugin
-from statey.cli.state_manager import FileStateManager
+from statey.cli.controller import Controller
 
 
-inspector = Inspector()
+LOGGER = logging.getLogger(__name__)
 
 
-@click.group()
-@click.option("--state", help="File to use to save state.", default="state.json")
-@click.pass_context
-def cli(ctx, state):
-    ctx.ensure_object(dict)
-    ctx.obj["state_manager"] = FileStateManager(state)
-    ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
+# task_dag_opt = click.option(
+#     "--task-dag", is_flag=True, help="Show the task graph DAG as part of planning."
+# )
 
-
-session_name_opt = click.option(
-    "--session-name",
-    help="Set a module attribute other than `session` to use for planning.",
-    default="session()",
-)
-
-task_dag_opt = click.option(
-    "--task-dag", is_flag=True, help="Show the task graph DAG as part of planning."
-)
-
-metatasks_opt = click.option(
-    "--metatasks",
+diff_opt = click.option(
+    "--diff",
     is_flag=True,
-    help="Show internal 'meta' tasks like graph and session update opterations.",
+    help="Display full diff for resources instead of just the task DAG.",
+)
+
+full_trace_opt = click.option(
+    "--fulltrace", is_flag=True, help="Print full stack traces for task errors."
 )
 
 yes_opt = click.option(
@@ -49,216 +31,180 @@ yes_opt = click.option(
     help="Do not prompt to confirm we want to apply the plan.",
 )
 
-task_heartbeat_opt = click.option(
-    "--task-heartbeat",
-    type=float,
-    default=15.0,
-    help="Specify a heartbeat interval to use when executing tasks.",
-)
 
-full_trace_opt = click.option(
-    "--fulltrace", is_flag=True, help="Print full stack traces for task errors."
-)
+def setup_logging(lvl: int):
+    LOGGER.setLevel(lvl)
+    LOGGER.addHandler(logging.StreamHandler())
 
 
-@cli.group(invoke_without_command=True)
-@session_name_opt
-@task_dag_opt
-@metatasks_opt
-@click.argument("module")
-@click.pass_context
-def plan(ctx, module, session_name, task_dag, metatasks):
-    try:
-        module_obj = importlib.import_module(module)
-    except ImportError as err:
-        click.secho(
-            f'Unable to load module "{module}" with error: {type(err).__name__}: {err}.',
-            fg="red",
+def run_plan_and_apply(controller, yes):
+    """
+    Run logic to plan and optionally 
+    """
+    controller.setup_plan()
+
+    click.secho(f"Planning completed successfully.", fg="green")
+    click.echo()
+
+    controller.print_plan_summary()
+
+    if controller.plan.is_empty():
+        return
+
+    if not (
+        yes
+        or click.confirm(
+            f'Do you want to {click.style("apply", bold=True)} these changes?'
         )
-        raise click.Abort from err
+    ):
+        raise click.Abort
 
-    if session_name.endswith("()"):
-        session_factory = getattr(module_obj, session_name[:-2])
-        session = session_factory()
-    else:
-        session = getattr(module_obj, session_name)
+    click.echo()
+    try:
+        controller.execute_plan()
+    finally:
+        controller.dump_state()
+
+    click.echo()
+    controller.print_execution_summary()
+
+
+@click.group(help="The statey CLI")
+@click.option(
+    "-c", "--config", help="Configuration file to use", default="statey_conf.py"
+)
+@click.option("-l", "--log-level", help="Log level", default="INFO")
+@click.pass_context
+def cli(ctx, config, log_level):
+    """
+
+    """
+    ctx.ensure_object(dict)
+    ctx.obj["config"] = config
+    ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
+    lvl = getattr(logging, log_level.upper(), logging.INFO)
+    setup_logging(lvl)
+
+
+# @task_dag_opt
+@cli.command(help="Inspect the potential plan.")
+@diff_opt
+@click.pass_context
+def plan(ctx, diff):
+    """
+
+    """
+    controller = Controller(
+        logger=LOGGER,
+        terminal_size=ctx.obj["terminal_size"],
+        show_diff=diff,
+        conf_name=ctx.obj["config"],
+    )
+    controller.setup_resource_graph()
+
+    controller.setup_session()
 
     click.echo(
-        f'Loaded {click.style(session_name, fg="green", bold=True)} from '
-        f'{click.style(module, fg="green", bold=True)} successfully.'
+        f'Loaded {click.style(controller.session_name, fg="green", bold=True)} from '
+        f'{click.style(controller.module_name, fg="green", bold=True)} successfully.'
     )
 
-    resource_graph = ctx.obj["state_manager"].load(st.registry)
-
-    loop = asyncio.get_event_loop()
-
-    out_plan = loop.run_until_complete(
-        st.helpers.plan(
-            session=session,
-            resource_graph=resource_graph,
-            refresh=True,
-            refresh_progressbar=True,
-        )
-    )
+    controller.setup_plan()
 
     click.secho(f"Planning completed successfully.", fg="green")
     click.echo()
 
-    ctx.obj["plan"] = out_plan
-    ctx.obj["module_name"] = module
-    ctx.obj["module"] = module_obj
-    ctx.obj["session_name"] = session_name
-    ctx.obj["session"] = session
-    ctx.obj["metatasks"] = metatasks
-
-    plan_summary = inspector.plan_summary(out_plan, metatasks)
-
-    summary_string = plan_summary.to_string(ctx.obj["terminal_size"].columns)
-
-    click.echo(summary_string)
-    click.echo()
-
-    if task_dag and not out_plan.is_empty():
-        task_dag_string = plan_summary.task_dag_string()
-        click.secho(f"Task DAG:", fg="green")
-        click.echo(task_dag_string)
-        click.echo()
+    controller.print_plan_summary()
 
 
-@plan.command()
-@yes_opt
-@task_heartbeat_opt
-@full_trace_opt
-@click.pass_context
-def up(ctx, yes, task_heartbeat, fulltrace):
-    plan = ctx.obj["plan"]
-
-    # Sort of hacky way to check if the plan is empty--executing would only update the state.
-    if plan.is_empty():
-        return
-
-    if not (
-        yes
-        or click.confirm(
-            f'Do you want to {click.style("apply", bold=True)} these changes?'
-        )
-    ):
-        raise click.Abort
-
-    executor = AsyncIOGraphExecutor()
-    executor.pm.register(ExecutorLoggingPlugin(ctx.obj["metatasks"], task_heartbeat))
-
-    task_graph = plan.task_graph
-
-    try:
-        click.echo()
-        with providers_context(plan.providers):
-            exec_info = executor.execute(task_graph)
-        click.echo()
-
-        exec_summary = inspector.execution_summary(exec_info, ctx.obj["metatasks"])
-
-        exec_summary_string = exec_summary.to_string(full_trace=fulltrace)
-
-        click.echo(exec_summary_string)
-    finally:
-        ctx.obj["state_manager"].dump(task_graph.resource_graph, st.registry)
-
-
+# @task_dag_opt
 @cli.command()
-@task_dag_opt
-@metatasks_opt
-@yes_opt
-@task_heartbeat_opt
+@diff_opt
 @full_trace_opt
+@yes_opt
 @click.pass_context
-def down(ctx, task_dag, metatasks, yes, task_heartbeat, fulltrace):
-    resource_graph = ctx.obj["state_manager"].load(st.registry)
+def up(ctx, diff, fulltrace, yes):
+    """
 
-    # Run plan w/ an empty session
-    loop = asyncio.get_event_loop()
-    session = st.create_resource_session()
-    out_plan = loop.run_until_complete(
-        st.helpers.plan(
-            session=session,
-            resource_graph=resource_graph,
-            refresh=True,
-            refresh_progressbar=True,
-        )
+    """
+    controller = Controller(
+        logger=LOGGER,
+        terminal_size=ctx.obj["terminal_size"],
+        show_diff=diff,
+        fulltrace=fulltrace,
+        conf_name=ctx.obj["config"],
     )
 
-    click.secho(f"Planning completed successfully.", fg="green")
-    click.echo()
+    controller.setup_resource_graph()
 
-    ctx.obj["plan"] = out_plan
-    ctx.obj["session"] = session
+    controller.setup_session()
 
-    plan_summary = inspector.plan_summary(out_plan, metatasks)
+    click.echo(
+        f'Loaded {click.style(controller.session_name, fg="green", bold=True)} from '
+        f'{click.style(controller.module_name, fg="green", bold=True)} successfully.'
+    )
 
-    summary_string = plan_summary.to_string(ctx.obj["terminal_size"].columns)
+    run_plan_and_apply(controller, yes)
 
-    click.echo(summary_string)
-    click.echo()
 
-    if out_plan.is_empty():
-        return
+# @task_dag_opt
+@cli.command()
+@diff_opt
+@full_trace_opt
+@yes_opt
+@click.pass_context
+def down(ctx, diff, fulltrace, yes):
+    """
 
-    if task_dag:
-        task_dag_string = plan_summary.task_dag_string()
-        click.secho(f"Task DAG:", fg="green")
-        click.echo(task_dag_string)
-        click.echo()
+    """
+    controller = Controller(
+        logger=LOGGER,
+        terminal_size=ctx.obj["terminal_size"],
+        show_diff=diff,
+        fulltrace=fulltrace,
+        conf_name=ctx.obj["config"],
+    )
 
-    if not (
-        yes
-        or click.confirm(
-            f'Do you want to {click.style("apply", bold=True)} these changes?'
-        )
-    ):
-        raise click.Abort
+    controller.setup_resource_graph()
 
-    executor = AsyncIOGraphExecutor()
-    executor.pm.register(ExecutorLoggingPlugin(metatasks, task_heartbeat))
+    controller.session = st.create_resource_session()
 
-    task_graph = out_plan.task_graph
-
-    try:
-        click.echo()
-        with providers_context(out_plan.providers):
-            exec_info = executor.execute(task_graph)
-        click.echo()
-
-        exec_summary = inspector.execution_summary(exec_info, metatasks)
-
-        exec_summary_string = exec_summary.to_string(full_trace=fulltrace)
-
-        click.echo(exec_summary_string)
-    finally:
-        ctx.obj["state_manager"].dump(task_graph.resource_graph, st.registry)
+    run_plan_and_apply(controller, yes)
 
 
 @cli.command()
 @click.pass_context
 def refresh(ctx):
-    resource_graph = ctx.obj["state_manager"].load(st.registry)
+    """
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(st.helpers.refresh(resource_graph, True))
+    """
+    controller = Controller(
+        logger=LOGGER,
+        terminal_size=ctx.obj["terminal_size"],
+        conf_name=ctx.obj["config"],
+    )
+
+    controller.refresh_resource_graph()
 
     click.secho("State refreshed successfully.", fg="green", bold=True)
 
-    ctx.obj["state_manager"].dump(resource_graph, st.registry)
+    controller.dump_state()
 
 
 @cli.command()
 @click.option("--compact", is_flag=True, help="Do not pretty print JSON output.")
 @click.argument("paths", nargs=-1)
 @click.pass_context
-def query(ctx, paths, compact):
-    """
+def query(ctx, compact, paths):
+    controller = Controller(
+        logger=LOGGER,
+        terminal_size=ctx.obj["terminal_size"],
+        conf_name=ctx.obj["config"],
+    )
 
-    """
-    resource_graph = ctx.obj["state_manager"].load(st.registry)
+    controller.setup_resource_graph()
+
+    resource_graph = controller.resource_graph
     path_parser = st.PathParser()
 
     session = st.create_session()
@@ -284,39 +230,26 @@ def query(ctx, paths, compact):
 @click.argument("provider")
 @click.option("-r", "--resource", type=str, default=None)
 @click.pass_context
-def inspect(ctx, provider, resource):
+def docs(ctx, provider, resource):
     """
 
     """
-    try:
-        provider_obj = st.registry.get_provider(provider, {'region': 'us-east-2'})
-    except st.exc.NoProviderFound as err:
-        click.secho(f'Unable to load provider "{provider}".', fg='red')
-        raise click.Abort from err
+    controller = Controller(
+        logger=LOGGER,
+        terminal_size=ctx.obj["terminal_size"],
+        conf_name=ctx.obj["config"],
+    )
+    controller.setup_config()
+
+    provider_obj = controller.load_provider(provider)
 
     if resource is None:
         resource_names = list(provider_obj.schema.resources)
-        click.echo('\n'.join(resource_names))
+        click.echo("\n".join(resource_names))
         return
 
-    try:
-        resource_obj = provider_obj.get_resource(resource)
-    except st.exc.NoResourceFound as err:
-        click.secho(f'Unable to load resource "{resource}" from provider "{provider}".')
-        raise click.Abort from err
-
-    name_style = {'fg': 'green', 'bold': True}
-
-    output_type_serializer = st.registry.get_type_serializer(resource_obj.States.UP.output_type)
-    output_json = output_type_serializer.serialize(resource_obj.States.UP.output_type)
-
-    input_type_serializer = st.registry.get_type_serializer(resource_obj.States.UP.input_type)
-    input_json = input_type_serializer.serialize(resource_obj.States.UP.input_type)
-
-    click.echo(click.style('Name:', **name_style) + f' {resource}')
-    click.echo(click.style('Provider:', **name_style) + f' {provider}')
-    click.echo(click.style('Inputs:', **name_style) + '\n' + json.dumps(input_json, indent=2, sort_keys=True))
-    click.echo(click.style('Outputs:', **name_style) + '\n' + json.dumps(output_json, indent=2, sort_keys=True))
+    resource_obj = controller.load_resource(provider, resource)
+    controller.print_resource_docs(resource_obj)
 
 
 if __name__ == "__main__":

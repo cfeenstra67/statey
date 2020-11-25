@@ -32,6 +32,7 @@ def register_default_plugins(
     object_serializers: bool = True,
     namespace_serializers: bool = True,
     session_serializers: bool = True,
+    state_managers: bool = True,
     clear_cache: bool = True,
 ) -> None:
     """
@@ -111,6 +112,11 @@ def register_default_plugins(
         from statey.lib import register as register_resources
 
         register_resources(registry)
+
+    if state_managers:
+        from statey.state_manager import register as register_state_managers
+
+        register_state_managers(registry)
 
     if clear_cache:
         from statey.registry import RegistryCachingWrapper

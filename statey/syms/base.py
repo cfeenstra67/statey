@@ -8,7 +8,7 @@ from functools import partial
 from typing import Any, Sequence
 
 from statey import exc
-from statey.syms.stack import internalcode, rewrite_tb
+from statey.syms.stack import internalcode, rewrite_ctx
 
 
 class AttributeAccess(abc.ABC):
@@ -80,21 +80,16 @@ class Proxy(abc.ABC):
         """
 		Main API method for accessing attributes. Test all accessors in order.
 		"""
-        try:
-            return self._accessor.get_attr(self._instance, attr)
-        except Exception:
-            rewrite_tb(*sys.exc_info())
+        return self._accessor.get_attr(self._instance, attr)
 
     @internalcode
     def __getattr__(self, attr: Any) -> Any:
         try:
-            return getattr(super(), attr)
+            return object.__getattr__(self, attr)
         except AttributeError:
             pass
-        try:
-            return self[attr]
-        except Exception:
-            rewrite_tb(*sys.exc_info())
+
+        return self[attr]
 
 
 @dc.dataclass(frozen=True)

@@ -3,7 +3,7 @@ import dataclasses as dc
 import inspect
 from typing import Sequence, Dict, Any, Callable, Optional
 
-from statey.syms import types, utils, Object
+from statey.syms import types, utils, Object, stack
 
 
 class Function(abc.ABC):
@@ -18,7 +18,7 @@ class Function(abc.ABC):
         """
 		Create a FunctionCall object by applying this function to the given arguments.
 		"""
-        return utils.wrap_function_call(self, args, kwargs)
+        return utils.wrap_function_call(self, args, kwargs, frame_depth=1)
 
     @abc.abstractmethod
     def apply(self, arguments: Dict[str, Any]) -> Any:

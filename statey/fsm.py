@@ -82,7 +82,7 @@ def transition(from_name: str, to_name: str, name: str = utils.MISSING) -> Any:
     return dec
 
 
-class MachineMeta(type(resource.States)):
+class MachineMeta(type(resource.Resource)):
     """
     Special behavior for state machines
     """
@@ -124,19 +124,20 @@ class MachineMeta(type(resource.States)):
         return super_cls
 
 
-class Machine(resource.States, metaclass=MachineMeta):
+class Machine(resource.Resource, metaclass=MachineMeta):
     """
     Class with a metaclass to automatically collect states and transitions into class variables.
     """
 
-    def __init__(self, resource_name: str, provider: Provider) -> None:
-        self.resource_name = resource_name
+    def __init__(self, name: str, provider: Optional[Provider] = None) -> None:
+        if provider is None:
+            from statey.provider import default_provider as provider
+
+        self.name = name
         self.provider = provider
         # This is temporary, should clean this up
         for state in self.__states__:
-            self.set_resource_state(
-                resource.ResourceState(state, resource_name, provider.id)
-            )
+            self.set_resource_state(resource.ResourceState(state, name, provider.id))
 
     def set_resource_state(self, state: resource.ResourceState) -> None:
         setattr(self, state.state.name, state)
@@ -144,7 +145,7 @@ class Machine(resource.States, metaclass=MachineMeta):
     @property
     def null_state(self) -> resource.ResourceState:
         state = next((s for s in self.__states__ if s.null))
-        return resource.ResourceState(state, self.resource_name, self.provider.id)
+        return resource.ResourceState(state, self.name, self.provider.id)
 
     async def plan(
         self,
@@ -176,12 +177,10 @@ class Machine(resource.States, metaclass=MachineMeta):
     def __call__(self, *args, **kwargs) -> resource.ResourceState:
         states = [state for state in self.__states__ if state != self.null_state.state]
         if len(states) > 1:
-            raise TypeError(f'"{self.resource_name}" has more than one non-null state.')
+            raise TypeError(f'"{self.name}" has more than one non-null state.')
         if len(states) < 1:
-            raise TypeError(
-                f'"{self.resource_name}" does not have any non-null states.'
-            )
-        return resource.ResourceState(states[0], self.resource_name, self.provider.id)(
+            raise TypeError(f'"{self.name}" does not have any non-null states.')
+        return resource.ResourceState(states[0], self.name, self.provider.id)(
             *args, **kwargs
         )
 
@@ -462,36 +461,36 @@ class SimpleMachine(SingleStateMachine):
         )
 
 
-class MachineResource(resource.Resource):
-    """
-    Simple wrapper resource, for state machines all logic is really in the States
-    implementation
+# class MachineResource(resource.Resource):
+#     """
+#     Simple wrapper resource, for state machines all logic is really in the States
+#     implementation
 
-    Example:
-    rs = MachineResource(MyMachine('new_resource'))
-    """
+#     Example:
+#     rs = MachineResource(MyMachine('new_resource'))
+#     """
 
-    # This will be set in the constructor
-    States = None
+#     # This will be set in the constructor
+#     States = None
 
-    def __init__(
-        self, name: str, machine_cls: PyType[Machine], provider: Provider
-    ) -> None:
-        self.States = self.machine_cls = machine_cls
-        self.name = name
-        self.provider = provider
-        super().__init__()
+#     def __init__(
+#         self, name: str, machine_cls: PyType[Machine], provider: Provider
+#     ) -> None:
+#         self.States = self.machine_cls = machine_cls
+#         self.name = name
+#         self.provider = provider
+#         super().__init__()
 
-    async def plan(
-        self,
-        current: resource.StateSnapshot,
-        config: resource.StateConfig,
-        session: task.TaskSession,
-    ) -> Object:
-        return await self.s.plan(current, config, session)
+#     async def plan(
+#         self,
+#         current: resource.StateSnapshot,
+#         config: resource.StateConfig,
+#         session: task.TaskSession,
+#     ) -> Object:
+#         return await self.s.plan(current, config, session)
 
-    async def refresh(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
-        return await self.s.refresh(current)
+#     async def refresh(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
+#         return await self.s.refresh(current)
 
-    async def finalize(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
-        return await self.s.finalize(current)
+#     async def finalize(self, current: resource.StateSnapshot) -> resource.StateSnapshot:
+#         return await self.s.finalize(current)

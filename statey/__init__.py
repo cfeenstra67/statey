@@ -22,7 +22,6 @@ from statey import (
 from statey.fsm import (
     Machine,
     transition,
-    MachineResource,
     SingleStateMachine,
     SimpleMachine,
     ModificationAction,

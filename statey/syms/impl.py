@@ -7,7 +7,7 @@ from typing import Iterable, Any, Optional, Sequence, Dict
 import networkx as nx
 
 from statey import exc
-from statey.syms import base, func, utils, types
+from statey.syms import base, func, utils, types, stack
 from statey.syms.object_ import Object
 
 
@@ -110,10 +110,7 @@ class FunctionalMappingMixin:
     """
 
     def map(self, obj: Object, function: func.Function) -> Object:
-        return utils.wrap_function_call(
-            function, (obj,),
-            registry=obj._registry
-        )
+        return utils.wrap_function_call(function, (obj,), registry=obj._registry)
 
 
 class FunctionalBehaviorMixin(FunctionalMappingMixin, FunctionalAttributeAccessMixin):
@@ -138,7 +135,7 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
             raise exc.SymbolKeyError(path, ns)
 
         new_ref = Reference(path, self.ns)
-        return Object(new_ref)
+        return Object(new_ref, frame=obj._frame)
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         semantics = obj._registry.get_semantics(obj._type)
@@ -249,10 +246,13 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         if attr_semantics is None:
             raise exc.SymbolAttributeError(obj, attr)
 
+        new_impl = new_data
         attr_type = attr_semantics.type
+        if not isinstance(new_data, Object):
+            new_impl = Data(new_data, attr_type, new_data, attr_type)
+
         # Data is already encoded, can pass the encoded values explicitly
-        new_impl = Data(new_data, attr_type, new_data, attr_type)
-        return Object(new_impl, attr_type, registry=obj._registry)
+        return Object(new_impl, attr_type, registry=obj._registry, frame=obj._frame)
 
 
 @dc.dataclass(frozen=True)
@@ -266,7 +266,7 @@ class FunctionCall(FunctionalBehaviorMixin, ObjectImplementation):
 
     def __post_init__(self) -> None:
         if self.arguments is None:
-            self.__dict__['arguments'] = {}
+            self.__dict__["arguments"] = {}
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         yield from self.arguments.values()
@@ -537,12 +537,13 @@ class ExpectedValue(ObjectImplementation):
     #     return Object(new_impl)
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-
         def handle(result):
 
             if isinstance(result, Object):
                 new_impl = ExpectedValue(result, self.expected[attr])
-                return Object(new_impl, result._type, result._registry)
+                return Object(
+                    new_impl, result._type, result._registry, frame=obj._frame
+                )
 
             if callable(result):
 
@@ -551,7 +552,12 @@ class ExpectedValue(ObjectImplementation):
                     res = result(*args, **kwargs)
                     expected_res = self.expected[attr](*args, **kwargs)
                     new_impl = ExpectedValue(res, expected_res)
-                    return Object(new_impl, res._type, res._registry)
+                    return Object(
+                        new_impl,
+                        res._type,
+                        res._registry,
+                        frame=stack.frame_snapshot(1),
+                    )
 
                 return wrapper
 

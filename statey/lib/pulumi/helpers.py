@@ -1,10 +1,18 @@
 import dataclasses as dc
+import os
+import sys
+from importlib.machinery import ModuleSpec
+
 import jsonschema
 import statey as st
 import pylumi
 from typing import Sequence, Dict, Any, Optional
 
+from statey.lib.pulumi import __file__ as root_file
 from statey.lib.pulumi.constants import RESOLVER_STORE
+
+
+ROOT_DIR = os.path.abspath(os.path.dirname(root_file))
 
 
 @dc.dataclass(frozen=True)
@@ -193,8 +201,92 @@ def object_to_pulumi_json(obj: st.Object, session: st.Session) -> str:
     return with_encoded_unknowns
 
 
-def parse_provider_schema_response(data: Dict[str, Any], registry: Optional[st.Registry] = None) -> PulumiProviderSchema:
+def parse_provider_schema_response(
+    data: Dict[str, Any], registry: Optional[st.Registry] = None
+) -> PulumiProviderSchema:
     """
     Parse a JSON schema response into a PulumiProviderSchema object
     """
     return PulumiProviderSchemaParser().parse(data, registry)
+
+
+class ProviderFinder:
+    """
+    Module meta finder to allow loading providers via the import system
+    """
+
+    prefix = "statey.lib.pulumi.providers"
+
+    def find_spec(self, fullname, path, target=None) -> ModuleSpec:
+        from statey.lib.pulumi import provider_api
+
+        if not path:
+            return None
+        if os.path.abspath(path[0]) != ROOT_DIR:
+            return None
+        if not fullname.startswith(self.prefix):
+            return None
+        name = fullname[len(self.prefix) + 1 :]
+        if not name:
+            return ModuleSpec(fullname, ProvidersLoader(), is_package=False)
+
+        head, *path = name.split(".", 1)
+        if path:
+            return None
+
+        loader = ProviderLoader(name)
+        return ModuleSpec(fullname, loader, is_package=False)
+
+
+class ProviderLoader:
+    """
+    Module loader to load a provider
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def load_module(self, spec):
+        from statey.lib.pulumi import provider_api
+
+        api = sys.modules[spec] = provider_api.provider_api(self.name)
+        api.__file__ = provider_api.__file__
+        api.__name__ = spec
+        api.__loader__ = self
+        api.__package__ = spec.rsplit(".", 1)[0]
+        return api
+
+
+class ProvidersLoader:
+    """
+    Module loader to load the `providers` module
+    """
+
+    def load_module(self, spec):
+        from statey.lib.pulumi import provider_api
+
+        api = sys.modules[spec] = provider_api.ProvidersAPI()
+        api.__file__ = provider_api.__file__
+        api.__name__ = spec
+        api.__loader__ = self
+        api.__package__ = spec.rsplit(".", 1)[0]
+        return api
+
+
+FINDER = ProviderFinder()
+
+
+def register_meta_finder() -> None:
+    """
+    Register a ProviderFinder in the import system
+    """
+    if FINDER not in sys.meta_path:
+        sys.meta_path.append(FINDER)
+
+
+def unregister_meta_finder() -> None:
+    """
+    Unregster the ProviderFinder from the meta path, if it is registered.
+    """
+    if FINDER in sys.meta_path:
+        sys.meta_path.remove(FINDER)

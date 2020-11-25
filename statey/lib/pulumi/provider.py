@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence, Dict, Any, Optional
 
@@ -5,7 +6,10 @@ import pylumi
 
 import statey as st
 from statey.lib.pulumi.constants import PULUMI_ID
-from statey.lib.pulumi.helpers import parse_provider_schema_response, PulumiProviderSchema
+from statey.lib.pulumi.helpers import (
+    parse_provider_schema_response,
+    PulumiProviderSchema,
+)
 from statey.lib.pulumi.resource import PulumiResourceMachine
 
 
@@ -32,16 +36,23 @@ class PulumiProvider(st.Provider):
         self._resource_cache = {}
 
     async def setup(self) -> None:
+        loop = asyncio.get_running_loop()
+
         pool = self.thread_pool = ThreadPoolExecutor()
         pool.__enter__()
 
         ctx = self.context = pylumi.Context()
         provider = self.pulumi_provider = ctx.provider(self.schema.name, self.id.meta)
+        # Doesn't work to do this async for some reason
         ctx.setup()
         provider.configure()
 
     async def teardown(self) -> None:
+        loop = asyncio.get_running_loop()
+
+        # Doesn't work w/ async for some reason
         self.context.teardown()
+
         self.thread_pool.__exit__(None, None, None)
         self.context = self.pulumi_provider = self.thread_pool = None
 
@@ -55,9 +66,6 @@ class PulumiProvider(st.Provider):
         return self.construct_resource(
             name=name, input_type=resource_schema.input_type, output_type=output_type
         )
-
-    def get_task(self, name: str) -> st.Task:
-        raise NotImplementedError
 
     def construct_resource(
         self, name: str, input_type: st.Type, output_type: st.Type
@@ -74,7 +82,7 @@ class PulumiProvider(st.Provider):
             {"UP": st.State("UP", input_type, output_type)},
         )
 
-        resource = st.MachineResource(name, machine_cls, self)
+        resource = machine_cls(name, self)
         self._resource_cache[name] = resource
 
         return resource
@@ -86,6 +94,9 @@ class PulumiProvider(st.Provider):
         if st.ProviderId(name, params) != self.id:
             return None
         return self
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.id})"
 
 
 def load_pulumi_provider(

@@ -168,6 +168,13 @@ class Registry(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
+    def get_state_manager(self) -> "StateManager":
+        """
+        Get a state manager to use for the current module
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def register(self, plugin: Any) -> None:
         """
         Register a plugin within this registry
@@ -338,6 +345,12 @@ class RegistryHooks:
     ) -> Dict[str, Any]:
         """
         Hook to modify or set a default provider configuration
+        """
+
+    @hookspec(firstresult=True)
+    def get_state_manager(self, registry: Registry) -> "StateManager":
+        """
+        Hook to fetch a state manager to use for planning operations
         """
 
     @hookspec(historic=True)
@@ -519,13 +532,21 @@ class HookBasedRegistry(Registry):
     ) -> "Provider":
         if params is None:
             params = {}
-        config = self.pm.hook.get_provider_config(name=name, params=params, registry=self)
+        config = self.pm.hook.get_provider_config(
+            name=name, params=params, registry=self
+        )
         if config is None:
             config = {}
         handled = self.pm.hook.get_provider(name=name, params=config, registry=self)
         if handled is None:
             raise exc.NoProviderFound(name, params)
         return handled
+
+    def get_state_manager(self) -> "StateManager":
+        manager = self.pm.hook.get_state_manager(registry=self)
+        if manager is None:
+            raise exc.NoStateManagerFound()
+        return manager
 
 
 class RegistryWrapper(Registry):

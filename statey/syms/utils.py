@@ -199,8 +199,7 @@ class PossiblySymbolicField(ma.fields.Field):
                 caster = self.registry.get_caster(value._type, self.type)
             except exc.NoCasterFound as err:
                 raise ma.ValidationError(
-                    f"Invalid symbol type (expected {self.type}, got {value._type}).",
-                    field_name=self.name,
+                    f"Invalid symbol type (expected {self.type}, got {value._type})."
                 ) from err
             return caster.cast(value)
         return value
@@ -346,9 +345,10 @@ def wrap_function_call(
     kwargs: Optional[Dict[str, Any]] = None,
     registry: Optional["Registry"] = None,
     return_annotation: Any = MISSING,
+    frame_depth: int = 0,
 ) -> "Object":
 
-    from statey.syms import api, impl, types, func as func_module, Object
+    from statey.syms import api, impl, types, func as func_module, Object, stack
 
     if registry is None:
         from statey import registry
@@ -386,7 +386,11 @@ def wrap_function_call(
     args_encoder = registry.get_encoder(function_obj.type.args_type)
     encoded_arguments = args_encoder.encode(arguments)
 
-    return Object(impl.FunctionCall(function_obj, encoded_arguments), registry=registry)
+    return Object(
+        impl.FunctionCall(function_obj, encoded_arguments),
+        registry=registry,
+        frame=stack.frame_snapshot(1 + frame_depth),
+    )
 
 
 def bind_function_args(

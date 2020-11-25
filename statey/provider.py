@@ -61,13 +61,6 @@ class Provider(abc.ABC):
         """
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def get_task(self, name: str) -> Task:
-        """
-        Get the task with the given name.
-        """
-        raise NotImplementedError
-
     async def setup(self) -> None:
         """
         Perform any necessary provider setup before running
@@ -90,12 +83,6 @@ class ProviderHooks:
     def get_resource(self, name: str, provider: Provider) -> "Resource":
         """
         Analogous to the Provider.get_resource() method
-        """
-
-    @hookspec(firstresult=True)
-    def get_task(self, name: str, provider: Provider) -> Task:
-        """
-        Analogous to the Provider.get_task() method
         """
 
 
@@ -159,12 +146,6 @@ class DefaultProvider(Provider):
         if resource is None:
             raise exc.ResourceNotFound(name, self)
         return resource
-
-    def get_task(self, name: str) -> Task:
-        task = self.pm.hook.get_task(name=name, provider=self)
-        if task is None:
-            raise exc.TaskNotFound(name, self)
-        return task
 
     def _get_registered_resource_name(self, resource_name: str) -> str:
         return f"resource:{resource_name}"

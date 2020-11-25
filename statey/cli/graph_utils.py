@@ -481,12 +481,9 @@ def ascii_dag(graph: nx.DiGraph, key: Callable[[str], str] = lambda x: x) -> str
 
     for node in reversed(list(nx.topological_sort(graph))):
         parent_nodes = [nodes[path] for path in graph.succ[node]]
-        # print("PARENTS", node, graph.succ[node], parent_nodes)
         ascii_node = nodes[node] = AsciiDagNode(key(node), parents=parent_nodes)
         if not graph.pred[node]:
             tips.append(ascii_node)
-
-    # print("TIPS", tips, nodes)
 
     ascii_graph.show_nodes(tips)
     return outfile.getvalue()
@@ -514,8 +511,6 @@ class PlanSummary:
 
     def to_string(self, max_width: int, indent: int = 2) -> str:
         summaries = self.non_empty_summaries(max_width, indent)
-        if not summaries:
-            return click.style("This plan is empty :)", fg="green", bold=True)
         return "\n\n".join(summaries)
 
     def task_dag_string(self) -> str:
@@ -636,8 +631,9 @@ class Inspector:
 
         for node in plan.nodes:
             task_graph_nodes = [
-                task_node for task_node in plan.task_graph.task_graph.nodes
-                if task_node.startswith(f'{node.key}:')
+                task_node
+                for task_node in plan.task_graph.task_graph.nodes
+                if task_node.startswith(f"{node.key}:")
             ]
 
             remove = set()
@@ -667,7 +663,7 @@ class Inspector:
 def simple_print_graph(graph: nx.DiGraph, print_func=print) -> None:
     print_func("Nodes:")
     for node in graph.nodes:
-        print(f"{node}: {graph.nodes[node]}")
+        print_func(f"{node}: {graph.nodes[node]}")
 
     print_func()
     print_func("Edges:")

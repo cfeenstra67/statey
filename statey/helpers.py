@@ -130,13 +130,14 @@ def set_provider_defaults(provider: str, config: Dict[str, Any]) -> None:
     """
     Set the configuration for a provider by calling get_provider() with the given configuraiton.
     """
-    @st.registry.register
-    class SetProviderDefaults:
 
+    class SetProviderDefaults:
         @st.hookimpl
-        def get_provider_config(name, params, registry):
+        def get_provider_config(self, name, params, registry):
             if name != provider:
                 return None
             conf = config.copy()
             conf.update(params)
             return conf
+
+    st.registry.register(SetProviderDefaults())

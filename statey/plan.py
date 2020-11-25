@@ -112,7 +112,7 @@ class ExecuteTaskSession(PlanAction):
         graph.add_node(input_key, task=input_switch_task, source=prefix)
 
         # If output state is null, our graph operation is a deletion. Otherwise, it's a "set"
-        if self.config_state == self.resource.s.null_state:
+        if self.config_state == self.resource.null_state:
             output_key = self.output_task(prefix)
             output_graph_task = GraphDeleteKey(
                 key=self.output_key,
@@ -604,7 +604,7 @@ class Plan:
         if self.task_graph is not None and not force:
             return
 
-        self.__dict__['task_graph'] = self.new_task_graph(**kwargs)
+        self.__dict__["task_graph"] = self.new_task_graph(**kwargs)
 
     def is_empty(self, include_metatasks: bool = False) -> bool:
         """
@@ -727,10 +727,10 @@ class DefaultMigrator(Migrator):
                         previous_snapshot, bound_config, task_session
                     )
                 except exc.NullRequired:
-                    null_bound_config = StateConfig({}, resource.s.null_state)
+                    null_bound_config = StateConfig({}, resource.null_state)
 
                     old_task_session = self.create_task_session()
-                    old_task_session.ns.new("input", resource.s.null_state.input_type)
+                    old_task_session.ns.new("input", resource.null_state.input_type)
                     old_task_session.set_data("input", {})
                     # old_task_session = task_session_base.clone()
                     og_plan_output = await resource.plan(
@@ -742,7 +742,7 @@ class DefaultMigrator(Migrator):
                     else:
                         og_output_ref, og_graph_ref = og_plan_output, og_plan_output
 
-                    null_snapshot = StateSnapshot({}, resource.s.null_state)
+                    null_snapshot = StateSnapshot({}, resource.null_state)
                     task_session = task_session_base.clone()
                     plan_output = await resource.plan(
                         null_snapshot, bound_config, task_session
@@ -754,7 +754,7 @@ class DefaultMigrator(Migrator):
                         output_key=node,
                         output_ref=og_output_ref,
                         graph_ref=og_graph_ref,
-                        config_state=resource.s.null_state,
+                        config_state=resource.null_state,
                         previous_state=previous_state,
                         resource=resource,
                         input_symbol=null_snapshot.obj,
@@ -877,7 +877,7 @@ class DefaultMigrator(Migrator):
 
             previous_snapshot = StateSnapshot(previous_resolved, previous_state)
 
-            null_state = resource.s.null_state
+            null_state = resource.null_state
 
             task_session = self.create_task_session()
             input_ref = task_session.ns.new("input", null_state.input_type)
@@ -934,7 +934,7 @@ class DefaultMigrator(Migrator):
                 output_key=node,
                 output_ref=output_ref,
                 graph_ref=graph_ref,
-                config_state=resource.s.null_state,
+                config_state=resource.null_state,
                 previous_state=previous_state,
                 resource=resource,
                 input_symbol=Object({}, config_bound.type, task_session.ns.registry),
@@ -973,7 +973,7 @@ class DefaultMigrator(Migrator):
                 config_bound_state.input, decode=False, allow_unknowns=True
             )
 
-            previous_snapshot = StateSnapshot({}, resource.s.null_state)
+            previous_snapshot = StateSnapshot({}, resource.null_state)
 
             task_session = self.create_task_session()
             input_ref = task_session.ns.new("input", config_state.state.input_type)
@@ -1017,7 +1017,7 @@ class DefaultMigrator(Migrator):
                 output_ref=output_ref,
                 graph_ref=graph_ref,
                 config_state=config_state,
-                previous_state=resource.s.null_state,
+                previous_state=resource.null_state,
                 resource=resource,
                 input_symbol=config_bound_state.input,
             )

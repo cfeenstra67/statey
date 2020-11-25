@@ -280,25 +280,6 @@ class StateSnapshot(StateTuple):
         return self.get_obj()
 
 
-class States(abc.ABC):
-    """
-	An interface for accessing states of a resource. While only a `null_state` implementation
-	is required, additional methods can be exposed here to simplify resource state creation.
-	"""
-
-    resource_name: str
-    provider: Provider
-
-    @property
-    @abc.abstractmethod
-    def null_state(self) -> ResourceState:
-        """
-		Return the null state of this resource, at which point it will removed from
-		a resource graph
-		"""
-        raise NotImplementedError
-
-
 class Resource(abc.ABC):
     """
 	A resource represents a stateful object of some kind, and it can have one
@@ -307,14 +288,15 @@ class Resource(abc.ABC):
 
     name: str
     provider: Provider
-    States: PyType[States]
 
     @property
-    def s(self) -> States:
+    @abc.abstractmethod
+    def null_state(self) -> ResourceState:
         """
-		Returns information about the possible states of this resource
-		"""
-        return self.States(self.name, self.provider)
+        Return the null state of this resource, at which point it will removed from
+        resource graphs
+        """
+        raise NotImplementedError
 
     @abc.abstractmethod
     async def plan(

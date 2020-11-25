@@ -8,7 +8,7 @@ import networkx as nx
 
 import statey as st
 from statey import exc
-from statey.syms import types, utils, path, impl, Object
+from statey.syms import types, utils, path, impl, Object, stack
 
 
 class Namespace(abc.ABC):
@@ -59,7 +59,9 @@ class Namespace(abc.ABC):
         typ = self.resolve(key)
         semantics = self.registry.get_semantics(typ)
         new_impl = impl.Reference(key, self)
-        return Object(new_impl, semantics.type, self.registry)
+        return Object(
+            new_impl, semantics.type, self.registry, frame=stack.frame_snapshot(1)
+        )
 
     @abc.abstractmethod
     def resolve(self, key: str) -> types.Type:
@@ -89,7 +91,8 @@ class NamedSessionSetter:
     session: "Session"
 
     def __lshift__(self, other: Any) -> Object:
-        return self.session.set(self.key, other, self.annotation)
+        ref = self.session.set(self.key, other, self.annotation)
+        return Object(ref, frame=stack.frame_snapshot(1))
 
 
 class SessionHooks:
@@ -141,6 +144,7 @@ class Session(abc.ABC):
                 typ = self.ns.registry.get_type(annotation)
 
         ref = self.ns.new(key, typ)
+        ref = Object(ref, frame=stack.frame_snapshot(1))
         self.set_data(key, value)
 
         other_result = self.pm.hook.after_set(key=key, value=value, type=typ)

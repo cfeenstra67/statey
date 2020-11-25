@@ -1,4 +1,3 @@
-import traceback
 from typing import Any, Optional, Sequence, Dict
 
 import marshmallow as ma
@@ -65,11 +64,10 @@ class ErrorDuringPlanningNode(PlanError):
         self.config = config
         self.exception = exception
         self.tb = tb
-        formatted_tb = "".join(traceback.format_tb(tb))
         super().__init__(
             f"Exception raised during planning {current.state.resource}[{path}]"
-            f" {current.state.name} => {config.state.name}:\n"
-            f"{formatted_tb}{type(exception).__name__}: {exception}"
+            f" {current.state.name} => {config.state.name}: "
+            f"{type(exception).__name__}: {exception}"
         )
 
 
@@ -315,6 +313,15 @@ class NoProviderFound(NotFoundError):
         )
 
 
+class NoStateManagerFound(NotFoundError):
+    """
+    Error indicating we could not get a state manager for the given params.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("Unable to load a state manager for the current module.")
+
+
 class NamespaceError(SymsError):
     """
 	Error raised from a namespace
@@ -420,12 +427,24 @@ class ResolutionError(SessionError):
         self.stack = stack
         self.exception = exception
         self.tb = tb
-        obj = self.stack.get_object(self.stack.symbol_id)
-        formatted_tb = "".join(traceback.format_tb(tb))
+        obj = self.stack.get_object(self.stack.resolving_obj_id)
         super().__init__(
-            f"Resolution stack:\n{stack.format_stack()}\n"
-            f"Encountered exception while resolving {obj}:\n"
-            f"{formatted_tb}{type(exception).__name__}: {exception}."
+            f"Encountered exception while resolving {obj}: "
+            f"{type(exception).__name__}: {exception}."
+        )
+
+
+class InvalidDataError(SessionError):
+    """
+    Error indicating that there was an attempt to put invalid data into a session
+    """
+
+    def __init__(self, key: str, exception: Exception) -> None:
+        self.key = key
+        self.exception = exception
+        super().__init__(
+            f"Encountered error while inserting data into key {key}: "
+            f"{type(exception).__name__}: {exception}"
         )
 
 

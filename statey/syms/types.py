@@ -46,7 +46,7 @@ def hashable_meta(meta: Dict[str, Any]) -> int:
         try:
             hash(val)
         # If the type isn't hashable, we'll just hash the type instead. We
-        # can't use the 
+        # can't use the
         except TypeError:
             items.append((key, UNHASHABLE, type(val)))
         else:
@@ -170,7 +170,7 @@ class IntegerType(DataClassMixin, NumberType):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="integer")
-    
+
     __hash__ = Type.__hash__
 
 
@@ -243,7 +243,14 @@ class ArrayType(DataClassMixin, Type):
         return dc.replace(self, element_type=element_type)
 
     def __hash__(self) -> int:
-        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), self.element_type))
+        return hash(
+            (
+                type(self).__name__,
+                self.nullable,
+                hashable_meta(self.meta),
+                self.element_type,
+            )
+        )
 
 
 @dc.dataclass(frozen=True)
@@ -345,7 +352,14 @@ class StructType(DataClassMixin, Type):
         return new_inst
 
     def __hash__(self) -> int:
-        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), tuple(self.fields)))
+        return hash(
+            (
+                type(self).__name__,
+                self.nullable,
+                hashable_meta(self.meta),
+                tuple(self.fields),
+            )
+        )
 
 
 EmptyType = StructType((), True)
@@ -431,7 +445,15 @@ class FunctionType(StructType):
         return StructType(self.args, all(arg.type.nullable for arg in self.args))
 
     def __hash__(self) -> int:
-        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), tuple(self.args), self.return_type))
+        return hash(
+            (
+                type(self).__name__,
+                self.nullable,
+                hashable_meta(self.meta),
+                tuple(self.args),
+                self.return_type,
+            )
+        )
 
 
 @dc.dataclass(frozen=True, repr=False)
@@ -520,7 +542,15 @@ class MapType(DataClassMixin, Type):
         return dc.replace(self, value_type=value_type)
 
     def __hash__(self) -> int:
-        return hash((type(self).__name__, self.nullable, hashable_meta(self.meta), self.key_type, self.value_type))
+        return hash(
+            (
+                type(self).__name__,
+                self.nullable,
+                hashable_meta(self.meta),
+                self.key_type,
+                self.value_type,
+            )
+        )
 
 
 # Some exported objects

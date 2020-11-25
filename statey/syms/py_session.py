@@ -33,7 +33,8 @@ class PythonNamespace(session.Namespace):
         if key in self.types:
             raise exc.DuplicateSymbolKey(key, self)
         self.types[key] = type
-        return self.ref(key)
+        ref = self.ref(key)
+        return Object(ref, frame=stack.frame_snapshot(1))
 
     def delete(self, key: str) -> None:
         self.resolve(key)
@@ -64,7 +65,7 @@ class PythonNamespace(session.Namespace):
         return new_inst
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass
 class ResolutionStack:
     """
     A resolution stack object contains logic to format stack information
@@ -72,62 +73,67 @@ class ResolutionStack:
     """
 
     dag: nx.DiGraph
-    symbol_id: Any
+    resolving_obj_id: Any
+    current_obj_stack: Sequence[Any] = ()
+
+    def __post_init__(self) -> None:
+        self.current_obj_stack = list(self.current_obj_stack)
 
     def get_object(self, symbol_id: Any) -> Object:
         return self.dag.nodes[symbol_id]["symbol"]
 
-    def _format_dag_stack(
-        self,
-        dag: nx.DiGraph,
-        start: Any,
-        repr: Callable[[Any], str] = repr,
-        parent_size: int = 0,
-        depth: int = 10,
-    ) -> Sequence[str]:
-        sym = self.get_object(start)
-        lines = []
-        successors = list(dag.succ[start])
-        child_parent_size = len(successors)
-        fmt = (lambda x: tw.indent(x, "  ")) if parent_size > 1 else (lambda x: x)
-        if len(successors) > depth:
-            lines.append(f"({len(successors) - depth} more objects collapsed...)")
+    def get_object_stack(self) -> Sequence[stack.FrameSnapshot]:
+        """
+        Get a list of FrameSnapshots for objects between the resolving object and the error object
+        in the DAG.
+        """
+        if not self.current_obj_stack:
+            obj = self.get_object()
+            return [(obj._frame, [obj])]
 
-        for sym_id in successors[:depth]:
-            sym_stack = self._format_dag_stack(
-                dag, sym_id, repr, child_parent_size, depth - 1
+        frame_path = []
+        objects = []
+        last_frame = None
+
+        full_path = list(
+            reversed(
+                nx.shortest_path(
+                    self.dag, self.current_obj_stack[0], self.resolving_obj_id
+                )
             )
-            lines.append(fmt(sym_stack))
-        prefix = "-" if child_parent_size > 0 else "*"
-        lines.append(f"{prefix} {repr(sym)}")
-        return "\n".join(lines)
+        )
+        if not full_path:
+            full_path.append(self.current_obj_stack[0])
+        else:
+            full_path.extend(self.current_obj_stack[1:])
 
-    def format_dag_stack(
-        self, dag: nx.DiGraph, repr: Callable[[Any], str] = repr, depth: int = 3
-    ) -> str:
-        """
-        Format the given DAG into a stack string
-        """
-        return self._format_dag_stack(dag, self.symbol_id, repr=repr, depth=depth)
+        for obj_id in full_path:
+            obj = self.get_object(obj_id)
+            frame = obj._frame
+            if frame != last_frame:
+                if objects:
+                    frame_path.append((last_frame, objects))
+                objects = []
 
-    def get_stack_dag(self) -> nx.DiGraph:
-        """
-        Get the part of the DAG we want to visualize in the stack
-        """
-        descendants = list(nx.descendants(self.dag, self.symbol_id)) + [self.symbol_id]
-        dag_copy = self.dag.copy()
-        try:
-            utils.subgraph_retaining_dependencies(dag_copy, descendants)
-        except nx.NetworkXUnfeasible:
-            dag_copy = dag_copy.subgraph(descendants)
-        return dag_copy
+            objects.append(obj)
+            last_frame = frame
 
-    def format_stack(self, repr: Callable[[Any], str] = repr, depth: int = 3) -> str:
+        if last_frame and objects:
+            frame_path.append((last_frame, objects))
+
+        return frame_path
+
+    def push(self, obj_id: Any) -> None:
         """
-        Format this resolution stack into a string
+
         """
-        dag = self.get_stack_dag()
-        return self.format_dag_stack(dag, repr=repr, depth=depth)
+        self.current_obj_stack.append(obj_id)
+
+    def pop(self) -> None:
+        """
+
+        """
+        self.current_obj_stack.pop()
 
 
 class PythonSession(session.Session):
@@ -146,11 +152,15 @@ class PythonSession(session.Session):
         typ = self.ns.resolve(key)
 
         encoder = self.ns.registry.get_encoder(typ, serializable=True)
-        encoded_data = encoder.encode(data)
+        try:
+            encoded_data = encoder.encode(data)
 
-        root, *rel_path = self.ns.path_parser.split(key)
-        if rel_path:
-            raise ValueError("Data can only be set on the root level.")
+            root, *rel_path = self.ns.path_parser.split(key)
+            if rel_path:
+                raise ValueError("Data can only be set on the root level.")
+        except Exception as err:
+            raise exc.InvalidDataError(key, err) from err
+
         self.data[key] = encoded_data
 
     def delete_data(self, key: str) -> None:
@@ -184,31 +194,47 @@ class PythonSession(session.Session):
 
         return value
 
-    def _build_symbol_dag(self, symbol: Object, graph: nx.DiGraph, check_dag: bool = True) -> nx.DiGraph:
+    @stack.resolutionstart
+    def _build_symbol_dag(
+        self,
+        symbol: Object,
+        graph: nx.DiGraph,
+        resolution_stack: ResolutionStack,
+        check_dag: bool = True,
+    ) -> nx.DiGraph:
 
         syms = [(symbol, ())]
         added = set()
 
         while syms:
             sym, downstreams = syms.pop(0)
-            processed = False
-            if sym._impl.id in graph.nodes:
-                processed = True
-            else:
-                graph.add_node(sym._impl.id, symbol=sym)
-                added.add(sym._impl.id)
-
-            for symbol_id in downstreams:
-                if (sym._impl.id, symbol_id) not in graph.edges:
-                    graph.add_edge(sym._impl.id, symbol_id)
-                    added.add(symbol_id)
+            resolution_stack.push(sym._impl.id)
+            try:
+                processed = False
+                if sym._impl.id in graph.nodes:
+                    processed = True
+                else:
+                    graph.add_node(sym._impl.id, symbol=sym)
                     added.add(sym._impl.id)
 
-            if processed:
-                continue
+                for symbol_id in downstreams:
+                    if (sym._impl.id, symbol_id) not in graph.edges:
+                        graph.add_edge(sym._impl.id, symbol_id)
+                        added.add(symbol_id)
+                        added.add(sym._impl.id)
 
-            for upstream in sym._inst.depends_on(self):
-                syms.append((upstream, (sym._impl.id,)))
+                if processed:
+                    continue
+
+                for upstream in sym._inst.depends_on(self):
+                    syms.append((upstream, (sym._impl.id,)))
+            except Exception as err:
+                _, _, tb = sys.exc_info()
+                raise exc.ResolutionError(resolution_stack, err, tb) from err
+            except BaseException:
+                raise
+            else:
+                resolution_stack.pop()
 
         if check_dag and added:
             # Check that this is in fact a DAG and has no cycles
@@ -222,16 +248,20 @@ class PythonSession(session.Session):
         except nx.NetworkXNoCycle:
             pass
         else:
-            raise ValueError(f'Graph is not a DAG!')
+            raise ValueError(f"Graph is not a DAG!")
 
     @stack.internalcode
     def _process_symbol_dag(
-        self, dag: nx.DiGraph, allow_unknowns: bool = False
+        self,
+        obj_id: Any,
+        dag: nx.DiGraph,
+        resolution_stack: ResolutionStack,
+        allow_unknowns: bool = False,
     ) -> None:
-        @stack.internalcode
+
+        # @stack.internalcode
+        @stack.resolutionstart
         def handle_symbol_id(symbol_id):
-            # if symbol_id in stack:
-            #     raise ValueError('circular reference detected')
 
             sym = dag.nodes[symbol_id]["symbol"]
             if "result" in dag.nodes[symbol_id]:
@@ -252,7 +282,9 @@ class PythonSession(session.Session):
                 expanded_result = semantics.expand(result)
 
                 def resolve_child(x):
-                    added = self._build_symbol_dag(x, dag, check_dag=False)
+                    added = self._build_symbol_dag(
+                        x, dag, resolution_stack, check_dag=False
+                    )
                     if (x._impl.id, symbol_id) not in dag.edges:
                         dag.add_edge(x._impl.id, symbol_id)
                         self._raise_not_dag(dag, list(added | {x._impl.id}))
@@ -277,15 +309,22 @@ class PythonSession(session.Session):
         @stack.internalcode
         def wrapped_handle_symbol_id(symbol_id):
             exception, tb = None, None
+            resolution_stack.push(symbol_id)
             try:
                 return handle_symbol_id(symbol_id)
             except Exception as err:
                 _, _, tb = sys.exc_info()
-                resolution_stack = ResolutionStack(dag, symbol_id)
                 exception = exc.ResolutionError(resolution_stack, err, tb)
+            except BaseException:
+                raise
+            else:
+                resolution_stack.pop()
             raise exception.with_traceback(tb)
 
+        ancestors = set(nx.ancestors(dag, obj_id)) | {obj_id}
         for symbol_id in list(topological_sort(dag)):
+            if symbol_id not in ancestors:
+                continue
             wrapped_handle_symbol_id(symbol_id)
 
     def _digraph(self) -> nx.DiGraph:
@@ -296,12 +335,13 @@ class PythonSession(session.Session):
     ) -> Any:
 
         graph = self._digraph()
-        self._build_symbol_dag(symbol, graph)
 
-        try:
-            self._process_symbol_dag(graph, allow_unknowns)
-        except Exception:
-            stack.rewrite_tb(*sys.exc_info())
+        resolution_stack = ResolutionStack(graph, symbol._impl.id)
+        with stack.rewrite_ctx(resolution_stack):
+            self._build_symbol_dag(symbol, graph, resolution_stack)
+            self._process_symbol_dag(
+                symbol._impl.id, graph, resolution_stack, allow_unknowns
+            )
 
         encoded = graph.nodes[symbol._impl.id]["result"]
         if not decode:
@@ -315,16 +355,20 @@ class PythonSession(session.Session):
 
         dag = self._digraph()
 
+        key = None
+        obj_ids = set()
         for key in self.ns.keys():
             ref = self.ns.ref(key)
-            self._build_symbol_dag(ref, dag, check_dag=False)
+            resolution_stack = ResolutionStack(dag, ref._impl.id)
+            with stack.rewrite_ctx(resolution_stack):
+                self._build_symbol_dag(ref, dag, resolution_stack, check_dag=False)
+                self._process_symbol_dag(
+                    ref._impl.id, dag, resolution_stack, allow_unknowns=True
+                )
 
-        self._raise_not_dag(graph)
+            obj_ids.add(ref._impl.id)
 
-        try:
-            self._process_symbol_dag(dag, allow_unknowns=True)
-        except Exception:
-            stack.rewrite_tb(*sys.exc_info())
+        self._raise_not_dag(graph, list(obj_ids))
 
         # Make a copy of `dag` since it will be mutated
         dag = dag.copy()
@@ -370,6 +414,7 @@ class CachingPythonSession(PythonSession):
     """
     PythonSession that holds a single graph per instance
     """
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.graph = nx.DiGraph()

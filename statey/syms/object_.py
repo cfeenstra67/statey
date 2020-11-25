@@ -5,7 +5,7 @@ from typing import Any, Dict, Sequence, Iterable, Optional, Callable, Union
 
 import networkx as nx
 
-from statey.syms import base
+from statey.syms import base, stack
 
 
 def get_item_passthrough(name: str) -> Callable[[Any], Any]:
@@ -30,10 +30,12 @@ class Object(base.Proxy):
     impl: dc.InitVar[Any]
     type: dc.InitVar[Optional[Union["Type", Any]]] = None
     registry: dc.InitVar[Optional["Registry"]] = None
+    frame: dc.InitVar[Optional[stack.FrameSnapshot]] = None
     _impl: "ObjectImplementation" = dc.field(init=False, default=None)
     _type: "Type" = dc.field(init=False, default=None)
     _registry: "Registry" = dc.field(init=False, default=None)
     _inst: "Proxy" = dc.field(init=False, default=None)
+    _frame: stack.FrameSnapshot = dc.field(init=False, default=None)
 
     def __class_getitem__(cls, item: Any) -> "Object":
         """
@@ -42,7 +44,11 @@ class Object(base.Proxy):
         return partial(cls, type=item)
 
     def __post_init__(
-        self, impl: Any, type: Optional["Type"], registry: Optional["Registry"]
+        self,
+        impl: Any,
+        type: Optional["Type"],
+        registry: Optional["Registry"],
+        frame: Optional[stack.FrameSnapshot],
     ) -> None:
         """
 		Set up the Object instance
@@ -55,6 +61,7 @@ class Object(base.Proxy):
             impl = obj._impl
             type = type or obj._type
             registry = registry or obj._registry
+            frame = frame or obj._frame
 
         elif not isinstance(impl, ObjectImplementation):
             if registry is None:
@@ -88,9 +95,13 @@ class Object(base.Proxy):
                 f"be passed manually."
             )
 
+        if frame is None:
+            frame = stack.frame_snapshot(2)
+
         self.__dict__["_impl"] = impl
         self.__dict__["_type"] = type
         self.__dict__["_registry"] = registry
+        self.__dict__["_frame"] = frame
 
         impl_accessor = base.GetattrBasedAttributeAccess(self._impl)
         self.__dict__["_inst"] = base.BoundAttributeAccess(self, impl_accessor)

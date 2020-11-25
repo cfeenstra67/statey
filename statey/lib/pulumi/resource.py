@@ -92,7 +92,9 @@ class PulumiResourceMachine(st.SingleStateMachine):
 
         return st.fill(data_obj, typ, get_value)
 
-    def clean_check_resp(self, resp: Dict[str, Any], type: st.Type, registry: st.Registry) -> Dict[str, Any]:
+    def clean_check_resp(
+        self, resp: Dict[str, Any], type: st.Type, registry: st.Registry
+    ) -> Dict[str, Any]:
         """
         Clean the check() response
         """
@@ -114,7 +116,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
         for key, val in resp.items():
             if key in {"__defaults"}:
                 continue
-            val_semantics = semantics.attr_semantics(key)        
+            val_semantics = semantics.attr_semantics(key)
             out[key] = self.clean_check_resp(val, val_semantics.type, registry)
 
         return out
@@ -131,11 +133,13 @@ class PulumiResourceMachine(st.SingleStateMachine):
         check_resp, errs = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.check,
-            pylumi.URN(self.resource_name),
+            pylumi.URN(self.name),
             current.data,
             object_to_pulumi_json(config.obj, session),
         )
-        check_resp = self.clean_check_resp(check_resp, self.UP.input_type, session.ns.registry)
+        check_resp = self.clean_check_resp(
+            check_resp, self.UP.input_type, session.ns.registry
+        )
         if errs:
             raise PulumiValidationError(errs)
 
@@ -144,7 +148,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
         diff_resp = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.diff,
-            pylumi.URN(self.resource_name, pulumi_id),
+            pylumi.URN(self.name, pulumi_id),
             pulumi_id,
             current_data,
             check_resp,
@@ -182,13 +186,17 @@ class PulumiResourceMachine(st.SingleStateMachine):
         check_resp, errs = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.check,
-            pylumi.URN(self.resource_name),
+            pylumi.URN(self.name),
             current.data,
             config_json,
-            True
+            True,
         )
-        check_resp = self.clean_check_resp(check_resp, self.UP.input_type, session.ns.registry)
-        check_resp = object_to_pulumi_json(st.Object(check_resp, self.UP.input_type), session)
+        check_resp = self.clean_check_resp(
+            check_resp, self.UP.input_type, session.ns.registry
+        )
+        check_resp = object_to_pulumi_json(
+            st.Object(check_resp, self.UP.input_type), session
+        )
         if errs:
             raise PulumiValidationError(errs)
 
@@ -196,12 +204,14 @@ class PulumiResourceMachine(st.SingleStateMachine):
             resp = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.create,
-                pylumi.URN(self.resource_name),
+                pylumi.URN(self.name),
                 check_resp,
                 self.provider.operation_timeout,
                 True,
             )
-            props = self.clean_check_resp(resp['Properties'], self.UP.output_type, session.ns.registry)
+            props = self.clean_check_resp(
+                resp["Properties"], self.UP.output_type, session.ns.registry
+            )
             return self.make_expected_output(props, config, self.UP.output_type)
 
         current_data = current.data.copy()
@@ -209,7 +219,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
         diff_resp = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.diff,
-            pylumi.URN(self.resource_name, pulumi_id),
+            pylumi.URN(self.name, pulumi_id),
             pulumi_id,
             current_data,
             check_resp,
@@ -229,7 +239,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
         resp = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.read,
-            pylumi.URN(self.resource_name, pulumi_id),
+            pylumi.URN(self.name, pulumi_id),
             pulumi_id,
             data,
             data,
@@ -259,17 +269,19 @@ class PulumiResourceMachine(st.SingleStateMachine):
             check_resp, errs = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.check,
-                pylumi.URN(self.resource_name),
+                pylumi.URN(self.name),
                 {},
                 config,
             )
-            check_resp = self.clean_check_resp(check_resp, self.UP.input_type, st.registry)
+            check_resp = self.clean_check_resp(
+                check_resp, self.UP.input_type, st.registry
+            )
             if errs:
                 raise PulumiValidationError(errs)
             resp = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.create,
-                pylumi.URN(self.resource_name),
+                pylumi.URN(self.name),
                 check_resp,
                 self.provider.operation_timeout,
             )
@@ -302,18 +314,20 @@ class PulumiResourceMachine(st.SingleStateMachine):
             check_resp, errs = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.check,
-                pylumi.URN(self.resource_name, pulumi_id),
+                pylumi.URN(self.name, pulumi_id),
                 current,
                 config,
             )
-            check_resp = self.clean_check_resp(check_resp, self.UP.input_type, st.registry)
+            check_resp = self.clean_check_resp(
+                check_resp, self.UP.input_type, st.registry
+            )
             if errs:
                 raise PulumiValidationError(errs)
 
             resp = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.update,
-                pylumi.URN(self.resource_name, pulumi_id),
+                pylumi.URN(self.name, pulumi_id),
                 pulumi_id,
                 current,
                 check_resp,
@@ -343,7 +357,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
             resp = await loop.run_in_executor(
                 self.provider.thread_pool,
                 self.provider.pulumi_provider.delete,
-                pylumi.URN(self.resource_name, pulumi_id),
+                pylumi.URN(self.name, pulumi_id),
                 pulumi_id,
                 current,
                 self.provider.operation_timeout,
@@ -351,3 +365,6 @@ class PulumiResourceMachine(st.SingleStateMachine):
             return {}
 
         return delete_task
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.name})"

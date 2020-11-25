@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Any, Dict, Sequence, Callable, Type as PyType, Optional
 
 import statey as st
-from statey.syms import func, impl, types, base, utils, api
+from statey.syms import func, impl, types, base, utils, api, stack
 from statey.syms.object_ import Object
 
 
@@ -38,10 +38,7 @@ class InstanceMethod(Method):
     func: func.Function
 
     def bind(self, obj: Object) -> Any:
-        return utils.bind_function_call(
-            self.func, (obj,),
-            registry=obj._registry
-        )
+        return utils.bind_function_call(self.func, (obj,), registry=obj._registry)
 
     def return_type(self, obj: Object) -> Any:
         return self.func.type.return_type
@@ -64,9 +61,10 @@ class CallFunctionMethod(Method):
             def apply_method(func: self.func_type) -> obj._type.return_type:
                 return utils.wrap_function_call(func, args, kwargs)
 
-            return obj._inst.map(
+            res = obj._inst.map(
                 utils.native_function(apply_method, registry=obj._registry)
             )
+            return Object(res, frame=stack.frame_snapshot(1))
 
         return call
 
@@ -282,7 +280,8 @@ class BinaryMagicMethod(Method):
                 return self.operation(inst, other)
 
             operate.__name__ = self.name
-            return utils.native_function(operate)(obj, other)
+            out = utils.native_function(operate)(obj, other)
+            return Object(out, frame=stack.frame_snapshot(1))
 
         apply_method.__name__ = self.name
         return apply_method
@@ -357,7 +356,9 @@ class ExpectedValueMethod(Method):
     def bind(self, obj: Object) -> Any:
         def expect(value: Any) -> Object:
             expected_obj = Object(value, obj._type, obj._registry)
-            return Object(impl.ExpectedValue(obj, expected_obj))
+            return Object(
+                impl.ExpectedValue(obj, expected_obj), frame=stack.frame_snapshot(1)
+            )
 
         return expect
 
