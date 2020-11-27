@@ -127,7 +127,7 @@ def load_pulumi_provider(
         provider_name = "pulumi/" + name
 
     config = config.copy()
-    version = config.pop('version', None)
+    version = config.pop("version", None)
 
     with pylumi.Context() as ctx, ctx.provider(name, config, version) as provider:
         schema = provider.get_schema(schema_version)

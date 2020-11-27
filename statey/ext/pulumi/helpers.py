@@ -121,7 +121,7 @@ class PulumiProviderSchemaParser:
         if schema_type is not None:
             return schema, resolved
 
-        one_of = schema.get('oneOf')
+        one_of = schema.get("oneOf")
         if one_of is None:
             return schema, resolved
 
@@ -133,7 +133,7 @@ class PulumiProviderSchemaParser:
                 resolved += ct
 
         out_schema = schema.copy()
-        del out_schema['oneOf']
+        del out_schema["oneOf"]
         out_schema.update(outs[-1])
         return out_schema, resolved
 
@@ -313,10 +313,11 @@ class AwsEnvironmentHandler:
     """
     Plugins to allow for easy environment-based setup of the pulumi AWS provider
     """
+
     @staticmethod
     @st.hookimpl(hookwrapper=True)
     def get_provider_config(name, params, registry):
-        if name == PULUMI_NS + '/aws':
+        if name == PULUMI_NS + "/aws":
             default_region = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION"))
             if default_region is not None:
                 params.setdefault("region", default_region)

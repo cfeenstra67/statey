@@ -3,8 +3,6 @@ import contextlib
 import sys
 from typing import Callable, Optional, Sequence, Dict, Any
 
-import click
-
 import statey as st
 
 
@@ -41,6 +39,14 @@ async def refresh_with_progressbar(
     """
     refresh with a printed progress bar
     """
+    try:
+        import click
+    except ImportError as err:
+        raise RuntimeError(
+            "click must be installed to use a progressbar. This can "
+            "be done by including the `cli` extra to statey."
+        ) from err
+
     with click.progressbar(
         length=len(graph.graph.nodes),
         label=click.style("Refreshing state...", fg="yellow"),

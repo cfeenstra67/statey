@@ -1,6 +1,8 @@
+import warnings
+
 NS = "statey"
 
-__version__ = '0.0.2'
+__version__ = "0.0.2"
 
 from statey.hooks import (
     hookimpl,
@@ -37,7 +39,14 @@ from statey.provider import Provider, ProviderId
 
 from statey.syms.diff import Diff, DiffConfig, Differ
 
-from statey.syms.fmt import f
+# `fmt` is an optional dependency, this import will fail if it isn't installed
+try:
+    from statey.syms.fmt import f
+except RuntimeError:
+    warnings.warn(
+        "`fmt` is not installed, the st.f() function will not be usable.",
+        RuntimeWarning,
+    )
 
 from statey.syms.func import Function
 

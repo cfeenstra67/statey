@@ -309,8 +309,8 @@ class Controller:
 
         self.logger.exception(
             "Planning failed due to encountering error(s). Error(s) by resource:\n%s",
-            '\n'.join(trace_lines),
-            exc_info=(exc_type, exc_value, exc_tb)
+            "\n".join(trace_lines),
+            exc_info=(exc_type, exc_value, exc_tb),
         )
 
     def setup_plan(self) -> None:
@@ -336,10 +336,14 @@ class Controller:
             self.plan_resource_graph = self.plan.task_graph.resource_graph
         except st.exc.ErrorDuringPlanning as err:
             if isinstance(err.exception, st.exc.ExecutionError):
-                self.print_planning_execution_error(type(err.exception), err.exception, sys.exc_info()[2])
+                self.print_planning_execution_error(
+                    type(err.exception), err.exception, sys.exc_info()[2]
+                )
             else:
                 self.logger.exception(
-                    "Error occurred during planning: %s: %s", type(err.exception).__name__, err.exception
+                    "Error occurred during planning: %s: %s",
+                    type(err.exception).__name__,
+                    err.exception,
                 )
             raise click.Abort from err
         except Exception as err:
@@ -470,7 +474,6 @@ class Controller:
 
         self.logger.info("Resource summary: %s", plan_summary.short_summary_string())
         self.logger.info("")
-
 
     def dump_state(self) -> None:
         """

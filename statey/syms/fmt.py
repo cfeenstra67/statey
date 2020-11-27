@@ -9,10 +9,10 @@ from typing import Optional, Dict, Any
 try:
     from fmt.fmt import Parser, Expression, Constant, generate
 except ImportError as err:
-    raise RunTimeError(
-        '`fmt` must be installed to use the statey.syms.fmt module; this '
-        'can be done by including the `fmt` extra in your statey install i.e. '
-        'statey[fmt]'
+    raise RuntimeError(
+        "`fmt` must be installed to use the statey.syms.fmt module; this "
+        "can be done by including the `fmt` extra in your statey install i.e. "
+        "statey[fmt]"
     )
 
 

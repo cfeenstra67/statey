@@ -1,12 +1,20 @@
+import warnings
 from typing import Optional
 
-# Exports
-from statey.ext import pulumi
+# Pulumi is an optional dependency, allow this to fail if `pylumi`
+# isn't installed.
+try:
+    from statey.ext import pulumi
+except RuntimeError:
+    warnings.warn(
+        "`pylumi` is not installed, pulumi providers and resources "
+        "will not be usable.",
+        RuntimeWarning,
+    )
 
 
 def register(
-    registry: Optional["Registry"] = None,
-    pulumi: Optional[bool] = None,
+    registry: Optional["Registry"] = None, pulumi: Optional[bool] = None,
 ) -> None:
     """
     Register all default library resources

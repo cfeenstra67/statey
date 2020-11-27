@@ -1,4 +1,5 @@
 import logging
+import warnings
 
 import click
 import shutil
@@ -78,6 +79,7 @@ def cli(ctx, config, debug):
     ctx.obj["config"] = config
     ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
     ctx.obj["debug"] = debug
+    warnings.simplefilter("ignore")
 
 
 # @task_dag_opt
@@ -288,5 +290,12 @@ def install(ctx, requirement, requirements_file):
     controller.install_plugins(requirement, requirements_file)
 
 
-if __name__ == "__main__":
+def main():
+    """
+    Primary entry point for the statey CLI
+    """
     cli(prog_name="statey", auto_envvar_prefix="STATEY")
+
+
+if __name__ == "__main__":
+    main()
