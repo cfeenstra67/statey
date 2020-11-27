@@ -81,6 +81,12 @@ class ObjectImplementation(base.AttributeAccess):
         """
         raise NotImplementedError
 
+    def frame(self) -> stack.FrameSnapshot:
+        """
+        Allow an object frame to be inferred from an implementation
+        """
+        raise NotImplementedError
+
 
 class FunctionalAttributeAccessMixin:
     """

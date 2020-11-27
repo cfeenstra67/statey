@@ -7,7 +7,7 @@ from statey.hooks import (
     register_default_plugins,
 )
 
-from statey.registry import Registry, create_registry, RegistryCachingWrapper
+from statey.registry import Registry, create_registry
 
 registry = create_registry()
 
@@ -28,6 +28,8 @@ from statey.fsm import (
 )
 
 from statey.plan import Plan, PlanAction, Migrator, DefaultMigrator
+
+from statey.plugin_installer import PluginInstaller
 
 from statey.provider import Provider, ProviderId
 

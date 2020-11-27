@@ -32,11 +32,6 @@ yes_opt = click.option(
 )
 
 
-def setup_logging(lvl: int):
-    LOGGER.setLevel(lvl)
-    LOGGER.addHandler(logging.StreamHandler())
-
-
 def run_plan_and_apply(controller, yes):
     """
     Run logic to plan and optionally 
@@ -73,17 +68,16 @@ def run_plan_and_apply(controller, yes):
 @click.option(
     "-c", "--config", help="Configuration file to use", default="statey_conf.py"
 )
-@click.option("-l", "--log-level", help="Log level", default="INFO")
+@click.option("--debug", help="Additional output.", is_flag=True)
 @click.pass_context
-def cli(ctx, config, log_level):
+def cli(ctx, config, debug):
     """
 
     """
     ctx.ensure_object(dict)
     ctx.obj["config"] = config
     ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
-    lvl = getattr(logging, log_level.upper(), logging.INFO)
-    setup_logging(lvl)
+    ctx.obj["debug"] = debug
 
 
 # @task_dag_opt
@@ -99,7 +93,9 @@ def plan(ctx, diff):
         terminal_size=ctx.obj["terminal_size"],
         show_diff=diff,
         conf_name=ctx.obj["config"],
+        debug=ctx.obj["debug"],
     )
+    controller.setup_logging()
     controller.setup_resource_graph()
 
     controller.setup_session()
@@ -133,7 +129,9 @@ def up(ctx, diff, fulltrace, yes):
         show_diff=diff,
         fulltrace=fulltrace,
         conf_name=ctx.obj["config"],
+        debug=ctx.obj["debug"],
     )
+    controller.setup_logging()
 
     controller.setup_resource_graph()
 
@@ -163,7 +161,9 @@ def down(ctx, diff, fulltrace, yes):
         show_diff=diff,
         fulltrace=fulltrace,
         conf_name=ctx.obj["config"],
+        debug=ctx.obj["debug"],
     )
+    controller.setup_logging()
 
     controller.setup_resource_graph()
 
@@ -182,7 +182,9 @@ def refresh(ctx):
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],
         conf_name=ctx.obj["config"],
+        debug=ctx.obj["debug"],
     )
+    controller.setup_logging()
 
     controller.refresh_resource_graph()
 
@@ -200,7 +202,9 @@ def query(ctx, compact, paths):
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],
         conf_name=ctx.obj["config"],
+        debug=ctx.obj["debug"],
     )
+    controller.setup_logging()
 
     controller.setup_resource_graph()
 
@@ -238,18 +242,50 @@ def docs(ctx, provider, resource):
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],
         conf_name=ctx.obj["config"],
+        debug=ctx.obj["debug"],
     )
+    controller.setup_logging()
+
     controller.setup_config()
 
     provider_obj = controller.load_provider(provider)
 
     if resource is None:
-        resource_names = list(provider_obj.schema.resources)
+        resource_names = list(provider_obj.list_resources())
         click.echo("\n".join(resource_names))
         return
 
-    resource_obj = controller.load_resource(provider, resource)
+    resource_obj = controller.load_resource(provider_obj, resource)
     controller.print_resource_docs(resource_obj)
+
+
+@cli.command(
+    help="Entry point to allow installing plugins for various types of providers."
+)
+@click.argument("requirement", nargs=-1)
+@click.option(
+    "-r",
+    "--requirements-file",
+    type=click.File(),
+    multiple=True,
+    help="Path to a requirements file.",
+)
+@click.pass_context
+def install(ctx, requirement, requirements_file):
+    controller = Controller(
+        logger=LOGGER,
+        terminal_size=ctx.obj["terminal_size"],
+        conf_name=ctx.obj["config"],
+        debug=ctx.obj["debug"],
+    )
+    controller.setup_logging()
+
+    controller.setup_config()
+    if not (requirement or requirements_file):
+        click.secho("No plugin specs passed", fg="red")
+        return
+
+    controller.install_plugins(requirement, requirements_file)
 
 
 if __name__ == "__main__":

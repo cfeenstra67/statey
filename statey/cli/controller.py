@@ -2,16 +2,19 @@ import asyncio
 import contextlib
 import dataclasses as dc
 import importlib
+import json
 import logging
 import os
 import sys
 import types
 from importlib.machinery import SourceFileLoader
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Sequence
 
 import statey as st
 from statey.executor import AsyncIOGraphExecutor
-from statey.cli.graph_utils import Inspector, ExecutorLoggingPlugin
+from statey.cli.inspect import Inspector
+from statey.cli.log import ExecutorLoggingPlugin, CLILoggingHandler
+from statey.cli.requirements import parse_requirements, parse_requirement
 
 import click
 import shutil
@@ -37,6 +40,7 @@ class Controller:
         task_heartbeat: int = 15.0,
         conf_name: str = "statey_conf.py",
         env_prefix: str = "STATEY_",
+        debug: bool = False,
     ) -> None:
 
         if registry is None:
@@ -58,6 +62,7 @@ class Controller:
         self.registry = registry
         self.show_task_dag = show_task_dag
         self.show_diff = show_diff
+        self.debug = debug
 
         self.inspector = Inspector()
 
@@ -70,6 +75,17 @@ class Controller:
         self.plan = None
         self.plan_resource_graph = None
         self.exec_info = None
+        self.logging_set_up = False
+
+    def setup_logging(self) -> None:
+        """
+
+        """
+        if self.logging_set_up:
+            return
+
+        self.logger.setLevel(logging.DEBUG if self.debug else logging.INFO)
+        self.logger.addHandler(CLILoggingHandler(self.fulltrace or self.debug))
 
     def setup_state_manager(self) -> None:
         """
@@ -475,7 +491,7 @@ class Controller:
         input_type_serializer = st.registry.get_type_serializer(resource.UP.input_type)
         input_json = input_type_serializer.serialize(resource.UP.input_type)
 
-        click.echo(click.style("Name:", **name_style) + f" {resource}")
+        click.echo(click.style("Name:", **name_style) + f" {resource.name}")
         click.echo(
             click.style("Inputs:", **name_style)
             + "\n"
@@ -486,3 +502,82 @@ class Controller:
             + "\n"
             + json.dumps(output_json, indent=2, sort_keys=True)
         )
+
+    def install_plugins(
+        self,
+        requirements: Sequence[str] = (),
+        requirements_files: Sequence["file"] = (),
+    ) -> None:
+        """
+
+        """
+        self.setup_config()
+
+        installers = []
+        plugins_by_installer = {}
+
+        for requirement in requirements:
+            parsed = parse_requirement(requirement)
+            try:
+                installer = self.registry.get_plugin_installer(requirement)
+            except st.exc.NoPluginInstallerFound as err:
+                self.logger.error(
+                    "Unable to find installer for requirement %s", requirement
+                )
+                raise click.Abort from err
+
+            try:
+                idx = installers.index(installer)
+            except ValueError:
+                idx = len(installers)
+                installers.append(installer)
+
+            plugins_by_installer.setdefault(idx, []).append(parsed)
+
+        for reqs_file in requirements_files:
+            for requirement in parse_requirements(reqs_file):
+                try:
+                    installer = self.registry.get_plugin_installer(requirement.original)
+                except st.exc.NoPluginInstallerFound as err:
+                    self.logger.error(
+                        "Unable to find installer for requirement: %s",
+                        requirement.original,
+                    )
+                    raise click.Abort from err
+
+                try:
+                    idx = installers.index(installer)
+                except ValueError:
+                    idx = len(installers)
+                    installers.append(installer)
+
+                plugins_by_installer.setdefault(idx, []).append(requirement)
+
+        @contextlib.contextmanager
+        def installer_wrapper(installer):
+            installer.setup()
+            try:
+                yield
+            finally:
+                installer.teardown()
+
+        num_plugins = sum(map(len, plugins_by_installer.values()))
+        self.logger.info("Installing %d plugin(s).", num_plugins)
+
+        with contextlib.ExitStack() as stack:
+            for idx, installer in enumerate(installers):
+                stack.enter_context(installer_wrapper(installer))
+                plugins = plugins_by_installer[idx]
+                for plugin in plugins:
+                    self.logger.info("Installing %s", plugin.original)
+                    try:
+                        installer.install(plugin.name, plugin.version)
+                    except Exception as err:
+                        self.logger.exception(
+                            "Error encountered installing '%s': %s: %s",
+                            plugin.original,
+                            type(err).__name__,
+                            err,
+                        )
+
+        self.logger.info("Installation completed successfully.")

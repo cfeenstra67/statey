@@ -89,7 +89,7 @@ class Proxy(abc.ABC):
         except AttributeError:
             pass
 
-        return self[attr]
+        return self._accessor.get_attr(self._instance, attr)
 
 
 @dc.dataclass(frozen=True)

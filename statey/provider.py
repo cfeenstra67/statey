@@ -1,6 +1,6 @@
 import abc
 import dataclasses as dc
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Sequence
 
 import marshmallow as ma
 import pluggy
@@ -53,6 +53,13 @@ class Provider(abc.ABC):
     """
 
     id: ProviderId
+
+    @abc.abstractmethod
+    def list_resources(self) -> Sequence[str]:
+        """
+        List the resource names available in this provider
+        """
+        raise NotImplementedError
 
     @abc.abstractmethod
     def get_resource(self, name: str) -> "Resource":
@@ -140,6 +147,10 @@ class DefaultProvider(Provider):
 
     def __post_init__(self) -> None:
         self.pm.register(self.hookimpls())
+        self.__dict__["_resource_names"] = set()
+
+    def list_resources(self) -> Sequence[str]:
+        return sorted(self.__dict__["_resource_names"])
 
     def get_resource(self, name: str) -> "Resource":
         resource = self.pm.hook.get_resource(name=name, provider=self)
@@ -154,6 +165,7 @@ class DefaultProvider(Provider):
         self.pm.register(
             resource, name=self._get_registered_resource_name(resource.name)
         )
+        self.__dict__["_resource_names"].add(resource.name)
 
     def hookimpls(self) -> DefaultProviderHooks:
         return DefaultProviderHooks(self)

@@ -5,7 +5,7 @@ from typing import Sequence, Dict, Any, Optional
 import pylumi
 
 import statey as st
-from statey.lib.pulumi.constants import PULUMI_ID
+from statey.lib.pulumi.constants import PULUMI_ID, PULUMI_NS
 from statey.lib.pulumi.helpers import (
     parse_provider_schema_response,
     PulumiProviderSchema,
@@ -55,6 +55,9 @@ class PulumiProvider(st.Provider):
 
         self.thread_pool.__exit__(None, None, None)
         self.context = self.pulumi_provider = self.thread_pool = None
+
+    def list_resources(self) -> Sequence[str]:
+        return sorted(self.schema.resources)
 
     def get_resource(self, name: str) -> st.Resource:
         if name not in self.schema.resources:
@@ -144,7 +147,7 @@ class PulumiHooks:
     def get_provider(
         name: str, params: Dict[str, Any], registry: st.Registry
     ) -> st.Provider:
-        if not name.startswith("pulumi/"):
+        if not name.startswith(PULUMI_NS + "/"):
             return None
         _, provider_name = name.split("/", 1)
         return load_pulumi_provider(provider_name, config=params)

@@ -33,7 +33,7 @@ def register_default_plugins(
     namespace_serializers: bool = True,
     session_serializers: bool = True,
     state_managers: bool = True,
-    clear_cache: bool = True,
+    setuptools_entrypoints: bool = True,
 ) -> None:
     """
 	Convenience method to register all of the default provided hooks for the given
@@ -118,8 +118,5 @@ def register_default_plugins(
 
         register_state_managers(registry)
 
-    if clear_cache:
-        from statey.registry import RegistryCachingWrapper
-
-        if isinstance(registry, RegistryCachingWrapper):
-            registry.clear_cache()
+    if setuptools_entrypoints:
+        registry.load_setuptools_entrypoints()

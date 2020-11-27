@@ -57,7 +57,7 @@ class ErrorInfo:
         """
 		Return a formatted version of this exception.
 		"""
-        return "\n".join(
+        return "".join(
             traceback.format_exception(self.exc_type, self.exc_value, self.exc_tb)
         )
 

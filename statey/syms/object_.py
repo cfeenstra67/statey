@@ -96,6 +96,12 @@ class Object(base.Proxy):
             )
 
         if frame is None:
+            try:
+                frame = impl.frame()
+            except NotImplementedError:
+                pass
+
+        if frame is None:
             frame = stack.frame_snapshot(2)
 
         self.__dict__["_impl"] = impl

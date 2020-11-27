@@ -322,6 +322,15 @@ class NoStateManagerFound(NotFoundError):
         super().__init__("Unable to load a state manager for the current module.")
 
 
+class NoPluginInstallerFound(NotFoundError):
+    """
+    Error indicating we could not get a plugin installer for the given name
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Unable to load a plugin installer for plugin: {name}")
+
+
 class NamespaceError(SymsError):
     """
 	Error raised from a namespace

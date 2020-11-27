@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, Callable, Sequence
 
 import pluggy
 
-from statey import exc
+from statey import exc, NS
 from statey.hooks import hookspec, create_plugin_manager, register_default_plugins
 from statey.syms import types, utils
 
@@ -171,6 +171,13 @@ class Registry(abc.ABC):
     def get_state_manager(self) -> "StateManager":
         """
         Get a state manager to use for the current module
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_plugin_installer(self, name: str) -> "PluginInstaller":
+        """
+        Get a plugin installer for a given plugin name
         """
         raise NotImplementedError
 
@@ -353,6 +360,12 @@ class RegistryHooks:
         Hook to fetch a state manager to use for planning operations
         """
 
+    @hookspec(firstresult=True)
+    def get_plugin_installer(self, name: str, registry: Registry) -> "PluginInstaller":
+        """
+        Hook to fetch a plugin installer
+        """
+
     @hookspec(historic=True)
     def register(self, plugin: Any, registry: Registry) -> None:
         """
@@ -385,6 +398,12 @@ class HookBasedRegistry(Registry):
     def register(self, plugin: Any) -> None:
         self.pm.register(plugin)
         self.pm.hook.register.call_historic(kwargs=dict(plugin=plugin, registry=self))
+
+    def load_setuptools_entrypoints(self) -> None:
+        """
+        Automatically register plugins via setuptools entry points
+        """
+        self.pm.load_setuptools_entrypoints(NS)
 
     def get_type(
         self, annotation: Any, meta: Optional[Dict[str, Any]] = None
@@ -548,154 +567,15 @@ class HookBasedRegistry(Registry):
             raise exc.NoStateManagerFound()
         return manager
 
-
-class RegistryWrapper(Registry):
-    """
-    Wrapper class to wrap any methods desired simply
-    """
-
-    registry: Registry
-
-    @abc.abstractmethod
-    def wrap(self, name: str, func: Callable[[Any], Any]) -> Callable[[Any], Any]:
-        """
-        Wrap the given method
-        """
-        raise NotImplementedError
-
-    def get_type(
-        self, annotation: Any, meta: Optional[Dict[str, Any]] = None
-    ) -> types.Type:
-        return self.wrap("get_type", self.registry.get_type)(annotation, meta)
-
-    def infer_type(self, obj: Any) -> types.Type:
-        return self.wrap("infer_type", self.registry.infer_type)(obj)
-
-    def get_encoder(self, type: types.Type, serializable: bool = False) -> "Encoder":
-        return self.wrap("get_encoder", self.registry.get_encoder)(type, serializable)
-
-    def get_semantics(self, type: types.Type) -> "Semantics":
-        return self.wrap("get_semantics", self.registry.get_semantics)(type)
-
-    def get_type_serializer(self, type: types.Type) -> "TypeSerializer":
-        return self.wrap("get_type_serializer", self.registry.get_type_serializer)(type)
-
-    def get_type_serializer_from_data(self, data: Any) -> "TypeSerializer":
-        return self.wrap(
-            "get_type_serializer_from_data", self.registry.get_type_serializer_from_data
-        )(data)
-
-    def get_differ(self, type: types.Type) -> "Differ":
-        return self.wrap("get_differ", self.registry.get_differ)(type)
-
-    # def get_resource(self, name: str) -> "Resource":
-    #     return self.wrap("get_resource", self.registry.get_resource)(name)
-
-    def get_methods(self, type: types.Type) -> "ObjectMethods":
-        return self.wrap("get_methods", self.registry.get_methods)(type)
-
-    def get_object(self, value: Any) -> "Object":
-        return self.wrap("get_object", self.registry.get_object)(value)
-
-    def get_caster(self, from_type: types.Type, to_type: types.Type) -> "Object":
-        return self.wrap("get_caster", self.registry.get_caster)(from_type, to_type)
-
-    def get_impl_serializer(
-        self, impl: "ObjectImplementation", type: types.Type
-    ) -> "ObjectImplementationSerializer":
-        return self.wrap("get_impl_serializer", self.registry.get_impl_serializer)(
-            impl, type
-        )
-
-    def get_object_serializer(self, obj: "Object") -> "ObjectSerializer":
-        return self.wrap("get_object_serializer", self.registry.get_object_serializer)(
-            obj
-        )
-
-    def get_session_serializer(self, session: "Session") -> "SessionSerializer":
-        return self.wrap(
-            "get_session_serializer", self.registry.get_session_serializer
-        )(session)
-
-    def get_namespace_serializer(self, ns: "Namespace") -> "NamespaceSerializer":
-        return self.wrap(
-            "get_namespace_serializer", self.registry.get_namespace_serializer
-        )(ns)
-
-    def get_impl_serializer_from_data(
-        self, data: Any
-    ) -> "ObjectImplementationSerializer":
-        return self.wrap(
-            "get_impl_serializer_from_data", self.registry.get_impl_serializer_from_data
-        )(data)
-
-    def get_object_serializer_from_data(self, data: Any) -> "ObjectSerializer":
-        return self.wrap(
-            "get_object_serializer_from_data",
-            self.registry.get_object_serializer_from_data,
-        )(data)
-
-    def get_session_serializer_from_data(self, data: Any) -> "SessionSerializer":
-        return self.wrap(
-            "get_session_serializer_from_data",
-            self.registry.get_session_serializer_from_data,
-        )(data)
-
-    def get_namespace_serializer_from_data(self, data: Any) -> "NamespaceSerializer":
-        return self.wrap(
-            "get_namespace_serializer_from_data",
-            self.registry.get_namespace_serializer_from_data,
-        )(data)
-
-    def get_provider(
-        self, name: str, params: Optional[Dict[str, Any]] = None
-    ) -> "Provider":
-        return self.wrap("get_provider", self.registry.get_provider)(name, params)
-
-    def register(self, plugin: Any) -> None:
-        return self.wrap("register", self.registry.register)(plugin)
-
-
-@dc.dataclass(frozen=True)
-class RegistryCachingWrapper(RegistryWrapper):
-    """
-    Wrapper that wraps get_* methods to cache outputs for better performance
-    """
-
-    registry: Registry
-    maxsize: int = dc.field(default=1_000)
-    caches: Dict[str, Any] = dc.field(default_factory=dict)
-    cache_methods: Sequence[str] = dc.field(
-        default=(
-            "get_encoder",
-            "get_semantics",
-            "get_type_serializer",
-            "get_differ",
-            "get_methods",
-            "get_caster",
-        )
-    )
-
-    def wrap(self, name: str, func: Callable[[Any], Any]) -> Callable[[Any], Any]:
-        if name not in self.cache_methods:
-            return func
-        if name in self.caches:
-            return self.caches[name]
-        cache = self.caches[name] = lru_cache(maxsize=self.maxsize)(func)
-        return cache
-
-    def clear_cache(self) -> None:
-        """
-        Clear the current cache
-        """
-        for value in self.caches.values():
-            value.cache_clear()
+    def get_plugin_installer(self, name: str) -> "PluginInstaller":
+        installer = self.pm.hook.get_plugin_installer(name=name, registry=self)
+        if installer is None:
+            raise exc.NoPluginInstallerFound(name)
+        return installer
 
 
 def create_registry() -> Registry:
     """
     Create a registry using the default implementation
     """
-    # Need to make types hashable again in order for this to work
-    # return RegistryCachingWrapper(HookBasedRegistry())
     return HookBasedRegistry()
