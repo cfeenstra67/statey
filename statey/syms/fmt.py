@@ -6,7 +6,15 @@ import sys
 from functools import partial
 from typing import Optional, Dict, Any
 
-from fmt.fmt import Parser, Expression, Constant, generate
+try:
+    from fmt.fmt import Parser, Expression, Constant, generate
+except ImportError as err:
+    raise RunTimeError(
+        '`fmt` must be installed to use the statey.syms.fmt module; this '
+        'can be done by including the `fmt` extra in your statey install i.e. '
+        'statey[fmt]'
+    )
+
 
 import statey as st
 from statey.syms.object_ import Object

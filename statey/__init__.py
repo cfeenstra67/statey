@@ -1,5 +1,7 @@
 NS = "statey"
 
+__version__ = '0.0.2'
+
 from statey.hooks import (
     hookimpl,
     hookspec,
