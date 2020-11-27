@@ -24,7 +24,7 @@ def register_default_plugins(
     semantics: bool = True,
     type_serializers: bool = True,
     providers: bool = True,
-    resources: bool = True,
+    extensions: bool = True,
     differs: bool = True,
     methods: bool = True,
     casters: bool = True,
@@ -108,10 +108,10 @@ def register_default_plugins(
 
         register_providers(registry)
 
-    if resources:
-        from statey.lib import register as register_resources
+    if extensions:
+        from statey.ext import register as register_extensions
 
-        register_resources(registry)
+        register_extensions(registry)
 
     if state_managers:
         from statey.state_manager import register as register_state_managers

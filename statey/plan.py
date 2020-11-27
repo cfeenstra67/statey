@@ -3,7 +3,7 @@ import asyncio
 import contextlib
 import dataclasses as dc
 import sys
-from functools import reduce
+from functools import reduce, partial
 from itertools import chain
 from typing import Optional, Sequence, Dict, Tuple, Any
 
@@ -1104,7 +1104,7 @@ class DefaultMigrator(Migrator):
             )
 
         for node in chain(config_dep_graph.nodes, state_only_nodes):
-            task_graph.add_node(node, coroutine=coro(node))
+            task_graph.add_node(node, coroutine_factory=partial(coro, node))
 
         task_graph.add_edges_from(((a, b) for a, b, _ in config_dep_graph.edges))
         task_graph_obj = AsyncIOTaskGraph(task_graph)

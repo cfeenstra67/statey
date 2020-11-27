@@ -197,7 +197,7 @@ class Controller:
         self.session_name = getattr(
             module,
             "SESSION_NAME",
-            os.getenv(self.env_prefix + "SESSION_NAME", "session()"),
+            os.getenv(self.env_prefix + "SESSION_NAME", "module()"),
         )
         self.conf_module = module
 
@@ -228,8 +228,10 @@ class Controller:
                 )
                 raise click.Abort from err
 
+            session = st.create_resource_session()
+
             try:
-                self.session = session_factory()
+                self.session = session_factory(session)
             except Exception as err:
                 self.logger.exception(
                     "Error loading session '%s' from factory %r: %s: %s",
@@ -284,6 +286,33 @@ class Controller:
         else:
             self.logger.debug("Resource graph refreshed successfully.")
 
+    def print_planning_execution_error(self, exc_type, exc_value, exc_tb) -> None:
+        """
+
+        """
+        exec_info = exc_value.exec_info
+        tasks_by_status = exec_info.tasks_by_status()
+
+        traces = {}
+        for key in tasks_by_status.get(st.TaskStatus.FAILED, []):
+            info = exec_info.task_graph.get_info(key)
+            if info.error is not None:
+                traces[key] = info.error
+
+        trace_lines = []
+        for key, error in traces.items():
+            trace_lines.append(f"{key}: {error.format_error_message()}")
+            trace_lines.append("")
+
+        trace_lines.insert(0, "")
+        trace_str = "\n".join(trace_lines)
+
+        self.logger.exception(
+            "Planning failed due to encountering error(s). Error(s) by resource:\n%s",
+            '\n'.join(trace_lines),
+            exc_info=(exc_type, exc_value, exc_tb)
+        )
+
     def setup_plan(self) -> None:
         """
         
@@ -305,6 +334,14 @@ class Controller:
                 )
             )
             self.plan_resource_graph = self.plan.task_graph.resource_graph
+        except st.exc.ErrorDuringPlanning as err:
+            if isinstance(err.exception, st.exc.ExecutionError):
+                self.print_planning_execution_error(type(err.exception), err.exception, sys.exc_info()[2])
+            else:
+                self.logger.exception(
+                    "Error occurred during planning: %s: %s", type(err.exception).__name__, err.exception
+                )
+            raise click.Abort from err
         except Exception as err:
             self.logger.exception(
                 "Error occurred during planning: %s: %s", type(err).__name__, err
@@ -430,6 +467,10 @@ class Controller:
                 f"{click.style('Task DAG', fg='green', bold=True)}:\n\n%s\n",
                 task_dag_string,
             )
+
+        self.logger.info("Resource summary: %s", plan_summary.short_summary_string())
+        self.logger.info("")
+
 
     def dump_state(self) -> None:
         """

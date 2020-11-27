@@ -3,8 +3,8 @@ from typing import Optional
 import pylumi
 
 import statey as st
-from statey.lib.pulumi import exc
-from statey.lib.pulumi.constants import PULUMI_NS
+from statey.ext.pulumi import exc
+from statey.ext.pulumi.constants import PULUMI_NS
 
 
 class PulumiPluginInstaller(st.PluginInstaller):

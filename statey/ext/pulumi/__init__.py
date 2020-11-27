@@ -7,9 +7,9 @@ except ImportError as err:
         f"`pylumi` is not installed, this extension module cannot be used."
     ) from err
 
-from statey.lib.pulumi.plugin_installer import PulumiPluginInstaller
-from statey.lib.pulumi.provider import PulumiProvider
-from statey.lib.pulumi.resource import PulumiResourceMachine
+from statey.ext.pulumi.plugin_installer import PulumiPluginInstaller
+from statey.ext.pulumi.provider import PulumiProvider
+from statey.ext.pulumi.resource import PulumiResourceMachine
 
 
 def register(registry: Optional["Registry"] = None) -> None:
@@ -18,6 +18,6 @@ def register(registry: Optional["Registry"] = None) -> None:
     if registry is None:
         from statey import registry
 
-    helpers.register_meta_finder()
+    helpers.register(registry)
     provider.register(registry)
     plugin_installer.register(registry)

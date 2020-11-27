@@ -1,16 +1,17 @@
 import asyncio
+import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence, Dict, Any, Optional
 
 import pylumi
 
 import statey as st
-from statey.lib.pulumi.constants import PULUMI_ID, PULUMI_NS
-from statey.lib.pulumi.helpers import (
+from statey.ext.pulumi.constants import PULUMI_ID, PULUMI_NS, PULUMI_HOME_ENV
+from statey.ext.pulumi.helpers import (
     parse_provider_schema_response,
     PulumiProviderSchema,
 )
-from statey.lib.pulumi.resource import PulumiResourceMachine
+from statey.ext.pulumi.resource import PulumiResourceMachine
 
 
 class PulumiProvider(st.Provider):
@@ -40,6 +41,12 @@ class PulumiProvider(st.Provider):
 
         pool = self.thread_pool = ThreadPoolExecutor()
         pool.__enter__()
+
+        # This doesn't seem to be working despite
+        # https://github.com/pulumi/pulumi/commit/69743fe2bf261f33db887f0d292622ca6ff0e89c
+        # TODO--check on versions
+        # if PULUMI_HOME_ENV not in os.environ:
+        #     os.environ[PULUMI_HOME_ENV] = ".pulumi"
 
         ctx = self.context = pylumi.Context()
         provider = self.pulumi_provider = ctx.provider(self.schema.name, self.id.meta)
@@ -119,7 +126,10 @@ def load_pulumi_provider(
     if provider_name is None:
         provider_name = "pulumi/" + name
 
-    with pylumi.Context() as ctx, ctx.provider(name, config) as provider:
+    config = config.copy()
+    version = config.pop('version', None)
+
+    with pylumi.Context() as ctx, ctx.provider(name, config, version) as provider:
         schema = provider.get_schema(schema_version)
 
     parsed = parse_provider_schema_response(schema)

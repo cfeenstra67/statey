@@ -119,7 +119,7 @@ class CoroutineTask(Task):
     Wrap a coroutine in a task
     """
 
-    coro: Coroutine
+    coro_factory: Callable[[], Coroutine]
     description: Optional[str] = None
     _always_eager: bool = False
     _is_metatask: bool = False
@@ -131,7 +131,7 @@ class CoroutineTask(Task):
         return self._is_metatask
 
     async def run(self) -> None:
-        await self.coro
+        await self.coro_factory()
 
 
 @dc.dataclass(frozen=True)

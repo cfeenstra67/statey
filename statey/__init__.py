@@ -103,7 +103,7 @@ from statey.resource import (
     Resource,
 )
 
-from statey.task import Task, TaskSession, create_task_session
+from statey.task import Task, TaskSession, TaskStatus, create_task_session
 
 
 def set_registry(new_registry: Registry) -> None:

@@ -146,4 +146,4 @@ class CLILoggingHandler(logging.Handler):
 
         if record.exc_info is not None and self.fulltrace:
             formatted = traceback.format_exception(*record.exc_info)
-            print("".join(formatted))
+            click.secho("".join(formatted), fg="red")

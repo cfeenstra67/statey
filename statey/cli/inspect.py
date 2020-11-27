@@ -128,6 +128,25 @@ class PlanNodeSummary:
     def _style_current_name(self, name: str) -> str:
         return click.style(name, bold=True)
 
+    def crud_figures(self) -> Tuple[int, int, int]:
+        """
+        Returns (creating, updating, deleting) tuple
+        """
+        creating, updating, deleting = 0, 0, 0
+
+        if self.plan_node.current_action:
+            if self.plan_node.current_state:
+                deleting += 1
+
+            if self.plan_node.config_action and self.plan_node.config_state:
+                creating += 1
+        elif self.plan_node.current_state:
+            updating += 1
+        else:
+            creating += 1
+
+        return (creating, updating, deleting)
+
     def _config_summary(self) -> str:
         if (
             not self.plan_node.config_type
@@ -417,6 +436,21 @@ class PlanSummary:
 
         utils.subgraph_retaining_dependencies(task_graph, keep)
         return ascii_dag(graph=task_graph, key=lambda x: click.style(x, fg="yellow"))
+
+    def short_summary_string(self) -> str:
+        creating, updating, deleting = 0, 0, 0
+
+        for summary in self.node_summaries:
+            new_creating, new_updating, new_deleting = summary.crud_figures()
+            creating += new_creating
+            updating += new_updating
+            deleting += new_deleting
+
+        return (
+            f'{creating} to {click.style("create", fg="green", bold=True)}, '
+            f'{updating} to {click.style("update", fg="yellow", bold=True)}, '
+            f'{deleting} to {click.style("delete", fg="red", bold=True)}.'
+        )
 
 
 @dc.dataclass(frozen=True)

@@ -4,9 +4,9 @@ from typing import Dict, Any, Optional
 import pylumi
 
 import statey as st
-from statey.lib.pulumi.constants import PULUMI_ID
-from statey.lib.pulumi.exc import PulumiValidationError
-from statey.lib.pulumi.helpers import object_to_pulumi_json
+from statey.ext.pulumi.constants import PULUMI_ID
+from statey.ext.pulumi.exc import PulumiValidationError
+from statey.ext.pulumi.helpers import object_to_pulumi_json
 
 
 class PulumiResourceMachine(st.SingleStateMachine):

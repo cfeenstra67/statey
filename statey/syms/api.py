@@ -138,6 +138,8 @@ def join(head: Object, *tail: Sequence[Any]) -> Object:
     return the first element, but the result will depend on all of the
     additional arguments symbolically as well
     """
+    head = Object(head)
+
     tail_type = st.registry.infer_type(tail)
 
     def join_func(left: head._type, right: tail_type) -> head._type:

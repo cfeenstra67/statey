@@ -2,7 +2,7 @@ import dataclasses as dc
 from typing import Optional, Any, Dict, Sequence
 
 import statey as st
-from statey.lib.pulumi import PulumiProvider
+from statey.ext.pulumi import PulumiProvider
 from statey.syms import utils
 
 

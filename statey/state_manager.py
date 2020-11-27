@@ -51,12 +51,12 @@ class FileStateManager(StateManager):
 
 class DefaultStateManagerPlugin:
     """
-    Plugin to fetch a state.json file state as the default behavior
+    Plugin to fetch a .statey-state.json file state as the default behavior
     """
 
     @hookimpl
     def get_state_manager(registry: "Registry") -> StateManager:
-        return FileStateManager("state.json")
+        return FileStateManager(".statey-state.json")
 
 
 DEFAULT_PLUGINS = [DefaultStateManagerPlugin]

@@ -3,7 +3,7 @@ from typing import Sequence, Dict, Any
 
 class PulumiError(Exception):
     """
-    Errors originating from statey.lib.pulumi
+    Errors originating from statey.ext.pulumi
     """
 
 

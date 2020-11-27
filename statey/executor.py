@@ -106,8 +106,8 @@ class AsyncIOTaskGraph(TaskGraph):
         Get the task with the given key
         """
         if "task" not in self.task_graph.nodes[key]:
-            coro = self.task_graph.nodes[key]["coroutine"]
-            self.task_graph.nodes[key]["task"] = CoroutineTask(coro)
+            coro_factory = self.task_graph.nodes[key]["coroutine_factory"]
+            self.task_graph.nodes[key]["task"] = CoroutineTask(coro_factory)
         return self.task_graph.nodes[key]["task"]
 
     def get_info(self, key: str) -> TaskInfo:

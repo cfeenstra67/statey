@@ -8,8 +8,8 @@ import statey as st
 import pylumi
 from typing import Sequence, Dict, Any, Optional
 
-from statey.lib.pulumi import __file__ as root_file
-from statey.lib.pulumi.constants import RESOLVER_STORE
+from statey.ext.pulumi import __file__ as root_file
+from statey.ext.pulumi.constants import RESOLVER_STORE, PULUMI_NS
 
 
 ROOT_DIR = os.path.abspath(os.path.dirname(root_file))
@@ -86,7 +86,7 @@ class PulumiProviderSchemaParser:
             return second, ct2 + 1
 
         resolved = 0
-        schema_type = schema["type"]
+        schema_type = schema.get("type")
         if schema_type == "object":
             schema = schema.copy()
 
@@ -118,7 +118,24 @@ class PulumiProviderSchemaParser:
                 return self._resolve_refs(out_schema, doc)
             return out_schema, resolved
 
-        return schema, resolved
+        if schema_type is not None:
+            return schema, resolved
+
+        one_of = schema.get('oneOf')
+        if one_of is None:
+            return schema, resolved
+
+        outs = []
+        for item in one_of:
+            out, ct = self._resolve_refs(item, doc)
+            if out not in outs:
+                outs.append(out)
+                resolved += ct
+
+        out_schema = schema.copy()
+        del out_schema['oneOf']
+        out_schema.update(outs[-1])
+        return out_schema, resolved
 
     def parse(
         self, data: Dict[str, Any], registry: Optional[st.Registry] = None
@@ -215,10 +232,10 @@ class ProviderFinder:
     Module meta finder to allow loading providers via the import system
     """
 
-    prefix = "statey.lib.pulumi.providers"
+    prefix = "statey.ext.pulumi.providers"
 
     def find_spec(self, fullname, path, target=None) -> ModuleSpec:
-        from statey.lib.pulumi import provider_api
+        from statey.ext.pulumi import provider_api
 
         if not path:
             return None
@@ -247,7 +264,7 @@ class ProviderLoader:
         self.name = name
 
     def load_module(self, spec):
-        from statey.lib.pulumi import provider_api
+        from statey.ext.pulumi import provider_api
 
         api = sys.modules[spec] = provider_api.provider_api(self.name)
         api.__file__ = provider_api.__file__
@@ -263,7 +280,7 @@ class ProvidersLoader:
     """
 
     def load_module(self, spec):
-        from statey.lib.pulumi import provider_api
+        from statey.ext.pulumi import provider_api
 
         api = sys.modules[spec] = provider_api.ProvidersAPI()
         api.__file__ = provider_api.__file__
@@ -290,3 +307,34 @@ def unregister_meta_finder() -> None:
     """
     if FINDER in sys.meta_path:
         sys.meta_path.remove(FINDER)
+
+
+class AwsEnvironmentHandler:
+    """
+    Plugins to allow for easy environment-based setup of the pulumi AWS provider
+    """
+    @staticmethod
+    @st.hookimpl(hookwrapper=True)
+    def get_provider_config(name, params, registry):
+        if name == PULUMI_NS + '/aws':
+            default_region = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION"))
+            if default_region is not None:
+                params.setdefault("region", default_region)
+
+        outcome = yield
+
+
+PLUGINS = [AwsEnvironmentHandler]
+
+
+def register(registry: Optional[st.Registry] = None) -> None:
+    """
+    Register all plugins for this module
+    """
+    if registry is None:
+        registry = st.registry
+
+    register_meta_finder()
+
+    for plugin in PLUGINS:
+        registry.register(plugin)
