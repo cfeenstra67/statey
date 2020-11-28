@@ -28,7 +28,7 @@ with open('requirements-dev.txt') as f:
 		if not line.strip().startswith('#')
 	]
 
-with open(os.path.join(CURRENT_DIR, 'README.rst')) as f:
+with open('README.rst') as f:
     long_description = f.read().strip()
 
 extra_reqs = {
