@@ -119,7 +119,7 @@ After running `statey up`, the application will display a confirmation message, 
 
 You should get an output something like the following:
 
-.. 
+.. code-block:: bash
 
 	* object_2:current:task:delete            
 	| * object_1:current:task:delete             
