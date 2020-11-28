@@ -9,7 +9,7 @@ Statey is an infrastructure-as-code framework written in Python. The API is desi
 
 Statey supports pulumi resource providers through `pylumi <https://github.com/cfeenstra67/pylumi>`_, which actually in turn supports Terraform resource providers. This means an entire package index of potential resources is available*.
 
-*_NOTE_: Terraform resource providers communicate their type information via `JSONSchema`, which supports higher-level type operations such as `oneOf`. At the moment `statey` does not support anything except basic `JSONSchema` types (objects, strings, numbers, arrays, booleans, etc.)
+_NOTE_: Terraform resource providers communicate their type information via `JSONSchema`, which supports higher-level type operations such as `oneOf`. At the moment `statey` does not support anything except basic `JSONSchema` types (objects, strings, numbers, arrays, booleans, etc.)
 
 The core engine is lightweight and has just a few pure-python dependencies, and it is built from the ground up for extensibility. One of the core data strucrues in statey is the `Registry`, which is built on top of the excellent plugin engine `pluggy <https://github.com/pytest-dev/pluggy>`_. Nearly all of the core functions of statey are hook-based and can be extended or overridden very easily.
 
