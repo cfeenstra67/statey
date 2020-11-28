@@ -14,7 +14,8 @@ except RuntimeError:
 
 
 def register(
-    registry: Optional["Registry"] = None, pulumi: Optional[bool] = None,
+    registry: Optional["Registry"] = None,
+    pulumi: Optional[bool] = None,
 ) -> None:
     """
     Register all default library resources

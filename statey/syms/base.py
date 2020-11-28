@@ -13,22 +13,22 @@ from statey.syms.stack import internalcode, rewrite_ctx
 
 class AttributeAccess(abc.ABC):
     """
-	Defines some interface for getting attributes for some object
-	"""
+    Defines some interface for getting attributes for some object
+    """
 
     @abc.abstractmethod
     def get_attr(self, obj: Any, attr: str) -> Any:
         """
-		Get some attribute by name on the given object
-		"""
+        Get some attribute by name on the given object
+        """
         raise NotImplementedError
 
 
 @dc.dataclass(frozen=True)
 class OrderedAttributeAccess(AttributeAccess):
     """
-	Combine a set of AttributeAccess instances and attempt to use them in order
-	"""
+    Combine a set of AttributeAccess instances and attempt to use them in order
+    """
 
     accessors: Sequence[AttributeAccess]
 
@@ -45,8 +45,8 @@ class OrderedAttributeAccess(AttributeAccess):
 @dc.dataclass(frozen=True)
 class GetattrBasedAttributeAccess(AttributeAccess):
     """
-	Simple default python attribute access
-	"""
+    Simple default python attribute access
+    """
 
     obj: Any
 
@@ -57,29 +57,29 @@ class GetattrBasedAttributeAccess(AttributeAccess):
 
 class Proxy(abc.ABC):
     """
-	Defines a generic way to bind an attribute access object to some instance
-	"""
+    Defines a generic way to bind an attribute access object to some instance
+    """
 
     @property
     def _instance(self) -> Any:
         """
-		Allow use of this class 
-		"""
+        Allow use of this class
+        """
         return self
 
     @property
     @abc.abstractmethod
     def _accessor(self) -> AttributeAccess:
         """
-		Get the AttributeAccess instance for this instance
-		"""
+        Get the AttributeAccess instance for this instance
+        """
         raise NotImplementedError
 
     @internalcode
     def __getitem__(self, attr: Any) -> Any:
         """
-		Main API method for accessing attributes. Test all accessors in order.
-		"""
+        Main API method for accessing attributes. Test all accessors in order.
+        """
         return self._accessor.get_attr(self._instance, attr)
 
     @internalcode
@@ -95,8 +95,8 @@ class Proxy(abc.ABC):
 @dc.dataclass(frozen=True)
 class BoundAttributeAccess(Proxy):
     """
-	Simple object to allow attribute access on an arbitrary instance
-	"""
+    Simple object to allow attribute access on an arbitrary instance
+    """
 
     instance: dc.InitVar[Any]
     accessor: dc.InitVar[AttributeAccess]

@@ -41,15 +41,11 @@ class ProvidersAPI(APIMixin):
         return api
 
     def __dir__(self) -> Sequence[str]:
-        """
-
-        """
+        """"""
         return dir(super()) + list(self._providers)
 
     def __getattr__(self, attr: str) -> "API_Provider":
-        """
-
-        """
+        """"""
         try:
             return getattr(super(), attr)
         except AttributeError:
@@ -63,9 +59,7 @@ providers = ProvidersAPI()
 
 
 class ProviderAPI(APIMixin):
-    """
-
-    """
+    """"""
 
     def __init__(self, name: str, provider: PulumiProvider, parent: Any) -> None:
         self.name = name
@@ -85,23 +79,17 @@ class ProviderAPI(APIMixin):
         return names
 
     def get_module(self, name: str) -> "ModuleAPI":
-        """
-
-        """
+        """"""
         if name not in self.modules:
             raise KeyError(name)
         return ModuleAPI(name, self.modules[name], self.provider, self)
 
     def __dir__(self) -> Sequence[str]:
-        """
-
-        """
+        """"""
         return dir(super()) + list(self.modules)
 
     def __getattr__(self, attr: str) -> "ModuleAPI":
-        """
-
-        """
+        """"""
         try:
             return getattr(super(), attr)
         except AttributeError:
@@ -112,9 +100,7 @@ class ProviderAPI(APIMixin):
 
 
 class ModuleAPI(APIMixin):
-    """
-
-    """
+    """"""
 
     def __init__(
         self,
@@ -129,9 +115,7 @@ class ModuleAPI(APIMixin):
         self.resources = resources
 
     def get_resource(self, name: str) -> st.BoundState:
-        """
-
-        """
+        """"""
         if name not in self.resources:
             raise KeyError(name)
         resource_name = self.resources[name]
@@ -139,15 +123,11 @@ class ModuleAPI(APIMixin):
         return resource
 
     def __dir__(self) -> Sequence[str]:
-        """
-
-        """
+        """"""
         return dir(super()) + list(self.resources)
 
     def __getattr__(self, attr: str) -> "ProviderAPI":
-        """
-
-        """
+        """"""
         try:
             return getattr(super(), attr)
         except AttributeError:

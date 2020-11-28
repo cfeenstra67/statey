@@ -20,8 +20,8 @@ from statey.task import Task, SessionSwitch, ResourceGraphOperation, TaskStatus
 
 def color_for_status(status: TaskStatus) -> Optional[str]:
     """
-	Return the color (as a string) that we want to use to print this related to this status
-	"""
+    Return the color (as a string) that we want to use to print this related to this status
+    """
     color_dict = {
         TaskStatus.SUCCESS: "green",
         TaskStatus.FAILED: "red",
@@ -51,8 +51,8 @@ def ljust(value: str, length: int) -> str:
 
 class ColoredTypeRenderer(types.TypeStringRenderer):
     """
-	Type string renderer that will add coloration
-	"""
+    Type string renderer that will add coloration
+    """
 
     style_map = {
         types.TypeStringToken.RIGHT_BRACE: lambda x: click.style(x, fg="yellow"),
@@ -78,8 +78,8 @@ class ColoredTypeRenderer(types.TypeStringRenderer):
 
 def data_to_lines(data: Any, name_func=lambda x: x) -> Sequence[str]:
     """
-	Render the data to a readable, yaml-like structure
-	"""
+    Render the data to a readable, yaml-like structure
+    """
     if isinstance(data, Object) and isinstance(data._impl, impl.Unknown):
         return ["<unknown>"]
     if isinstance(data, list):
@@ -108,16 +108,16 @@ def data_to_lines(data: Any, name_func=lambda x: x) -> Sequence[str]:
 
 def data_to_string(data: Any, name_func=lambda x: x) -> str:
     """
-	Give a nice human-readable representaiton of the data using YAML
-	"""
+    Give a nice human-readable representaiton of the data using YAML
+    """
     return "\n".join(data_to_lines(data, name_func=name_func))
 
 
 @dc.dataclass(frozen=True)
 class PlanNodeSummary:
     """
-	Contains basic human-redable details about a plan node
-	"""
+    Contains basic human-redable details about a plan node
+    """
 
     show_tasks: nx.DiGraph
     plan_node: PlanNode
@@ -404,8 +404,8 @@ def ascii_dag(graph: nx.DiGraph, key: Callable[[str], str] = lambda x: x) -> str
 @dc.dataclass(frozen=True)
 class PlanSummary:
     """
-	Contains basic human-readable details about a plan
-	"""
+    Contains basic human-readable details about a plan
+    """
 
     plan: Plan
     node_summaries: Sequence[PlanNodeSummary]
@@ -456,16 +456,16 @@ class PlanSummary:
 @dc.dataclass(frozen=True)
 class ExecutionSummary:
     """
-	Summary info about executioninfo
-	"""
+    Summary info about executioninfo
+    """
 
     exec_info: ExecutionInfo
     show_metatasks: bool
 
     def tasks_by_status(self) -> Dict[TaskStatus, Sequence[str]]:
         """
-		Return all task keys in this task graph grouped by their status
-		"""
+        Return all task keys in this task graph grouped by their status
+        """
         out = {}
         for node in self.exec_info.task_graph.task_graph.nodes:
             status = self.exec_info.task_graph.get_info(node).status
@@ -481,9 +481,9 @@ class ExecutionSummary:
 
     def to_string(self, indent: int = 2, full_trace: bool = False) -> str:
         """
-		Render a human-readable view describing what occurred in this
-		exec info
-		"""
+        Render a human-readable view describing what occurred in this
+        exec info
+        """
         task_dict = self.tasks_by_status()
         duration = (
             self.exec_info.end_timestamp - self.exec_info.start_timestamp
@@ -550,8 +550,8 @@ class ExecutionSummary:
 @dc.dataclass(frozen=True)
 class Inspector:
     """
-	Utilities for visualizing plans in a human-readable manner.
-	"""
+    Utilities for visualizing plans in a human-readable manner.
+    """
 
     def plan_summary(self, plan: Plan, show_metatasks: bool = False) -> PlanSummary:
         nodes = []
@@ -582,8 +582,8 @@ class Inspector:
         self, exec_info: ExecutionInfo, show_metatasks: bool = False
     ) -> ExecutionSummary:
         """
-		Get a summary for an exec_info instance
-		"""
+        Get a summary for an exec_info instance
+        """
         return ExecutionSummary(exec_info, show_metatasks)
 
 

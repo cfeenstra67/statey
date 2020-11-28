@@ -10,8 +10,8 @@ from statey.syms import base, stack
 
 def get_item_passthrough(name: str) -> Callable[[Any], Any]:
     """
-	Get a simple method that will just get an attribute using __getitem__
-	"""
+    Get a simple method that will just get an attribute using __getitem__
+    """
 
     def func(self):
         return self[name]
@@ -23,9 +23,9 @@ def get_item_passthrough(name: str) -> Callable[[Any], Any]:
 @dc.dataclass(frozen=True, repr=False)
 class Object(base.Proxy):
     """
-	A uniform API for structuring access to statey objects. Should not be
-	called directly, use an API method to create objects
-	"""
+    A uniform API for structuring access to statey objects. Should not be
+    called directly, use an API method to create objects
+    """
 
     impl: dc.InitVar[Any]
     type: dc.InitVar[Optional[Union["Type", Any]]] = None
@@ -51,8 +51,8 @@ class Object(base.Proxy):
         frame: Optional[stack.FrameSnapshot],
     ) -> None:
         """
-		Set up the Object instance
-		"""
+        Set up the Object instance
+        """
         import statey as st
         from statey.syms.impl import ObjectImplementation
 
@@ -123,31 +123,31 @@ class Object(base.Proxy):
 
     def __repr__(self) -> str:
         """
-		Produce a string representation of this object
-		"""
+        Produce a string representation of this object
+        """
         return self._inst.object_repr()
 
     @property
     def i(self) -> base.Proxy:
         """
-		Convenient access to get an implementation-specific bound attribute accessor
-		"""
+        Convenient access to get an implementation-specific bound attribute accessor
+        """
         return base.BoundAttributeAccess(self, self._impl)
 
     @property
     def m(self) -> base.Proxy:
         """
-		Convenient access for object methods
-		"""
+        Convenient access for object methods
+        """
         return base.BoundAttributeAccess(self, self._registry.get_methods(self._type))
 
     @property
     def _(self) -> Any:
         """
-		If this object can be trivially resolved alone, do that here. Otherwise, just
-		return self. This is useful to resolve something "as much as possible" without
-		having to reason about whether something is an Object vs. a regular Python object
-		"""
+        If this object can be trivially resolved alone, do that here. Otherwise, just
+        return self. This is useful to resolve something "as much as possible" without
+        having to reason about whether something is an Object vs. a regular Python object
+        """
         obj = self
         while isinstance(obj, Object):
             try:

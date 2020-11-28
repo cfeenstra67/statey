@@ -4,7 +4,7 @@ from typing import Optional
 
 class PluginInstaller(abc.ABC):
     """
-    Implements installation functionality for 
+    Implements installation functionality for
     """
 
     def setup(self) -> None:

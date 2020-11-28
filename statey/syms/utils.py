@@ -21,8 +21,8 @@ STRING_TYPES = (str, bytes)
 @dc.dataclass(frozen=True)
 class Global:
     """
-	An arbitrary named value intended to be used at the global level
-	"""
+    An arbitrary named value intended to be used at the global level
+    """
 
     name: str
 
@@ -38,8 +38,8 @@ EXPLODE = Global("EXPLODE")
 
 def extract_optional_annotation(annotation: Any) -> Any:
     """
-	Determine if the given annotation is an Optional field
-	"""
+    Determine if the given annotation is an Optional field
+    """
     if (
         hasattr(annotation, "__origin__")
         and annotation.__origin__ is Union
@@ -101,8 +101,8 @@ def dict_get_path(
     data: Dict[Hashable, Any], path: Sequence[Hashable], explode: bool = True
 ) -> Any:
     """
-	Get the key at the given path from the dictionary
-	"""
+    Get the key at the given path from the dictionary
+    """
     current = data
     current_path = list(path)
     while current_path:
@@ -120,8 +120,8 @@ def map_dims(
     func: Callable[[Any], Any], arr: Sequence[Any], ndims: int = 1
 ) -> Sequence[Any]:
     """
-	Apply func to the elements of a multi-dimensional array with `ndims` dimensions
-	"""
+    Apply func to the elements of a multi-dimensional array with `ndims` dimensions
+    """
     if ndims == 0:
         return func(arr)
     return [map_dims(func, item, ndims - 1) for item in arr]
@@ -131,8 +131,8 @@ def dict_set_path(
     data: Dict[Hashable, Any], path: Sequence[Hashable], value: Any
 ) -> Any:
     """
-	Set the given value at the given path in the dict
-	"""
+    Set the given value at the given path in the dict
+    """
     current = data
     current_path = path[:-1]
     while current_path:
@@ -156,8 +156,8 @@ def reraise_ma_validation_error():
 
 class PossiblySymbolicField(ma.fields.Field):
     """
-	A field that will validate the type if given a symbol or the value if given anything else
-	"""
+    A field that will validate the type if given a symbol or the value if given anything else
+    """
 
     def __init__(
         self,
@@ -210,8 +210,8 @@ class PossiblySymbolicField(ma.fields.Field):
 
 class SingleValueFunction(ma.fields.Function):
     """
-	Use encoding and decoding functions to process a specific field
-	"""
+    Use encoding and decoding functions to process a specific field
+    """
 
     _CHECK_ATTRIBUTE = True
 
@@ -223,8 +223,8 @@ def filter_dict(
     keep: Callable[[Any], bool], data: Dict[Hashable, Any], and_sequences: bool = True
 ) -> Dict[Hashable, Any]:
     """
-	Similar to the filter() function, but applied recursively to a dict
-	"""
+    Similar to the filter() function, but applied recursively to a dict
+    """
     out = {}
     for key, val in data.items():
         if isinstance(val, dict):
@@ -249,8 +249,8 @@ def filter_dict(
 
 def invert_filter(func: Callable[[Any], bool]) -> Callable[[Any], bool]:
     """
-	Return a new function that returns `not func(x)`
-	"""
+    Return a new function that returns `not func(x)`
+    """
 
     def wrapper(x):
         return not func(x)
@@ -267,8 +267,8 @@ def is_missing(value: Any) -> bool:
 
 def infer_annotation(obj: Any) -> Any:
     """
-	Attempt to infer an annotation from obj, falling back on `type(obj)`
-	"""
+    Attempt to infer an annotation from obj, falling back on `type(obj)`
+    """
     obj_type = type(obj)
     if (
         isinstance(obj, Sequence)
@@ -411,8 +411,8 @@ def bind_function_args(
 
 def encodeable_dataclass_fields(data: Any) -> Sequence[dc.field]:
     """.
-	Respect the statey-specific field metadtaa and don't encode fields where statey.encode = False
-	"""
+    Respect the statey-specific field metadtaa and don't encode fields where statey.encode = False
+    """
     out = []
     for field in dc.fields(data):
         syms_meta = field.metadata.get(NS) or {}
@@ -424,22 +424,22 @@ def encodeable_dataclass_fields(data: Any) -> Sequence[dc.field]:
 
 class Cloneable:
     """
-	Mixin for dataclasses adding a clone() method
-	"""
+    Mixin for dataclasses adding a clone() method
+    """
 
     def clone(self, **kwargs) -> "Cloneable":
         """
-		Return a copy of the current object with the given attributes replaced. This current
-		object should be an instance of a dataclass
-		"""
+        Return a copy of the current object with the given attributes replaced. This current
+        object should be an instance of a dataclass
+        """
         return dc.replace(self, **kwargs)
 
 
 def subgraph_retaining_dependencies(dag: nx.DiGraph, keep_nodes: Sequence[str]) -> None:
     """
-	Remove nodes while retaining any indirect dependencies between them. Modifies the graph
-	in place.
-	"""
+    Remove nodes while retaining any indirect dependencies between them. Modifies the graph
+    in place.
+    """
     for node in list(nx.topological_sort(dag)):
         if node in keep_nodes:
             continue

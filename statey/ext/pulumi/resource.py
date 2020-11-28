@@ -10,16 +10,12 @@ from statey.ext.pulumi.helpers import object_to_pulumi_json
 
 
 class PulumiResourceMachine(st.SingleStateMachine):
-    """
-
-    """
+    """"""
 
     def make_output(
         self, data: Dict[str, Any], id: str, typ: st.Type
     ) -> Dict[str, Any]:
-        """
-
-        """
+        """"""
         data = dict(data, **{PULUMI_ID: id})
         # Trim any extra fields
         data = {
@@ -50,9 +46,7 @@ class PulumiResourceMachine(st.SingleStateMachine):
     def make_expected_output(
         self, data: Dict[str, Any], config: st.StateConfig, typ: st.Type
     ) -> st.Object:
-        """
-
-        """
+        """"""
         stripped = {key: val for key, val in data.items() if val is not None}
 
         drop_fields = []

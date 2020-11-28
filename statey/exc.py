@@ -73,14 +73,14 @@ class ErrorDuringPlanningNode(PlanError):
 
 class SymsError(StateyError):
     """
-	Base class for errors in the syms package
-	"""
+    Base class for errors in the syms package
+    """
 
 
 class SymsTypeError(SymsError, TypeError):
     """
-	TypeError base class for type-related errors
-	"""
+    TypeError base class for type-related errors
+    """
 
 
 class NotFoundError(SymsTypeError):
@@ -91,8 +91,8 @@ class NotFoundError(SymsTypeError):
 
 class NoTypeFound(NotFoundError):
     """
-	Error to indicate we could not find a type for some annotation
-	"""
+    Error to indicate we could not find a type for some annotation
+    """
 
     def __init__(self, annotation: Any) -> None:
         self.annotation = annotation
@@ -101,8 +101,8 @@ class NoTypeFound(NotFoundError):
 
 class NoEncoderFound(NotFoundError):
     """
-	Error to indicate we could not find an encoder for some type
-	"""
+    Error to indicate we could not find an encoder for some type
+    """
 
     def __init__(self, type: "Type", serializable: bool = False) -> None:
         self.type = type
@@ -113,8 +113,8 @@ class NoEncoderFound(NotFoundError):
 
 class NoSemanticsFound(NotFoundError):
     """
-	Error to indicate we could not find semantics for some type
-	"""
+    Error to indicate we could not find semantics for some type
+    """
 
     def __init__(self, type: "Type") -> None:
         self.type = type
@@ -123,8 +123,8 @@ class NoSemanticsFound(NotFoundError):
 
 class NoResourceFound(NotFoundError):
     """
-	Error to indicate no resource could be found for a given name
-	"""
+    Error to indicate no resource could be found for a given name
+    """
 
     def __init__(self, resource_name: str) -> None:
         self.resource_name = resource_name
@@ -164,14 +164,14 @@ class NoCasterFound(NotFoundError):
 
 class NoTypeSerializerFound(NotFoundError):
     """
-	Base class for NoTypeSerializerFound errors
-	"""
+    Base class for NoTypeSerializerFound errors
+    """
 
 
 class NoTypeSerializerFoundForType(NoTypeSerializerFound):
     """
-	Error to indicate no type serializer could be found for a given name
-	"""
+    Error to indicate no type serializer could be found for a given name
+    """
 
     def __init__(self, type: "Type") -> None:
         self.type = type
@@ -180,8 +180,8 @@ class NoTypeSerializerFoundForType(NoTypeSerializerFound):
 
 class NoTypeSerializerFoundForData(NoTypeSerializerFound):
     """
-	Error to indicate no type serializer could be found for a given name
-	"""
+    Error to indicate no type serializer could be found for a given name
+    """
 
     def __init__(self, data: Any) -> None:
         self.data = data
@@ -333,14 +333,14 @@ class NoPluginInstallerFound(NotFoundError):
 
 class NamespaceError(SymsError):
     """
-	Error raised from a namespace
-	"""
+    Error raised from a namespace
+    """
 
 
 class DuplicateSymbolKey(NamespaceError):
     """
-	Error class indicating that we tried to insert a duplicate key into a session
-	"""
+    Error class indicating that we tried to insert a duplicate key into a session
+    """
 
     def __init__(self, key: str, ns: "Namespace") -> None:
         self.key = key
@@ -352,8 +352,8 @@ class DuplicateSymbolKey(NamespaceError):
 
 class SymbolKeyError(NamespaceError, KeyError):
     """
-	Error raised by a session to indicate a requested key cannot be resolved
-	"""
+    Error raised by a session to indicate a requested key cannot be resolved
+    """
 
     def __init__(self, key: str, ns: "Namespace") -> None:
         self.key = key
@@ -363,8 +363,8 @@ class SymbolKeyError(NamespaceError, KeyError):
 
 class SymbolAttributeError(SymsError, AttributeError):
     """
-	Error raised to indicate that an attribute reference cannot be resolved on a symbol
-	"""
+    Error raised to indicate that an attribute reference cannot be resolved on a symbol
+    """
 
     def __init__(self, value: Any, attr: Any) -> None:
         self.value = value
@@ -384,15 +384,15 @@ class NoSuchMethodError(SymsError):
 
 class FutureError(SymsError):
     """
-	impl.Future-related errors
-	"""
+    impl.Future-related errors
+    """
 
 
 class FutureResultNotSet(FutureError):
     """
-	Error indicating that get_result() was called on a future whose
-	result was not set yet
-	"""
+    Error indicating that get_result() was called on a future whose
+    result was not set yet
+    """
 
     def __init__(self, future: "Future") -> None:
         self.future = future
@@ -401,9 +401,9 @@ class FutureResultNotSet(FutureError):
 
 class FutureResultAlreadySet(FutureError):
     """
-	Error indicating that get_result() was called on a future whose
-	result was not set yet
-	"""
+    Error indicating that get_result() was called on a future whose
+    result was not set yet
+    """
 
     def __init__(self, future_or_result: Any) -> None:
         from statey.syms.impl import Future, FutureResult
@@ -423,8 +423,8 @@ class FutureResultAlreadySet(FutureError):
 
 class SessionError(SymsError):
     """
-	Error raised from a session
-	"""
+    Error raised from a session
+    """
 
 
 class ResolutionError(SessionError):
@@ -472,8 +472,8 @@ class UnknownError(SessionError):
 
 class MissingDataError(SessionError):
     """
-	Error indicating that a symbol cannot be resolved because data is missing
-	"""
+    Error indicating that a symbol cannot be resolved because data is missing
+    """
 
     def __init__(self, key: str, type: "Type", session: "Session") -> None:
         self.key = key
@@ -486,14 +486,14 @@ class MissingDataError(SessionError):
 
 class InputValidationError(ma.ValidationError, SymsError):
     """
-	Wrapper for a marshmallow validation error, reraise it as a syms exception
-	"""
+    Wrapper for a marshmallow validation error, reraise it as a syms exception
+    """
 
 
 class NonEncodeableTypeError(SymsTypeError):
     """
-	Raise to indicate that we tried to encode a non-encodeable value
-	"""
+    Raise to indicate that we tried to encode a non-encodeable value
+    """
 
     def __init__(self, type: "Type") -> None:
         self.type = type

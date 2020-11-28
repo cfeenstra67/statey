@@ -12,8 +12,8 @@ from statey.syms import types, utils, impl
 @dc.dataclass(frozen=True)
 class HandleOptionalPlugin:
     """
-	Handle an Optional[] annotation wrapper
-	"""
+    Handle an Optional[] annotation wrapper
+    """
 
     @st.hookimpl
     def get_type(
@@ -29,9 +29,9 @@ class HandleOptionalPlugin:
 @dc.dataclass(frozen=True)
 class ValuePredicatePlugin:
     """
-	Simple predicate plugin that will may an annotation to a ValueType subclass (or any
-	whos constructor is just the nullable argument)
-	"""
+    Simple predicate plugin that will may an annotation to a ValueType subclass (or any
+    whos constructor is just the nullable argument)
+    """
 
     predicate: Union[Callable[[Any], bool], PyType]
     type_cls: PyType[types.ValueType]
@@ -54,8 +54,8 @@ class ValuePredicatePlugin:
 @dc.dataclass(frozen=True)
 class AnyPlugin:
     """
-	Plugin that will always return AnyType. Should be added FIRST
-	"""
+    Plugin that will always return AnyType. Should be added FIRST
+    """
 
     @st.hookimpl
     def get_type(
@@ -67,8 +67,8 @@ class AnyPlugin:
 @dc.dataclass(frozen=True)
 class ParseSequencePlugin:
     """
-	Parse lists and sequences into ArrayTypes
-	"""
+    Parse lists and sequences into ArrayTypes
+    """
 
     array_type_cls: PyType[types.ArrayType] = types.ArrayType
 
@@ -140,8 +140,8 @@ class ParseMappingPlugin:
 @dc.dataclass(frozen=True)
 class ParseDataClassPlugin:
     """
-	Parse a specific dataclass into a StructType
-	"""
+    Parse a specific dataclass into a StructType
+    """
 
     dataclass_cls: PyType
     struct_type_cls: PyType[types.StructType] = types.StructType
@@ -175,8 +175,8 @@ class ParseDataClassPlugin:
 @dc.dataclass(frozen=True)
 class EncodeDataClassPlugin:
     """
-	Parse a specific dataclass into a StructType
-	"""
+    Parse a specific dataclass into a StructType
+    """
 
     dataclass_cls: PyType
     struct_type_cls: PyType[types.StructType] = types.StructType
@@ -287,8 +287,8 @@ DEFAULT_PLUGINS = [
 
 def register(registry: Optional["Registry"] = None) -> None:
     """
-	Register default plugins
-	"""
+    Register default plugins
+    """
     if registry is None:
         registry = st.registry
 

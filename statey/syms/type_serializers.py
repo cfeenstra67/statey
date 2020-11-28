@@ -8,29 +8,29 @@ from statey.syms import types
 
 class TypeSerializer(abc.ABC):
     """
-	A type serializer encodoes/decodes a type to/from a JSON-serializable value
-	"""
+    A type serializer encodoes/decodes a type to/from a JSON-serializable value
+    """
 
     @abc.abstractmethod
     def serialize(self, type: types.Type) -> Any:
         """
-		Serialize the given type to a dictionary or some JSONI-serializable value
-		"""
+        Serialize the given type to a dictionary or some JSONI-serializable value
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def deserialize(self, data: Any) -> types.Type:
         """
-		Deserialize the gien data (which should be the output of a serialize() call)
-		into a native types.Type
-		"""
+        Deserialize the gien data (which should be the output of a serialize() call)
+        into a native types.Type
+        """
         raise NotImplementedError
 
 
 class ValueTypeSerializer(TypeSerializer):
     """
-	This serializes simple "value" types like ints, booleans
-	"""
+    This serializes simple "value" types like ints, booleans
+    """
 
     type_cls: PyType[types.Type]
     type_name: str
@@ -66,8 +66,8 @@ class ValueTypeSerializer(TypeSerializer):
 @dc.dataclass(frozen=True)
 class IntegerTypeSerializer(ValueTypeSerializer):
     """
-	Value type serializer for ints
-	"""
+    Value type serializer for ints
+    """
 
     type_cls = types.IntegerType
     type_name = "integer"
@@ -76,8 +76,8 @@ class IntegerTypeSerializer(ValueTypeSerializer):
 @dc.dataclass(frozen=True)
 class FloatTypeSerializer(ValueTypeSerializer):
     """
-	Value type serializer for floats
-	"""
+    Value type serializer for floats
+    """
 
     type_cls = types.FloatType
     type_name = "number"
@@ -86,8 +86,8 @@ class FloatTypeSerializer(ValueTypeSerializer):
 @dc.dataclass(frozen=True)
 class BooleanTypeSerializer(ValueTypeSerializer):
     """
-	Value type serializer for booleans
-	"""
+    Value type serializer for booleans
+    """
 
     type_cls = types.BooleanType
     type_name = "boolean"
@@ -96,8 +96,8 @@ class BooleanTypeSerializer(ValueTypeSerializer):
 @dc.dataclass(frozen=True)
 class StringTypeSerializer(ValueTypeSerializer):
     """
-	Value type serializer for strings
-	"""
+    Value type serializer for strings
+    """
 
     type_cls = types.StringType
     type_name = "string"
@@ -116,8 +116,8 @@ class AnyTypeSerializer(ValueTypeSerializer):
 @dc.dataclass(frozen=True)
 class ArrayTypeSerializer(TypeSerializer):
     """
-	Type serializer for arrays
-	"""
+    Type serializer for arrays
+    """
 
     element_serializer: "TypeSerializer"
 
@@ -219,8 +219,8 @@ class MapTypeSerializer(TypeSerializer):
 @dc.dataclass(frozen=True)
 class StructTypeSerializer(TypeSerializer):
     """
-	Type serializer for structs
-	"""
+    Type serializer for structs
+    """
 
     field_serializers: Dict[str, TypeSerializer]
 
@@ -384,8 +384,8 @@ TYPE_SERIALIZER_CLASSES = [
 
 def register(registry: Optional["Registry"] = None) -> None:
     """
-	Register default type serializer classes
-	"""
+    Register default type serializer classes
+    """
     if registry is None:
         registry = st.registry
 

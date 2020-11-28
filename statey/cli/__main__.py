@@ -35,7 +35,7 @@ yes_opt = click.option(
 
 def run_plan_and_apply(controller, yes):
     """
-    Run logic to plan and optionally 
+    Run logic to plan and optionally
     """
     controller.setup_plan()
 
@@ -72,9 +72,7 @@ def run_plan_and_apply(controller, yes):
 @click.option("--debug", help="Additional output.", is_flag=True)
 @click.pass_context
 def cli(ctx, config, debug):
-    """
-
-    """
+    """"""
     ctx.ensure_object(dict)
     ctx.obj["config"] = config
     ctx.obj["terminal_size"] = shutil.get_terminal_size((80, 20))
@@ -87,9 +85,7 @@ def cli(ctx, config, debug):
 @diff_opt
 @click.pass_context
 def plan(ctx, diff):
-    """
-
-    """
+    """"""
     controller = Controller(
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],
@@ -122,9 +118,7 @@ def plan(ctx, diff):
 @yes_opt
 @click.pass_context
 def up(ctx, diff, fulltrace, yes):
-    """
-
-    """
+    """"""
     controller = Controller(
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],
@@ -154,9 +148,7 @@ def up(ctx, diff, fulltrace, yes):
 @yes_opt
 @click.pass_context
 def down(ctx, diff, fulltrace, yes):
-    """
-
-    """
+    """"""
     controller = Controller(
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],
@@ -177,9 +169,7 @@ def down(ctx, diff, fulltrace, yes):
 @cli.command()
 @click.pass_context
 def refresh(ctx):
-    """
-
-    """
+    """"""
     controller = Controller(
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],
@@ -237,9 +227,7 @@ def query(ctx, compact, paths):
 @click.option("-r", "--resource", type=str, default=None)
 @click.pass_context
 def docs(ctx, provider, resource):
-    """
-
-    """
+    """"""
     controller = Controller(
         logger=LOGGER,
         terminal_size=ctx.obj["terminal_size"],

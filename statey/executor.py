@@ -152,9 +152,9 @@ class AsyncIOTaskGraph(TaskGraph):
 @dc.dataclass(frozen=True)
 class ResourceTaskGraph(TaskGraph):
     """
-	Wrapper class for a flat task graph, offering API methods to manipulate it, usually with
-	an executor
-	"""
+    Wrapper class for a flat task graph, offering API methods to manipulate it, usually with
+    an executor
+    """
 
     task_graph: nx.DiGraph
     output_session: session.Session
@@ -162,8 +162,8 @@ class ResourceTaskGraph(TaskGraph):
 
     def __post_init__(self) -> None:
         """
-		Fill initial states for all tasks
-		"""
+        Fill initial states for all tasks
+        """
         for node in self.task_graph:
             self.task_graph.nodes[node]["info"] = TaskInfo(TaskStatus.NOT_STARTED)
 
@@ -213,11 +213,11 @@ class ResourceTaskGraph(TaskGraph):
 
 class ExecutionStrategy(enum.Enum):
     """
-	Define different methods of execution a graph.
-	EAGER means that we'll keep executing as long as we don't have a failure in a given
-	branch.
-	TENTATIVE means once we have one failure, we won't schedule any more tasks
-	"""
+    Define different methods of execution a graph.
+    EAGER means that we'll keep executing as long as we don't have a failure in a given
+    branch.
+    TENTATIVE means once we have one failure, we won't schedule any more tasks
+    """
 
     EAGER = "eager"
     TENTATIVE = "tentative"
@@ -226,8 +226,8 @@ class ExecutionStrategy(enum.Enum):
 @dc.dataclass
 class ExecutionInfo(utils.Cloneable):
     """
-	Store some metadata about the result of an execution.
-	"""
+    Store some metadata about the result of an execution.
+    """
 
     task_graph: TaskGraph
     strategy: ExecutionStrategy
@@ -265,31 +265,31 @@ class ExecutionInfo(utils.Cloneable):
 
 class TaskGraphHooks:
     """
-	Specifies hooks to call during task graph execution
-	"""
+    Specifies hooks to call during task graph execution
+    """
 
     @hookspec
     def before_run(self, key: str, task: Task, executor: "TaskGraphExecutor") -> None:
         """
-		Register side effects before a given task is run
-		"""
+        Register side effects before a given task is run
+        """
 
     @hookspec
     def after_run(
         self, key: str, task: Task, status: TaskStatus, executor: "TaskGraphExecutor"
     ) -> None:
         """
-		Register side effects after a given task is run
-		"""
+        Register side effects after a given task is run
+        """
 
     @hookspec
     def caught_signal(
         self, signals: int, max_signals: int, executor: "TaskGraphExecutor"
     ) -> None:
         """
-		Register side effects when a signal is caught, indicating whether the program
-		is going to exit
-		"""
+        Register side effects when a signal is caught, indicating whether the program
+        is going to exit
+        """
 
     @hookspec
     def task_wrapper(
@@ -302,8 +302,8 @@ class TaskGraphHooks:
 
 def create_executor_plugin_manager() -> pluggy.PluginManager:
     """
-	Factory function for a plugin manager for a GraphExecutor
-	"""
+    Factory function for a plugin manager for a GraphExecutor
+    """
     pm = create_plugin_manager()
     pm.add_hookspecs(TaskGraphHooks)
     return pm
@@ -311,8 +311,8 @@ def create_executor_plugin_manager() -> pluggy.PluginManager:
 
 class TaskGraphExecutor(abc.ABC):
     """
-	Executes all the tasks in a given graph
-	"""
+    Executes all the tasks in a given graph
+    """
 
     pm: pluggy.PluginManager
 
@@ -324,15 +324,13 @@ class TaskGraphExecutor(abc.ABC):
         max_signals: int = 2,
     ) -> ExecutionInfo:
         """
-		Execute the tasks in the given graph, returning information about the run.
-		"""
+        Execute the tasks in the given graph, returning information about the run.
+        """
         raise NotImplementedError
 
 
 class AsyncTaskGraphExecutor(TaskGraphExecutor):
-    """
-
-    """
+    """"""
 
     @abc.abstractmethod
     async def execute_async(
@@ -407,8 +405,8 @@ class AsyncTaskGraphExecutor(TaskGraphExecutor):
 
 class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
     """
-	Graph executors that uses python asyncio couroutines for concurrency
-	"""
+    Graph executors that uses python asyncio couroutines for concurrency
+    """
 
     def __init__(self, pm: Optional[pluggy.PluginManager] = None) -> None:
         if pm is None:
@@ -417,8 +415,8 @@ class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
 
     async def after_task_success(self, key: str, exec_info: ExecutionInfo) -> None:
         """
-		Callback after a task completes _successfully_
-		"""
+        Callback after a task completes _successfully_
+        """
         exec_info.task_graph.set_status(key, TaskStatus.SUCCESS)
 
         ready_tasks = exec_info.task_graph.get_ready_tasks()
@@ -474,8 +472,8 @@ class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
         self, key: str, exec_info: ExecutionInfo, error: ErrorInfo
     ) -> None:
         """
-		Callback after a task fails
-		"""
+        Callback after a task fails
+        """
         exec_info.task_graph.set_status(key, TaskStatus.FAILED, error=error)
 
         always_eager_coros = []
@@ -507,8 +505,8 @@ class AsyncIOGraphExecutor(AsyncTaskGraphExecutor):
         self, key: str, task: Task, exec_info: ExecutionInfo
     ) -> None:
         """
-		Wrap a coroutine to catch exceptions and set the appropriate result
-		"""
+        Wrap a coroutine to catch exceptions and set the appropriate result
+        """
         # This task may have been scheduled multiple times--if so, just exit here
         if exec_info.task_graph.get_info(key).status != TaskStatus.NOT_STARTED:
             return

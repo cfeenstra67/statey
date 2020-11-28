@@ -75,18 +75,14 @@ def rewrite_tb(
     tb: Any,
     resolution_stack: Optional["ResolutionStack"] = None,
 ) -> None:
-    """
-
-    """
+    """"""
     raise rewrite_traceback_stack(exc_type, exc_value, tb, resolution_stack)
 
 
 @contextlib.contextmanager
 @internalcode
 def rewrite_ctx(resolution_stack: Optional["ResolutionStack"] = None):
-    """
-
-    """
+    """"""
     try:
         yield
     except Exception:

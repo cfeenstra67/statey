@@ -27,7 +27,7 @@ from statey.syms import session, types, utils, impl, Object
 class TaskStatus(enum.Enum):
     """
     Indicates what stage of execution a given task is in.
-	"""
+    """
 
     NOT_STARTED = 0
     PENDING = 1
@@ -39,8 +39,8 @@ class TaskStatus(enum.Enum):
 @dc.dataclass(frozen=True)
 class ErrorInfo:
     """
-	Container for the for all error information
-	"""
+    Container for the for all error information
+    """
 
     exc_type: Optional[PyType[Exception]] = None
     exc_value: Optional[Exception] = None
@@ -49,14 +49,14 @@ class ErrorInfo:
     @classmethod
     def exc_info(cls) -> "ErrorInfo":
         """
-		Mimics the sys.exc_info() method
-		"""
+        Mimics the sys.exc_info() method
+        """
         return cls(*sys.exc_info())
 
     def format_exception(self) -> str:
         """
-		Return a formatted version of this exception.
-		"""
+        Return a formatted version of this exception.
+        """
         return "".join(
             traceback.format_exception(self.exc_type, self.exc_value, self.exc_tb)
         )
@@ -71,8 +71,8 @@ class ErrorInfo:
 @dc.dataclass(frozen=True)
 class TaskInfo:
     """
-	Contains information about the state of a task
-	"""
+    Contains information about the state of a task
+    """
 
     status: TaskStatus
     timestamp: datetime = dc.field(default_factory=datetime.utcnow)
@@ -82,18 +82,18 @@ class TaskInfo:
 
 class Task(abc.ABC):
     """
-	Base class for tasks. A task is a unit of computation
-	"""
+    Base class for tasks. A task is a unit of computation
+    """
 
     description: Optional[str]
 
     @abc.abstractmethod
     def always_eager(self) -> bool:
         """
-		Indicate that this task should always be executed eagerly, meaning even if
-		we are interrupted in the middle of execution if all of its dependencies get
-		executed, we will still execute this task as long as we exit cleanly
-		"""
+        Indicate that this task should always be executed eagerly, meaning even if
+        we are interrupted in the middle of execution if all of its dependencies get
+        executed, we will still execute this task as long as we exit cleanly
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -108,8 +108,8 @@ class Task(abc.ABC):
     @abc.abstractmethod
     async def run(self) -> None:
         """
-		This should be overridden to implement actual task logic.
-		"""
+        This should be overridden to implement actual task logic.
+        """
         raise NotImplementedError
 
 
@@ -137,8 +137,8 @@ class CoroutineTask(Task):
 @dc.dataclass(frozen=True)
 class FunctionTaskFactory:
     """
-	This is essentially a factory that allows us to implement tasks for a session
-	"""
+    This is essentially a factory that allows us to implement tasks for a session
+    """
 
     func: Callable[[Any], Any]
     is_always_eager: bool = False
@@ -146,8 +146,8 @@ class FunctionTaskFactory:
 
     def __call__(self, *args, **kwargs) -> "SessionTaskSpec":
         """
-		Create a SessionTaskSpec from this function and the given arguments
-		"""
+        Create a SessionTaskSpec from this function and the given arguments
+        """
         return SessionTaskSpec(
             func=self.func,
             args=args,
@@ -164,8 +164,8 @@ def task_wrapper(
     maybe_instance_method: bool = True,
 ) -> Callable[[Any], Any]:
     """
-	Decorator to wrap `func` as a task factory. `func` should be an asynchronous function.
-	"""
+    Decorator to wrap `func` as a task factory. `func` should be an asynchronous function.
+    """
 
     def process(_func):
         desc = description
@@ -209,8 +209,8 @@ new = task_wrapper
 @dc.dataclass(frozen=True)
 class SessionTaskSpec(utils.Cloneable):
     """
-	A task bound with input data
-	"""
+    A task bound with input data
+    """
 
     func: Callable[[Any], Any]
     args: Sequence[Any]
@@ -221,8 +221,8 @@ class SessionTaskSpec(utils.Cloneable):
 
     def _expect(self, value: Any) -> "SessionTaskSpec":
         """
-		Set the expectation of the output future for tasks created from this spec.
-		"""
+        Set the expectation of the output future for tasks created from this spec.
+        """
         return self.clone(expected=value)
 
     def __rshift__(self, value: Any) -> "SessionTaskSpec":
@@ -230,8 +230,8 @@ class SessionTaskSpec(utils.Cloneable):
 
     def bind(self, session: session.Session) -> "SessionTask":
         """
-		Bind this spec to the given session, returning a SessionTask that can be run independently.
-		"""
+        Bind this spec to the given session, returning a SessionTask that can be run independently.
+        """
         call_obj = utils.wrap_function_call(
             self.func, self.args, self.kwargs, registry=session.ns.registry
         )
@@ -252,8 +252,8 @@ class SessionTaskSpec(utils.Cloneable):
 @dc.dataclass(frozen=True)
 class SessionTask(Task):
     """
-	A task that can be used symbolically within a session
-	"""
+    A task that can be used symbolically within a session
+    """
 
     session: session.Session
     func: Callable[[Any], Any]
@@ -306,8 +306,8 @@ class SessionTask(Task):
 @dc.dataclass(frozen=True)
 class SessionSwitch(Task):
     """
-	A session switch resolves a key in one session, and sets that in another session
-	"""
+    A session switch resolves a key in one session, and sets that in another session
+    """
 
     input_session: session.Session
     input_symbol: Object
@@ -332,8 +332,8 @@ class SessionSwitch(Task):
 @dc.dataclass(frozen=True)
 class ResourceGraphOperation(Task):
     """
-	Defines some operation to perform against a resource graph
-	"""
+    Defines some operation to perform against a resource graph
+    """
 
     key: str
     resource_graph: "ResourceGraph"
@@ -355,8 +355,8 @@ async def async_identity(x):
 @dc.dataclass(frozen=True)
 class GraphSetKey(ResourceGraphOperation):
     """
-	Set some key in a resource graph
-	"""
+    Set some key in a resource graph
+    """
 
     input_session: session.Session
     input_symbol: Object
@@ -387,8 +387,8 @@ class GraphSetKey(ResourceGraphOperation):
 @dc.dataclass(frozen=True)
 class GraphDeleteKey(ResourceGraphOperation):
     """
-	Delete some key in a resource graph.
-	"""
+    Delete some key in a resource graph.
+    """
 
     input_session: Optional[session.Session] = None
     input_symbol: Optional[Object] = None
@@ -449,8 +449,8 @@ class GraphSetKeySpec(ResourceGraphOperationSpec):
 
 class TaskSession(session.Session):
     """
-	Session subclass that wraps a regular session but handles resources in a special manner.
-	"""
+    Session subclass that wraps a regular session but handles resources in a special manner.
+    """
 
     def __init__(self, session: session.Session) -> None:
         super().__init__(session.ns)

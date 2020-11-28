@@ -83,8 +83,8 @@ def declarative(
 @dc.dataclass(frozen=True)
 class _FunctionFactory(utils.Cloneable):
     """
-	An interface for creating function call objects
-	"""
+    An interface for creating function call objects
+    """
 
     annotation: Any = utils.MISSING
 
@@ -107,9 +107,9 @@ F = _FunctionFactory()
 
 def autoencode(cls: Type[Any]) -> Type[Any]:
     """
-	This method attempts to wrap the given class with a proper base class so that
-	it will be deserialized properly when bieng added to the session
-	"""
+    This method attempts to wrap the given class with a proper base class so that
+    it will be deserialized properly when bieng added to the session
+    """
     if isinstance(cls, type) and dc.is_dataclass(cls):
         st.registry.register(ParseDataClassPlugin(cls))
         st.registry.register(EncodeDataClassPlugin(cls))

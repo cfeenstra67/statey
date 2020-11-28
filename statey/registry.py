@@ -12,54 +12,54 @@ from statey.syms import types, utils
 
 class Registry(abc.ABC):
     """
-	A type registry is used to parse annotations into types
-	"""
+    A type registry is used to parse annotations into types
+    """
 
     @abc.abstractmethod
     def get_type(
         self, annotation: Any, meta: Optional[Dict[str, Any]] = None
     ) -> types.Type:
         """
-		Parse the given annotation and return a Type. This will properly handle dataclasses
-		similarly to how case classes are handled in spark encoding
-		"""
+        Parse the given annotation and return a Type. This will properly handle dataclasses
+        similarly to how case classes are handled in spark encoding
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def infer_type(self, obj: Any) -> types.Type:
         """
-		Attempt to infer the type of `obj`, falling back on Any
-		"""
+        Attempt to infer the type of `obj`, falling back on Any
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def get_encoder(self, type: types.Type, serializable: bool = False) -> "Encoder":
         """
-		Given a type, return an Encoder instance to encode the type, raising an exc.NoEncoderFound to
-		indicate failure
-		"""
+        Given a type, return an Encoder instance to encode the type, raising an exc.NoEncoderFound to
+        indicate failure
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def get_semantics(self, type: types.Type) -> "Semantics":
         """
-		Given a type, get the semantics to use for objects of that type.
-		"""
+        Given a type, get the semantics to use for objects of that type.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def get_type_serializer(self, type: types.Type) -> "TypeSerializer":
         """
-		Given a type, get the type serializer to turn it into a JSON-serializable value.
-		"""
+        Given a type, get the type serializer to turn it into a JSON-serializable value.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def get_type_serializer_from_data(self, data: Any) -> "TypeSerializer":
         """
-		Given serialized data, get a type serializer that can decode the serialized type of
-		into a native Type
-		"""
+        Given serialized data, get a type serializer that can decode the serialized type of
+        into a native Type
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -199,54 +199,54 @@ class Registry(abc.ABC):
 
 class RegistryHooks:
     """
-	Specifies hooks for handling different annotations and converting them to types
-	"""
+    Specifies hooks for handling different annotations and converting them to types
+    """
 
     @hookspec(firstresult=True)
     def get_type(
         self, annotation: Any, registry: Registry, meta: Dict[str, Any]
     ) -> types.Type:
         """
-		Handle the given annotation and return a Type, or None to indicate it can't be handled by this hook
-		"""
+        Handle the given annotation and return a Type, or None to indicate it can't be handled by this hook
+        """
 
     @hookspec(firstresult=True)
     def infer_type(self, obj: Any, registry: Registry) -> types.Type:
         """
-		Infer a type given an object
-		"""
+        Infer a type given an object
+        """
 
     @hookspec(firstresult=True)
     def get_encoder(
         self, type: types.Type, registry: Registry, serializable: bool
     ) -> "Encoder":
         """
-		Handle the given type and produce an Encoder instance that can encode values of that type
+                Handle the given type and produce an Encoder instance that can encode values of that type
         `serializable` indicates that encoded values that the Encoder produces should
         always be JSON-serializable
-		"""
+        """
 
     @hookspec(firstresult=True)
     def get_semantics(self, type: types.Type, registry: Registry) -> "Semantics":
         """
-		Handle the given type and produce a Semantics instance for objects of that type
-		"""
+        Handle the given type and produce a Semantics instance for objects of that type
+        """
 
     @hookspec(firstresult=True)
     def get_type_serializer(
         self, type: types.Type, registry: Registry
     ) -> "TypeSerializer":
         """
-		Handle the given type and produce an TypeSerializer instance that can encode values of that type
-		"""
+        Handle the given type and produce an TypeSerializer instance that can encode values of that type
+        """
 
     @hookspec(firstresult=True)
     def get_type_serializer_from_data(
         self, data: Any, registry: Registry
     ) -> "TypeSerializer":
         """
-		Handle the given type and produce a TypeSerializer instance for objects of that type
-		"""
+        Handle the given type and produce a TypeSerializer instance for objects of that type
+        """
 
     @hookspec(firstresult=True)
     def get_differ(self, type: types.Type, registry: Registry) -> "Encoder":
@@ -375,8 +375,8 @@ class RegistryHooks:
 
 def create_registry_plugin_manager():
     """
-	Factory function to create the default base plugin manager for DefaultTypeRegistry
-	"""
+    Factory function to create the default base plugin manager for DefaultTypeRegistry
+    """
     pm = create_plugin_manager()
     pm.add_hookspecs(RegistryHooks)
     return pm

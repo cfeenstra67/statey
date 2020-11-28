@@ -134,7 +134,7 @@ class DefaultProviderHooks:
 @dc.dataclass(frozen=True)
 class DefaultProvider(Provider):
     """
-    Hook-based 
+    Hook-based
     """
 
     id: ProviderId = dc.field(default=ProviderId("default"))

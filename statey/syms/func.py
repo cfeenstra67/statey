@@ -8,31 +8,31 @@ from statey.syms import types, utils, Object, stack
 
 class Function(abc.ABC):
     """
-	A function takes some arguments and produces a result
-	"""
+    A function takes some arguments and produces a result
+    """
 
     type: types.FunctionType
     name: str
 
     def __call__(self, *args: Sequence[Any], **kwargs: Dict[str, Any]) -> Object:
         """
-		Create a FunctionCall object by applying this function to the given arguments.
-		"""
+        Create a FunctionCall object by applying this function to the given arguments.
+        """
         return utils.wrap_function_call(self, args, kwargs, frame_depth=1)
 
     @abc.abstractmethod
     def apply(self, arguments: Dict[str, Any]) -> Any:
         """
-		Only API method for a function--actually apply the underlying implementation
-		"""
+        Only API method for a function--actually apply the underlying implementation
+        """
         raise NotImplementedError
 
 
 @dc.dataclass(frozen=True)
 class NativeFunction(Function):
     """
-	Regular python function
-	"""
+    Regular python function
+    """
 
     type: types.FunctionType
     func: Callable[[Any], Any]

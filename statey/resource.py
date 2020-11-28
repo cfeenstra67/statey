@@ -25,8 +25,8 @@ from statey.syms import types, utils, session, impl, Object
 
 class StateSchema(ma.Schema):
     """
-	Marshmallow schema for extra safety encoding/decoding states
-	"""
+    Marshmallow schema for extra safety encoding/decoding states
+    """
 
     name = ma.fields.Str(required=True, default=None)
     input_type = ma.fields.Dict(required=True, default=None)
@@ -87,8 +87,8 @@ class AbstractState(abc.ABC):
 @dc.dataclass(frozen=True)
 class State(AbstractState):
     """
-	A state corresponds to some type for a resource.
-	"""
+    A state corresponds to some type for a resource.
+    """
 
     name: str
     input_type: types.Type
@@ -99,9 +99,9 @@ class State(AbstractState):
 @dc.dataclass(frozen=True)
 class NullState(State):
     """
-	Null states must always have types.EmptyType as their type, so
-	this is a helper to create such states.
-	"""
+    Null states must always have types.EmptyType as their type, so
+    this is a helper to create such states.
+    """
 
     input_type: types.Type = dc.field(init=False, default=types.EmptyType)
     output_type: types.Type = dc.field(init=False, default=types.EmptyType)
@@ -110,8 +110,8 @@ class NullState(State):
 
 class ResourceStateSchema(ma.Schema):
     """
-	Marshmallow schema for extra safety encoding/decoding resource states
-	"""
+    Marshmallow schema for extra safety encoding/decoding resource states
+    """
 
     state = ma.fields.Nested(StateSchema(), required=True, default=None)
     resource = ma.fields.Str(required=True, default=None)
@@ -121,8 +121,8 @@ class ResourceStateSchema(ma.Schema):
 @dc.dataclass(frozen=True)
 class ResourceState:
     """
-	A resource state is a state that is bound to some resource.
-	"""
+    A resource state is a state that is bound to some resource.
+    """
 
     state: AbstractState
     resource: str
@@ -156,8 +156,8 @@ class ResourceState:
 
     def __call__(self, arg=utils.MISSING, **kwargs) -> "BoundState":
         """
-		Factory method for creating bound states for this resource state.
-		"""
+        Factory method for creating bound states for this resource state.
+        """
         if arg is utils.MISSING:
             arg = kwargs
         elif kwargs:
@@ -168,8 +168,8 @@ class ResourceState:
 
     def to_dict(self, registry: "Registry") -> Dict[str, Any]:
         """
-		Render this resource state to a JSON-serializable dictionary
-		"""
+        Render this resource state to a JSON-serializable dictionary
+        """
         out = {
             "resource": self.resource,
             "state": self.state.to_dict(registry),
@@ -180,8 +180,8 @@ class ResourceState:
     @classmethod
     def from_dict(cls, data: Dict[str, Any], registry: "Registry") -> "ResourceState":
         """
-		Render a ResourceState from the output of to_dict()
-		"""
+        Render a ResourceState from the output of to_dict()
+        """
         data = ResourceStateSchema().load(data)
         state = State.from_dict(data["state"], registry)
         provider_id = ProviderId.from_dict(data["provider"])
@@ -282,9 +282,9 @@ class StateSnapshot(StateTuple):
 
 class Resource(abc.ABC):
     """
-	A resource represents a stateful object of some kind, and it can have one
-	or more "states" that that object can exist in.
-	"""
+    A resource represents a stateful object of some kind, and it can have one
+    or more "states" that that object can exist in.
+    """
 
     name: str
     provider: Provider
@@ -303,18 +303,18 @@ class Resource(abc.ABC):
         self, current: StateSnapshot, config: StateConfig, session: TaskSession
     ) -> Object:
         """
-		Given a task session, the current state of a resource, and a task session with
-		corresponding input reference, return an output reference that can be fully
-		resolved when all the tasks in the task session have been complete successfully.
-		"""
+        Given a task session, the current state of a resource, and a task session with
+        corresponding input reference, return an output reference that can be fully
+        resolved when all the tasks in the task session have been complete successfully.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     async def refresh(self, current: StateSnapshot) -> StateSnapshot:
         """
-		Given the current bound state, return a new bound state that represents that actual
-		current state of the object
-		"""
+        Given the current bound state, return a new bound state that represents that actual
+        current state of the object
+        """
         raise NotImplementedError
 
     async def finalize(self, data: StateSnapshot) -> StateSnapshot:
@@ -326,8 +326,8 @@ class Resource(abc.ABC):
 
 class ResourceSession(session.Session):
     """
-	Session subclass that wraps a regular session but handles resources in a special manner.
-	"""
+    Session subclass that wraps a regular session but handles resources in a special manner.
+    """
 
     def __init__(self, session: session.Session) -> None:
         super().__init__(session.ns)
@@ -360,9 +360,9 @@ class ResourceSession(session.Session):
 
     def resource_graph(self) -> "ResourceGraph":
         """
-		Return a fully-rendered ResourceGraph for this session. Will fail with a resolution
-		error if data is missing or there are unknowns or unresolved futures in the session.
-		"""
+        Return a fully-rendered ResourceGraph for this session. Will fail with a resolution
+        error if data is missing or there are unknowns or unresolved futures in the session.
+        """
         graph = ResourceGraph()
         dep_graph = self.dependency_graph()
 
@@ -388,9 +388,9 @@ class ResourceSession(session.Session):
 
     def get_state(self, name: str) -> BoundState:
         """
-		Get the resource state for the given name, raising SymbolKeyError to indicate
-		a failure
-		"""
+        Get the resource state for the given name, raising SymbolKeyError to indicate
+        a failure
+        """
         if name not in self.states:
             raise exc.SymbolKeyError(name, self)
         return self.states[name]
@@ -420,11 +420,11 @@ def create_resource_session(
 @dc.dataclass(frozen=True)
 class ResourceGraph:
     """
-	A resource graph is a wrapper around a simple graph that stores similar information
-	to a resource session, but without objects. Resource graphs are serializable. Note that
-	not every node in a resource graph is necessarily a resource, it can contain any name
-	just like a session.
-	"""
+    A resource graph is a wrapper around a simple graph that stores similar information
+    to a resource session, but without objects. Resource graphs are serializable. Note that
+    not every node in a resource graph is necessarily a resource, it can contain any name
+    just like a session.
+    """
 
     graph: nx.DiGraph = dc.field(default_factory=nx.DiGraph)
 
@@ -437,10 +437,10 @@ class ResourceGraph:
         remove_dependencies: bool = True,
     ) -> None:
         """
-		Set the given value in the graph, with a state optionally specified for resources. Note
-		that this operation will remove the current upstream edges of `key` unless
-		remove_upstreams=False is specified as an argument
-		"""
+        Set the given value in the graph, with a state optionally specified for resources. Note
+        that this operation will remove the current upstream edges of `key` unless
+        remove_upstreams=False is specified as an argument
+        """
         if remove_dependencies and key in self.graph.nodes:
             for pred in list(self.graph.pred[key]):
                 self.graph.remove_edge(pred, key)
@@ -449,16 +449,16 @@ class ResourceGraph:
 
     def delete(self, key: str) -> None:
         """
-		Delete the given key from this graph. Will raise KeyError if it doesn't exist
-		"""
+        Delete the given key from this graph. Will raise KeyError if it doesn't exist
+        """
         if key not in self.graph.nodes:
             raise KeyError(key)
         self.graph.remove_node(key)
 
     def add_dependencies(self, key: str, dependencies: Sequence[str]) -> None:
         """
-		Add dependencies to the given key
-		"""
+        Add dependencies to the given key
+        """
         if key not in self.graph.nodes:
             raise KeyError(key)
         for dep in dependencies:
@@ -471,9 +471,9 @@ class ResourceGraph:
         self, registry: st.Registry, finalize: bool = False
     ) -> Iterator[str]:
         """
-		Refresh the current state of all resources in the graph. Returns an asynchronous
-		generator that yields keys as they finish refreshing successfully.
-		"""
+        Refresh the current state of all resources in the graph. Returns an asynchronous
+        generator that yields keys as they finish refreshing successfully.
+        """
 
         providers = {}
 
@@ -519,8 +519,8 @@ class ResourceGraph:
 
     def to_dict(self, registry: "Registry") -> Dict[str, Any]:
         """
-		Return a JSON-serializable dictionary representation of this resource graph.
-		"""
+        Return a JSON-serializable dictionary representation of this resource graph.
+        """
         nodes = {}
 
         for node in self.graph.nodes:
@@ -544,8 +544,8 @@ class ResourceGraph:
     @classmethod
     def from_dict(cls, data: Any, registry: "Registry") -> "ResourceGraph":
         """
-		Render a ResourceGraph from a JSON-serializable representation
-		"""
+        Render a ResourceGraph from a JSON-serializable representation
+        """
         deps = {}
         instance = cls()
 

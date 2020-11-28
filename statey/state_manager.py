@@ -10,29 +10,29 @@ from statey.resource import ResourceGraph
 
 class StateManager(abc.ABC):
     """
-	A state manager handles reading and writing states to storage
-	"""
+    A state manager handles reading and writing states to storage
+    """
 
     @abc.abstractmethod
     def load(self, registry: "Registry") -> ResourceGraph:
         """
-		Load the resource graph from some storage
-		"""
+        Load the resource graph from some storage
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def dump(self, graph: ResourceGraph, registry: "Registry") -> None:
         """
-		Store the resource graph
-		"""
+        Store the resource graph
+        """
         raise NotImplementedError
 
 
 @dc.dataclass(frozen=True)
 class FileStateManager(StateManager):
     """
-	Simple state manager that just read and writes states to a file
-	"""
+    Simple state manager that just read and writes states to a file
+    """
 
     path: str
 

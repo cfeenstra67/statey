@@ -9,40 +9,40 @@ from statey.syms import utils
 
 class BasePathParser(abc.ABC):
     """
-	Defines the interfact that path parsers must implement
-	"""
+    Defines the interfact that path parsers must implement
+    """
 
     @abc.abstractmethod
     def validate_name(self, name: str) -> None:
         """
-		Validate that the given name can be allocated with this path parser.
-		Throw an exception if not.
-		"""
+        Validate that the given name can be allocated with this path parser.
+        Throw an exception if not.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def split(self, path: str) -> Sequence[Any]:
         """
-		Split a path into its native-typed components
-		"""
+        Split a path into its native-typed components
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def join(self, components: Sequence[Any]) -> str:
         """
-		Join the natively-typed components into a path string
-		"""
+        Join the natively-typed components into a path string
+        """
         raise NotImplementedError
 
 
 class PathParser(BasePathParser):
     """
-	A path parser joins path components into a string and back again
+    A path parser joins path components into a string and back again
 
-	Paths like a[:1]/b/cdefa[*]/g
+    Paths like a[:1]/b/cdefa[*]/g
 
-	supports encoding/decoding of utils.EXPLODE, strings, integers and slices
-	"""
+    supports encoding/decoding of utils.EXPLODE, strings, integers and slices
+    """
 
     pathsep: str = "."
     explode_key: str = "*"

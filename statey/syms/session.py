@@ -13,8 +13,8 @@ from statey.syms import types, utils, path, impl, Object, stack
 
 class Namespace(abc.ABC):
     """
-	A namespace contains information about names and their associated types
-	"""
+    A namespace contains information about names and their associated types
+    """
 
     def __init__(
         self,
@@ -29,33 +29,33 @@ class Namespace(abc.ABC):
     @abc.abstractmethod
     def new(self, key: str, type: types.Type) -> Object:
         """
-		Create a new symbol for the given key and schema and add it to the current namespace.
-		Will raise an error if the key already exists.
-		"""
+        Create a new symbol for the given key and schema and add it to the current namespace.
+        Will raise an error if the key already exists.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def delete(self, key: str) -> None:
         """
-		Delete the type at the given key.
+        Delete the type at the given key.
 
-		Note this should be used with EXTREME CAUTION because it can leave dependent sessions
-		with invalid references.
-		"""
+        Note this should be used with EXTREME CAUTION because it can leave dependent sessions
+        with invalid references.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def keys(self) -> Iterator[str]:
         """
-		Iterate through the currently defined keys in this namespace.
-		"""
+        Iterate through the currently defined keys in this namespace.
+        """
         raise NotImplementedError
 
     def ref(self, key: str) -> Object:
         """
-		Get a reference to a key whose type is already registered in this namespace. Will raise
-		SymbolKeyError is none exists
-		"""
+        Get a reference to a key whose type is already registered in this namespace. Will raise
+        SymbolKeyError is none exists
+        """
         typ = self.resolve(key)
         semantics = self.registry.get_semantics(typ)
         new_impl = impl.Reference(key, self)
@@ -66,8 +66,8 @@ class Namespace(abc.ABC):
     @abc.abstractmethod
     def resolve(self, key: str) -> types.Type:
         """
-		Get the type of the given key, raising an error if it is not in the current schema
-		"""
+        Get the type of the given key, raising an error if it is not in the current schema
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -81,10 +81,10 @@ class Namespace(abc.ABC):
 @dc.dataclass(frozen=True)
 class NamedSessionSetter:
     """
-	This is returned from Session.__getitem__ and can allow a few different
-	expression syntax options like
-	a = session['a'] << A() # This returns a reference correctly instead of an A object
-	"""
+    This is returned from Session.__getitem__ and can allow a few different
+    expression syntax options like
+    a = session['a'] << A() # This returns a reference correctly instead of an A object
+    """
 
     key: str
     annotation: Any
@@ -97,29 +97,29 @@ class NamedSessionSetter:
 
 class SessionHooks:
     """
-	Hook for pluggable functionality in sessions
-	"""
+    Hook for pluggable functionality in sessions
+    """
 
     @st.hookspec(firstresult=True)
     def before_set(self, key: str, value: Any) -> Tuple[Any, types.Type]:
         """
-		Hook to handle a value before the usual logic in the set() method. This should
-		return a (value, type) tuple, where type can be utils.MISSING to indicate we want
-		to continue to use the default type inference logic.
-		"""
+        Hook to handle a value before the usual logic in the set() method. This should
+        return a (value, type) tuple, where type can be utils.MISSING to indicate we want
+        to continue to use the default type inference logic.
+        """
 
     @st.hookspec(firstresult=True)
     def after_set(self, key: str, value: Any, type: types.Type) -> Any:
         """
-		Hook after we've already set a value to customize the value returned instead of a
-		reference to the 
-		"""
+        Hook after we've already set a value to customize the value returned instead of a
+        reference to the
+        """
 
 
 class Session(abc.ABC):
     """
-	A session contains a namespace and associated data and objects
-	"""
+    A session contains a namespace and associated data and objects
+    """
 
     def __init__(self, ns: Namespace) -> None:
         self.ns = ns
@@ -128,8 +128,8 @@ class Session(abc.ABC):
 
     def set(self, key: str, value: Any, annotation: Any = utils.MISSING) -> Object:
         """
-		Set the given data, using the given registry to determine a schema for value
-		"""
+        Set the given data, using the given registry to determine a schema for value
+        """
         hook_resp = self.pm.hook.before_set(key=key, value=value)
         typ = utils.MISSING
         if hook_resp is not None:
@@ -152,16 +152,16 @@ class Session(abc.ABC):
 
     def delete(self, key: str) -> None:
         """
-		Convenience method to delete the key from the namespace, then delete the data
-		"""
+        Convenience method to delete the key from the namespace, then delete the data
+        """
         self.ns.delete(key)
         self.delete_data(key)
 
     def symbolify(self, data: Any, type: types.Type = utils.MISSING) -> Object:
         """
-		Convert the input data into a symbol, optionally with the given type.
-		If it is already a symbol, it will be returned unchanged.
-		"""
+        Convert the input data into a symbol, optionally with the given type.
+        If it is already a symbol, it will be returned unchanged.
+        """
         if isinstance(data, Object):
             return data
 
@@ -172,15 +172,15 @@ class Session(abc.ABC):
 
     def __lshift__(self, other: Any) -> Object:
         """
-		lshift on the top level of a session will simply convert the input to a symbol
-		using symbolify()
-		"""
+        lshift on the top level of a session will simply convert the input to a symbol
+        using symbolify()
+        """
         return self.symbolify(other)
 
     def __setitem__(self, key: Union[slice, str], value: Any) -> None:
         """
-		Allow dictionary syntax for adding items to the session
-		"""
+        Allow dictionary syntax for adding items to the session
+        """
         annotation = utils.MISSING
         if isinstance(key, slice):
             key, annotation = key.start, key.stop
@@ -188,8 +188,8 @@ class Session(abc.ABC):
 
     def __getitem__(self, key: Union[slice, str]) -> NamedSessionSetter:
         """
-		Return a special object to provide better syntax for certain operations
-		"""
+        Return a special object to provide better syntax for certain operations
+        """
         annotation = utils.MISSING
         if isinstance(key, slice):
             key, annotation = key.start, key.stop
@@ -201,39 +201,39 @@ class Session(abc.ABC):
         self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
     ) -> Any:
         """
-		Resolve the given symbol with the given input data.
-		"""
+        Resolve the given symbol with the given input data.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def set_data(self, key: str, data: Any) -> None:
         """
-		Set the given data at the given key. Data can be or contain objects provided they
-		are correctly typed. `key` must be a ROOT key, not an attribute
-		"""
+        Set the given data at the given key. Data can be or contain objects provided they
+        are correctly typed. `key` must be a ROOT key, not an attribute
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def delete_data(self, key: str) -> None:
         """
-		Delete the data at the given key
-		"""
+        Delete the data at the given key
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def dependency_graph(self) -> nx.MultiDiGraph:
         """
-		Return a graph whose nodes are the top-level names registered in this session's namespace
-		and whose edges are the dependencies between those nodes within this session. Each edge should
-		include `path` as a property with the relative path reference that the dependency represents.
-		Note that all paths in this result should be returned as tuples so that they are not dependent
-		on this session's path parser implementation.
-		"""
+        Return a graph whose nodes are the top-level names registered in this session's namespace
+        and whose edges are the dependencies between those nodes within this session. Each edge should
+        include `path` as a property with the relative path reference that the dependency represents.
+        Note that all paths in this result should be returned as tuples so that they are not dependent
+        on this session's path parser implementation.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def clone(self) -> "Session":
         """
-		Return a copy of this session that can be modified without affecting this one
-		"""
+        Return a copy of this session that can be modified without affecting this one
+        """
         raise NotImplementedError

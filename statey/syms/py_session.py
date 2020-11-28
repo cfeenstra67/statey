@@ -18,8 +18,8 @@ from statey.syms import types, utils, session, impl, Object, stack
 
 class PythonNamespace(session.Namespace):
     """
-	Pure python namespace implementation
-	"""
+    Pure python namespace implementation
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -27,8 +27,8 @@ class PythonNamespace(session.Namespace):
 
     def new(self, key: str, type: types.Type) -> Object:
         """
-		Create a new symbol for the given key and schema and add it to the current namespace
-		"""
+        Create a new symbol for the given key and schema and add it to the current namespace
+        """
         self.path_parser.validate_name(key)
         if key in self.types:
             raise exc.DuplicateSymbolKey(key, self)
@@ -45,8 +45,8 @@ class PythonNamespace(session.Namespace):
 
     def resolve(self, key: str) -> types.Type:
         """
-		Get the type of the given key, raising an error if it is not in the current schema
-		"""
+        Get the type of the given key, raising an error if it is not in the current schema
+        """
         base, *rel_path = self.path_parser.split(key)
         if base not in self.types:
             raise exc.SymbolKeyError(key, self)
@@ -124,22 +124,18 @@ class ResolutionStack:
         return frame_path
 
     def push(self, obj_id: Any) -> None:
-        """
-
-        """
+        """"""
         self.current_obj_stack.append(obj_id)
 
     def pop(self) -> None:
-        """
-
-        """
+        """"""
         self.current_obj_stack.pop()
 
 
 class PythonSession(session.Session):
     """
-	A pure python session implementation for resolving objects.
-	"""
+    A pure python session implementation for resolving objects.
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -147,8 +143,8 @@ class PythonSession(session.Session):
 
     def set_data(self, key: str, data: Any) -> None:
         """
-		Set the given data for the given key.
-		"""
+        Set the given data for the given key.
+        """
         typ = self.ns.resolve(key)
 
         encoder = self.ns.registry.get_encoder(typ, serializable=True)
@@ -170,10 +166,10 @@ class PythonSession(session.Session):
 
     def get_encoded_data(self, key: str) -> Any:
         """
-		Return the data or symbol at the given key, with a boolean is_symbol also returned indicating
-		whether that key points to a symbol. If the key has not been set, syms.exc.MissingDataError
-		will be raised
-		"""
+        Return the data or symbol at the given key, with a boolean is_symbol also returned indicating
+        whether that key points to a symbol. If the key has not been set, syms.exc.MissingDataError
+        will be raised
+        """
         typ = self.ns.resolve(key)
         base, *rel_path = self.ns.path_parser.split(key)
         if base not in self.data:
@@ -479,6 +475,6 @@ class CachingPythonSession(PythonSession):
 
 def create_session() -> session.Session:
     """
-	Default factory for creating the best session given the runtime
-	"""
+    Default factory for creating the best session given the runtime
+    """
     return CachingPythonSession(PythonNamespace())

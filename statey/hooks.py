@@ -12,8 +12,8 @@ hookimpl = pluggy.HookimplMarker(NS)
 
 def create_plugin_manager() -> pluggy.PluginManager:
     """
-	Factory function to create a plugin manager w/ the default namespace
-	"""
+    Factory function to create a plugin manager w/ the default namespace
+    """
     return pluggy.PluginManager(NS)
 
 
@@ -36,9 +36,9 @@ def register_default_plugins(
     setuptools_entrypoints: bool = True,
 ) -> None:
     """
-	Convenience method to register all of the default provided hooks for the given
-	object types
-	"""
+    Convenience method to register all of the default provided hooks for the given
+    object types
+    """
     if registry is None:
         from statey import registry
 

@@ -4,9 +4,7 @@ from typing import Optional, Any, Sequence
 
 
 class RequirementsParsingError(Exception):
-    """
-
-    """
+    """"""
 
     def __init__(self, src: Any, line: int, err: Exception) -> None:
         self.src = src
@@ -17,9 +15,7 @@ class RequirementsParsingError(Exception):
 
 @dc.dataclass(frozen=True)
 class PluginSpec:
-    """
-
-    """
+    """"""
 
     name: str
     original: str

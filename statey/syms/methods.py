@@ -54,7 +54,7 @@ class CallFunctionMethod(Method):
 
     def bind(self, obj: Object) -> Any:
         """
-        Unlike all other methods, the __apply__ method for functions 
+        Unlike all other methods, the __apply__ method for functions
         """
 
         def call(*args, **kwargs):
@@ -204,7 +204,7 @@ def method(
 
 class DeclarativeMethodsMeta(type(ObjectMethods)):
     """
-    Collect method objects declared 
+    Collect method objects declared
     """
 
     def __new__(

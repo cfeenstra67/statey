@@ -122,14 +122,10 @@ class ExecutorLoggingPlugin:
 
 
 class CLILoggingHandler(logging.Handler):
-    """
-
-    """
+    """"""
 
     def __init__(self, fulltrace: bool = False) -> None:
-        """
-
-        """
+        """"""
         self.fulltrace = fulltrace
         super().__init__()
 

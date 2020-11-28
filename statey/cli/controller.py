@@ -78,9 +78,7 @@ class Controller:
         self.logging_set_up = False
 
     def setup_logging(self) -> None:
-        """
-
-        """
+        """"""
         if self.logging_set_up:
             return
 
@@ -88,9 +86,7 @@ class Controller:
         self.logger.addHandler(CLILoggingHandler(self.fulltrace or self.debug))
 
     def setup_state_manager(self) -> None:
-        """
-
-        """
+        """"""
         if self.state_manager is not None:
             return
         self.setup_config()
@@ -107,9 +103,7 @@ class Controller:
         )
 
     def setup_resource_graph(self) -> None:
-        """
-
-        """
+        """"""
         if self.resource_graph is not None:
             return
         self.setup_state_manager()
@@ -182,9 +176,7 @@ class Controller:
         return module
 
     def setup_config(self) -> None:
-        """
-
-        """
+        """"""
         if self.conf_module is not None:
             return None
 
@@ -206,9 +198,7 @@ class Controller:
         )
 
     def setup_session(self) -> None:
-        """
-
-        """
+        """"""
         if self.session is not None:
             return
 
@@ -267,9 +257,7 @@ class Controller:
                 )
 
     def refresh_resource_graph(self, progressbar=True, **kwargs) -> None:
-        """
-
-        """
+        """"""
         self.setup_resource_graph()
         loop = asyncio.get_event_loop()
         try:
@@ -287,9 +275,7 @@ class Controller:
             self.logger.debug("Resource graph refreshed successfully.")
 
     def print_planning_execution_error(self, exc_type, exc_value, exc_tb) -> None:
-        """
-
-        """
+        """"""
         exec_info = exc_value.exec_info
         tasks_by_status = exec_info.tasks_by_status()
 
@@ -314,9 +300,7 @@ class Controller:
         )
 
     def setup_plan(self) -> None:
-        """
-        
-        """
+        """"""
         if self.plan is not None:
             return
 
@@ -354,9 +338,7 @@ class Controller:
 
     @contextlib.contextmanager
     def wrapped_providers_context(self):
-        """
-
-        """
+        """"""
         self.setup_plan()
 
         ctx = st.helpers.providers_context(self.plan.providers)
@@ -380,9 +362,7 @@ class Controller:
                 raise click.Abort from err
 
     def execute_plan(self) -> None:
-        """
-
-        """
+        """"""
         self.setup_plan()
 
         executor = AsyncIOGraphExecutor()
@@ -425,9 +405,7 @@ class Controller:
         self.logger.info(exec_summary_string)
 
     def print_plan_summary(self) -> None:
-        """
-
-        """
+        """"""
         self.setup_plan()
 
         if self.plan.is_empty():
@@ -476,9 +454,7 @@ class Controller:
         self.logger.info("")
 
     def dump_state(self) -> None:
-        """
-
-        """
+        """"""
         self.setup_state_manager()
 
         resource_graph = self.resource_graph
@@ -494,9 +470,7 @@ class Controller:
             raise click.Abort from err
 
     def load_provider(self, name: str) -> st.Provider:
-        """
-
-        """
+        """"""
         try:
             return self.registry.get_provider(name)
         except Exception as err:
@@ -506,9 +480,7 @@ class Controller:
             raise click.Abort from err
 
     def load_resource(self, provider: st.Provider, name: str) -> st.Resource:
-        """
-
-        """
+        """"""
         try:
             return provider.get_resource(name)
         except Exception as err:
@@ -522,9 +494,7 @@ class Controller:
             raise click.Abort from err
 
     def print_resource_docs(self, resource: st.Resource) -> None:
-        """
-
-        """
+        """"""
         name_style = {"fg": "green", "bold": True}
 
         output_type_serializer = st.registry.get_type_serializer(
@@ -552,9 +522,7 @@ class Controller:
         requirements: Sequence[str] = (),
         requirements_files: Sequence["file"] = (),
     ) -> None:
-        """
-
-        """
+        """"""
         self.setup_config()
 
         installers = []

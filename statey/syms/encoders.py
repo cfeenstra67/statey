@@ -14,49 +14,49 @@ from statey.syms import types, utils, Object
 
 class Encoder(abc.ABC):
     """
-	An encoder encodes data of some with possibly native types info some format
-	"""
+    An encoder encodes data of some with possibly native types info some format
+    """
 
     type: types.Type
 
     @abc.abstractmethod
     def encode(self, type: types.Type, value: Any) -> Any:
         """
-		Given a type and some _non-validated_ value, convert it to a serializable value
-		"""
+        Given a type and some _non-validated_ value, convert it to a serializable value
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def decode(self, type: types.Type, value: Any) -> Any:
         """
-		Given a freshly deserialized dictionary, potentially apply some post-processing or wrap
-		it in a native type
-		"""
+        Given a freshly deserialized dictionary, potentially apply some post-processing or wrap
+        it in a native type
+        """
         raise NotImplementedError
 
 
 class EncoderHooks:
     """
-	Hooks to wrap encoder functionality
-	"""
+    Hooks to wrap encoder functionality
+    """
 
     @st.hookspec(firstresult=True)
     def encode(self, value: Any) -> Any:
         """
-		Optionally apply some logic to encode the given value. return None if the given value is not handled.
-		"""
+        Optionally apply some logic to encode the given value. return None if the given value is not handled.
+        """
 
     @st.hookspec(firstresult=True)
     def decode(self, value: Any) -> Any:
         """
-		Opposite of the encode() hook
-		"""
+        Opposite of the encode() hook
+        """
 
 
 def create_encoder_plugin_manager():
     """
-	Factory function to create the default plugin manager for encoders
-	"""
+    Factory function to create the default plugin manager for encoders
+    """
     pm = st.create_plugin_manager()
     pm.add_hookspecs(EncoderHooks)
     return pm
@@ -79,8 +79,8 @@ class HookHandlingEncoder(Encoder):
 @dc.dataclass(frozen=True)
 class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
     """
-	The default encoder just handles hooks properly, doesn't do any actual encoding
-	"""
+    The default encoder just handles hooks properly, doesn't do any actual encoding
+    """
 
     type: types.Type
     pm: pluggy.PluginManager = dc.field(
@@ -96,8 +96,8 @@ class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
         cls, type: types.Type, registry: "Registry", serializable: bool
     ) -> Encoder:
         """
-		The basic encoder behavior just calls hooks, but we should pass through plugins too.
-		"""
+        The basic encoder behavior just calls hooks, but we should pass through plugins too.
+        """
         if serializable:
             return None
         inst = cls(type)
@@ -109,8 +109,8 @@ class DefaultEncoder(HookHandlingEncoder, utils.Cloneable):
 @dc.dataclass(frozen=True)
 class MarshmallowEncoder(HookHandlingEncoder):
     """
-	Encodeable helper to get all functionality from a field factory
-	"""
+    Encodeable helper to get all functionality from a field factory
+    """
 
     type: types.Type
     registry: "Registry"
@@ -124,8 +124,8 @@ class MarshmallowEncoder(HookHandlingEncoder):
     @abc.abstractmethod
     def base_marshmallow_field(self, encoding: bool) -> ma.fields.Field:
         """
-		Return the marshmallow field for this type
-		"""
+        Return the marshmallow field for this type
+        """
         raise NotImplementedError
 
     def marshmallow_field(self, encoding: bool) -> ma.fields.Field:
@@ -174,8 +174,8 @@ class MarshmallowEncoder(HookHandlingEncoder):
 
 class MarshmallowValueEncoder(MarshmallowEncoder):
     """
-	Simple marshmallow encoder for value types
-	"""
+    Simple marshmallow encoder for value types
+    """
 
     base_field: ma.fields.Field
     type_cls: PyType[types.Type]
@@ -230,8 +230,8 @@ class StringEncoder(MarshmallowValueEncoder):
 @dc.dataclass(frozen=True, repr=False)
 class ArrayEncoder(MarshmallowEncoder):
     """
-	An array with some element type
-	"""
+    An array with some element type
+    """
 
     element_encoder: Encoder
 
@@ -444,8 +444,8 @@ else:
 
 def register(registry: Optional["Registry"] = None) -> None:
     """
-	Replace default encoder with encoders defined here
-	"""
+    Replace default encoder with encoders defined here
+    """
     if registry is None:
         registry = st.registry
 

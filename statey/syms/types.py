@@ -13,8 +13,8 @@ UNHASHABLE = object()
 
 class TypeStringToken(enum.Enum):
     """
-	Different possible tokens in a type string
-	"""
+    Different possible tokens in a type string
+    """
 
     QUESTION_MARK = "?"
     LEFT_BRACE = "["
@@ -29,8 +29,8 @@ class TypeStringToken(enum.Enum):
 
 class TypeStringRenderer:
     """
-	Allow customization of how type strings are rendered
-	"""
+    Allow customization of how type strings are rendered
+    """
 
     def render(self, value: str, token: TypeStringToken) -> str:
         return value
@@ -57,8 +57,8 @@ def hashable_meta(meta: Dict[str, Any]) -> int:
 
 class Type(abc.ABC):
     """
-	A type encapsulates information about 
-	"""
+    A type encapsulates information about
+    """
 
     name: str
     nullable: bool
@@ -66,8 +66,8 @@ class Type(abc.ABC):
 
     def render_type_string(self, renderer: Optional[TypeStringRenderer] = None) -> str:
         """
-		Render a nice human-readable representation of this type.
-		"""
+        Render a nice human-readable representation of this type.
+        """
         if renderer is None:
             renderer = TypeStringRenderer()
         name_rendered = renderer.render(self.name, TypeStringToken.TYPE_NAME)
@@ -131,8 +131,8 @@ class DataClassMixin(abc.ABC):
 
 class ValueType(Type):
     """
-	Base class for types that just have a single instance
-	"""
+    Base class for types that just have a single instance
+    """
 
     nullable: bool
     meta: Dict[str, Any]
@@ -146,8 +146,8 @@ class ValueType(Type):
 @dc.dataclass(frozen=True, repr=False)
 class AnyType(DataClassMixin, Type):
     """
-	Type that applies to any value. Not a regular dataclass to avoid issues w/ defaults :(
-	"""
+    Type that applies to any value. Not a regular dataclass to avoid issues w/ defaults :(
+    """
 
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
@@ -161,8 +161,8 @@ class AnyType(DataClassMixin, Type):
 
 class NumberType(ValueType):
     """
-	Base class for numeric types
-	"""
+    Base class for numeric types
+    """
 
 
 @dc.dataclass(frozen=True, repr=False)
@@ -204,8 +204,8 @@ class StringType(DataClassMixin, ValueType):
 @dc.dataclass(frozen=True, repr=False)
 class ArrayType(DataClassMixin, Type):
     """
-	An array with some element type
-	"""
+    An array with some element type
+    """
 
     def __class_getitem__(cls, item: Any) -> Type:
         """
@@ -256,8 +256,8 @@ class ArrayType(DataClassMixin, Type):
 @dc.dataclass(frozen=True)
 class Field:
     """
-	Contains information about a single field in a StructType
-	"""
+    Contains information about a single field in a StructType
+    """
 
     name: str
     type: Type
@@ -266,9 +266,9 @@ class Field:
 @dc.dataclass(frozen=True, repr=False)
 class StructType(DataClassMixin, Type):
     """
-	A struct contains an ordered sequence of named fields, any of which
-	may or may not be null
-	"""
+    A struct contains an ordered sequence of named fields, any of which
+    may or may not be null
+    """
 
     def __class_getitem__(cls, value: Sequence[slice]) -> "Type":
         """
@@ -330,8 +330,8 @@ class StructType(DataClassMixin, Type):
 
     def __getitem__(self, name: str) -> Field:
         """
-		Fetch schema fields by name
-		"""
+        Fetch schema fields by name
+        """
         field = next((field for field in self.fields if field.name == name), None)
         if field is None:
             raise KeyError(name)
@@ -339,8 +339,8 @@ class StructType(DataClassMixin, Type):
 
     def __contains__(self, name: str) -> bool:
         """
-		Indicate whether this StructType has a field with the given name
-		"""
+        Indicate whether this StructType has a field with the given name
+        """
         return any(field.name == name for field in self.fields)
 
     def with_fields(self, fields: Sequence[Field]) -> Type:

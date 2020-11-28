@@ -33,8 +33,8 @@ from statey.task import (
 
 class PlanAction(abc.ABC):
     """
-	A plan action is some subset of a full task graph for a given name.
-	"""
+    A plan action is some subset of a full task graph for a given name.
+    """
 
     @abc.abstractmethod
     def render(
@@ -47,33 +47,31 @@ class PlanAction(abc.ABC):
         dependencies: Sequence[str],
     ) -> None:
         """
-		Add the tasks in this graph to the given graph. Note that the output
-		node must be {prefix}:output
-		"""
+        Add the tasks in this graph to the given graph. Note that the output
+        node must be {prefix}:output
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def input_task(self, prefix: str) -> str:
         """
-		Return the name of the task, given a prefix, that will be the "input" task when
-		rendering this action
-		"""
+        Return the name of the task, given a prefix, that will be the "input" task when
+        rendering this action
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def output_task(self, prefix: str) -> str:
         """
-		Return the name of the task, given a prefix, that will be the "output" task when
-		rendering this action
-		"""
+        Return the name of the task, given a prefix, that will be the "output" task when
+        rendering this action
+        """
         raise NotImplementedError
 
 
 @dc.dataclass(frozen=True)
 class ExecuteTaskSession(PlanAction):
-    """
-
-	"""
+    """"""
 
     task_session: TaskSession
     task_input_key: str
@@ -176,8 +174,8 @@ class ExecuteTaskSession(PlanAction):
 @dc.dataclass(frozen=True)
 class SetValue(PlanAction):
     """
-	Set a given value in either the resource graph, the output session, or both during execution
-	"""
+    Set a given value in either the resource graph, the output session, or both during execution
+    """
 
     output_key: str
     output_symbol: Object
@@ -299,9 +297,7 @@ class ResourceSetValue(PlanAction):
 
 @dc.dataclass(frozen=True)
 class DeleteValue(PlanAction):
-    """
-
-	"""
+    """"""
 
     delete_key: str
 
@@ -329,11 +325,11 @@ class DeleteValue(PlanAction):
 @dc.dataclass(frozen=True)
 class PlanNode:
     """
-	A plan node contains information about the state of a given name and before
-	and after this migration, including any unknowns. It also contains information
-	about the up and downstream dependencies of the configuration and previous state
-	respectively
-	"""
+    A plan node contains information about the state of a given name and before
+    and after this migration, including any unknowns. It also contains information
+    about the up and downstream dependencies of the configuration and previous state
+    respectively
+    """
 
     key: str
     # This will always be fully resolved
@@ -351,67 +347,53 @@ class PlanNode:
     enforce_dependencies: bool = True
 
     def input_task(self) -> Optional[str]:
-        """
-
-		"""
+        """"""
         return self.current_input_task()
 
     def output_task(self) -> Optional[str]:
-        """
-
-        """
+        """"""
         return self.config_output_task()
 
     def current_prefix(self) -> str:
-        """
-
-		"""
+        """"""
         if self.current_action is not None and self.config_action is not None:
             return f"{self.key}:current"
         return self.key
 
     def config_prefix(self) -> str:
-        """
-
-        """
+        """"""
         if self.current_action is not None and self.config_action is not None:
             return f"{self.key}:config"
         return self.key
 
     def current_output_task(self) -> Optional[str]:
         """
-		The output task of migrating the current state. This may or may not be the
-		same as output_task(); the case where it is the same is when either this key
-		only exists in one of the previous of configured namespaces or when it is a single
-		resource whose state is being migrated.
-		"""
+        The output task of migrating the current state. This may or may not be the
+        same as output_task(); the case where it is the same is when either this key
+        only exists in one of the previous of configured namespaces or when it is a single
+        resource whose state is being migrated.
+        """
         action = self.current_action or self.config_action
         if action is None:
             return None
         return action.output_task(self.current_prefix())
 
     def config_output_task(self) -> Optional[str]:
-        """
-
-        """
+        """"""
         action = self.config_action or self.current_action
         if action is None:
             return None
         return action.output_task(self.config_prefix())
 
     def config_input_task(self) -> str:
-        """
-
-		"""
+        """"""
         action = self.config_action or self.current_action
         if action is None:
             return None
         return action.input_task(self.config_prefix())
 
     def current_input_task(self) -> str:
-        """
-
-        """
+        """"""
         action = self.current_action or self.config_action
         if action is None:
             return None
@@ -421,8 +403,8 @@ class PlanNode:
         self, other_nodes: Dict[str, "PlanNode"]
     ) -> Sequence[Tuple[str, str]]:
         """
-		Get the edges for this node, given the other nodes.
-		"""
+        Get the edges for this node, given the other nodes.
+        """
         edges = {}
 
         if not self.enforce_dependencies:
@@ -477,9 +459,9 @@ class PlanNode:
         self, resource_graph: ResourceGraph, output_session: session.Session
     ) -> nx.DiGraph:
         """
-		Render a task graph for this specific node of the plan. The names specified
-		by current_output_task() and output_task() should be tasks in this graph.
-		"""
+        Render a task graph for this specific node of the plan. The names specified
+        by current_output_task() and output_task() should be tasks in this graph.
+        """
         tasks = nx.DiGraph()
 
         if self.current_action is not None and self.config_action is not None:
@@ -561,8 +543,8 @@ class Plan:
 
     def new_task_graph(self, strict: bool = False) -> "ResourceTaskGraph":
         """
-		Render a full task graph from this plan
-		"""
+        Render a full task graph from this plan
+        """
         from statey.executor import ResourceTaskGraph
 
         state_graph = self.state_graph.clone()
@@ -621,16 +603,16 @@ class Plan:
 
 class Migrator(abc.ABC):
     """
-	Migrator is the interface for creating plans for migrating one set of resource states
-	to another
-	"""
+    Migrator is the interface for creating plans for migrating one set of resource states
+    to another
+    """
 
     @abc.abstractmethod
     def create_task_session(self) -> TaskSession:
         """
-		Create a new instance of a TaskSession, used by resource classes to coordinate one
-		or more actions in a grap symbollically
-		"""
+        Create a new instance of a TaskSession, used by resource classes to coordinate one
+        or more actions in a grap symbollically
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -640,16 +622,16 @@ class Migrator(abc.ABC):
         state_session: Optional[ResourceSession] = None,
     ) -> Plan:
         """
-		Create a task graph to create the resource states in config_session, migrating
-		from state_session if it is passed
-		"""
+        Create a task graph to create the resource states in config_session, migrating
+        from state_session if it is passed
+        """
         raise NotImplementedError
 
 
 class DefaultMigrator(Migrator):
     """
-	simple default Migrator implementation
-	"""
+    simple default Migrator implementation
+    """
 
     def create_task_session(self) -> TaskSession:
         return create_task_session()
@@ -664,9 +646,7 @@ class DefaultMigrator(Migrator):
         output_session: ResourceSession,
         providers: Dict[ProviderId, Provider],
     ) -> Sequence[PlanNode]:
-        """
-
-        """
+        """"""
         previous_exists = node in state_dep_graph.nodes
         previous_state = None
         if node in state_dep_graph.nodes:

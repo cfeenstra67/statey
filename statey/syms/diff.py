@@ -78,7 +78,7 @@ class DiffConfig(utils.Cloneable):
 @dc.dataclass(frozen=True)
 class DiffComponent:
     """
-    A diff represents the differences between two values. Either left or right can contain unknowns, 
+    A diff represents the differences between two values. Either left or right can contain unknowns,
     however neither should contain objects (i.e. they should be either fully resolve or the result of
     Session.resolve() with allow_unknowns=True)
     """

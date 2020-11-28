@@ -18,7 +18,7 @@ ROOT_DIR = os.path.abspath(os.path.dirname(root_file))
 @dc.dataclass(frozen=True)
 class PulumiResourceSchema:
     """
-    Describes 
+    Describes
     """
 
     description: str

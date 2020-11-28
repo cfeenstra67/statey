@@ -70,7 +70,7 @@ async def plan(
     registry: Optional["Registry"] = None,
 ) -> "Plan":
     """
-    Run a planning operation, optionally 
+    Run a planning operation, optionally
     """
     from statey.plan import DefaultMigrator
 
