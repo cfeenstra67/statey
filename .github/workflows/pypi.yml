@@ -1,0 +1,32 @@
+name: Upload to PyPI
+
+on:
+  create:
+    tags:
+      - v*
+
+jobs:
+
+  push-to-pypi:
+
+    runs-on: macos-10.15
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.6
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.6
+      - name: Build Distribution Package
+        run: |
+          pip install -r requirements-dev.txt
+          make build
+      - name: Check Distribution Package
+        run: |
+          make pypi-check
+      - name: Push Distribution Package
+        run: |
+          make pypi-upload
+        env:
+          TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
