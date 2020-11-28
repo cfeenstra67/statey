@@ -152,13 +152,13 @@ class PulumiResourceMachine(st.SingleStateMachine):
             return st.ModificationAction.NONE
 
         replace_kinds = {
-            pylumi.DiffType.ADD_REPLACE,
-            pylumi.DiffType.DELETE_REPLACE,
-            pylumi.DiffType.UPDATE_REPLACE,
+            pylumi.DiffKind.ADD_REPLACE,
+            pylumi.DiffKind.DELETE_REPLACE,
+            pylumi.DiffKind.UPDATE_REPLACE,
         }
 
         for key, val in diff_resp["DetailedDiff"].items():
-            kind = pylumi.DiffType(val["Kind"])
+            kind = pylumi.DiffKind(val["Kind"])
             if kind in replace_kinds:
                 return st.ModificationAction.DELETE_AND_RECREATE
 

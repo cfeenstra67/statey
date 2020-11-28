@@ -128,7 +128,9 @@ class PlanNodeSummary:
     def _style_current_name(self, name: str) -> str:
         return click.style(name, bold=True)
 
-    def crud_figures(self) -> Tuple[int, int, int]:
+    def crud_figures(
+        self, task_graph: nx.DiGraph, show_metatasks: bool = False
+    ) -> Tuple[int, int, int]:
         """
         Returns (creating, updating, deleting) tuple
         """
@@ -141,7 +143,12 @@ class PlanNodeSummary:
             if self.plan_node.config_action and self.plan_node.config_state:
                 creating += 1
         elif self.plan_node.current_state:
-            updating += 1
+            for node in task_graph.nodes:
+                if node.startswith(self.plan_node.key + ":"):
+                    task = task_graph.nodes[node]["task"]
+                    if show_metatasks or not task.is_metatask():
+                        updating += 1
+                        break
         else:
             creating += 1
 
@@ -441,7 +448,9 @@ class PlanSummary:
         creating, updating, deleting = 0, 0, 0
 
         for summary in self.node_summaries:
-            new_creating, new_updating, new_deleting = summary.crud_figures()
+            new_creating, new_updating, new_deleting = summary.crud_figures(
+                self.plan.task_graph.task_graph
+            )
             creating += new_creating
             updating += new_updating
             deleting += new_deleting

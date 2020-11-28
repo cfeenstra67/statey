@@ -287,8 +287,13 @@ class Controller:
 
         trace_lines = []
         for key, error in traces.items():
-            trace_lines.append(f"{key}: {error.format_error_message()}")
-            trace_lines.append("")
+            if self.fulltrace or self.debug:
+                trace_lines.append(f"{key}:")
+                trace_lines.append(error.format_exception())
+                trace_lines.append("")
+            else:
+                trace_lines.append(f"{key}: {error.format_error_message()}")
+                trace_lines.append("")
 
         trace_lines.insert(0, "")
         trace_str = "\n".join(trace_lines)
