@@ -45,7 +45,7 @@ extra_reqs = {
         'asciidag==0.2.0'
 	],
 	'pulumi': [
-		'pylumi==1.2.0',
+		'pylumi==1.2.1',
 		'jsonschema==3.2.0'
 	],
 }

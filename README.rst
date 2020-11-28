@@ -28,7 +28,7 @@ To install only the core `statey` engine the command is:
 
 .. code-block:: bash
 
-	$ pip install statey
+    $ pip install statey
 
 There are a number of possible `extras` to install, depending on the use-case:
 
@@ -50,46 +50,46 @@ Usage Example
 
 .. code-block:: bash
 
-	$ statey install pulumi/aws==2.13.1
+    $ statey install pulumi/aws==2.13.1
 
 A typical statey module might look something like the following (in a file called `statey_module.py`):
 
 .. code-block:: python
 
-	import statey as st
-	from statey.ext.pulumi.providers import aws
+    import statey as st
+    from statey.ext.pulumi.providers import aws
 
-	@st.declarative
-	def module(session):
-		bucket = aws.s3.Bucket(
-			bucket='my-bucket-name'
-		)
-		object_1 = aws.s3.BucketObject(
-			bucket=bucket.bucket,
-			key='file-1.json',
-			source='./static/file1.json',
-			contentType='application/json'
-		)
-		object_2 = aws.s3.BucketObject(
-			bucket=bucket.bucket,
-			key='file-2.txt',
-			content=st.f('This is in a bucket named {bucket.bucket}')
-		)
+    @st.declarative
+    def module(session):
+        bucket = aws.s3.Bucket(
+            bucket='my-bucket-name'
+        )
+        object_1 = aws.s3.BucketObject(
+            bucket=bucket.bucket,
+            key='file-1.json',
+            source='./static/file1.json',
+            contentType='application/json'
+        )
+        object_2 = aws.s3.BucketObject(
+            bucket=bucket.bucket,
+            key='file-2.txt',
+            content=st.f('This is in a bucket named {bucket.bucket}')
+        )
 
 Next, simply run the following in the same directory as your `statey_module.py` file:
 
 .. code-block:: bash
 
-	$ export AWS_DEFAULT_REGION=<my_default_region>
-	$ statey up
+    $ export AWS_DEFAULT_REGION=<my_default_region>
+    $ statey up
 
 The `export AWS_DEFAULT_REGION` command is essential because setting the region is required for the Pulumi AWS provider. As an alternative and more general solution to statey configuration one could create a `statey_conf.py` file in the same directory with the following content:
 
 .. code-block:: python
-	
-	import statey as st
+    
+    import statey as st
 
-	st.helpers.set_provider_defaults("pulumi/aws", {"region": "<my_default_region>"})
+    st.helpers.set_provider_defaults("pulumi/aws", {"region": "<my_default_region>"})
 
 The conf file will always be run before the `statey_module.py` module is loaded, and it is intended to register hooks to change statey's behavior.
 
@@ -97,35 +97,35 @@ After running `statey up`, the application will display a confirmation message, 
 
 .. code-block:: python
 
-	import statey as st
-	from statey.ext.pulumi.providers import aws
+    import statey as st
+    from statey.ext.pulumi.providers import aws
 
-	@st.declarative
-	def module(session):
-		bucket = aws.s3.Bucket(
-			bucket='my-bucket-name'
-		)
-		object_1 = aws.s3.BucketObject(
-			bucket=bucket.bucket,
-			key='statey-test-file-1.json',
-			source='./static/file1.json',
-			contentType='application/json'
-		)
-		object_2 = aws.s3.BucketObject(
-			bucket=bucket.bucket,
-			key='statey-test-file-2.txt',
-			content=st.f('This is in a bucket named {bucket.bucket}')
-		)
+    @st.declarative
+    def module(session):
+        bucket = aws.s3.Bucket(
+            bucket='my-bucket-name'
+        )
+        object_1 = aws.s3.BucketObject(
+            bucket=bucket.bucket,
+            key='statey-test-file-1.json',
+            source='./static/file1.json',
+            contentType='application/json'
+        )
+        object_2 = aws.s3.BucketObject(
+            bucket=bucket.bucket,
+            key='statey-test-file-2.txt',
+            content=st.f('This is in a bucket named {bucket.bucket}')
+        )
 
 You should get an output something like the following:
 
 .. code-block:: bash
 
-	* object_2:current:task:delete            
-	| * object_1:current:task:delete             
-	* | object_2:config:task:create                                           
-	 /                
-	* object_1:config:task:create  
+    * object_2:current:task:delete            
+    | * object_1:current:task:delete             
+    * | object_2:config:task:create                                           
+     /                
+    * object_1:config:task:create  
 
 Since you are changing the key of each object, `statey` detects that each one needs to be deleted and recreated, and understands the order those things need to be done in. The same goes for any update you make to your configuration, or tearing down all of your infrastructure altogether.
 
