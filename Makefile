@@ -11,7 +11,7 @@ fmt:
 # 	@pylint statey
 
 check:
-	@black statey tests --line-length=88 --fail
+	@black statey tests --line-length=88 --check
 
 part:=patch
 
