@@ -54,7 +54,7 @@ extra_reqs['dev'] = requirements_dev
 
 setup(
 	name='statey',
-	version='0.0.3',
+	version='0.0.4',
 	description='Graph-based provisioning framework.',
 	long_description=long_description,
 	long_description_content_type='text/x-rst',

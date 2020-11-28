@@ -2,7 +2,7 @@ import warnings
 
 NS = "statey"
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 
 from statey.hooks import (
     hookimpl,
