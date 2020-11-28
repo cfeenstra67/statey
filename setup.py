@@ -39,7 +39,10 @@ extra_reqs = {
 	],
 	'cli': [
 		'click==7.1.2',
-		'asciidag @ git+https://github.com/cfeenstra67/asciidag.git'
+        # TODO: This doesn't work w/ PyPI, need to either submit a PR
+        # to the main repo or figure something else out
+		# 'asciidag @ git+https://github.com/cfeenstra67/asciidag.git',
+        'asciidag==0.2.0'
 	],
 	'pulumi': [
 		'pylumi==1.2.0',
