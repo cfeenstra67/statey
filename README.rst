@@ -2,6 +2,8 @@
 Statey
 ############
 
+|tests-passing| |build-passing| |docs| |pypi-version| |pypi-license|
+
 Introduction
 #############
 
@@ -141,3 +143,29 @@ Contact
 #########
 
 If you have issues using this repository please open a issue or reach out to me at cameron.l.feenstra@gmail.com.
+
+
+.. |docs| image:: https://readthedocs.org/projects/statey/badge/?version=latest
+    :alt: Documentation Status
+    :scale: 100%
+    :target: https://statey.readthedocs.io/en/latest/?badge=latest
+
+.. |pypi-version| image:: https://pypip.in/v/statey/badge.png
+    :target: https://pypi.org/project/statey/
+    :alt: Latest PyPI version
+
+.. |pypi-downloads| image:: https://pypip.in/d/statey/badge.png
+    :target: https://pypi.org/project/statey/
+    :alt: Number of PyPI downloads
+
+.. |pypi-license| image:: https://img.shields.io/pypi/l/statey.svg
+    :target: https://pypi.org/project/statey/
+    :alt: PyPI License
+
+.. |tests-passing| image:: https://github.com/cfeenstra67/statey/workflows/Run%20tests/badge.svg
+    :target: https://github.com/cfeenstra67/statey/actions?query=workflow%3A%22Run+tests%22
+    :alt: Tests Passing
+
+.. |build-passing| image:: https://github.com/cfeenstra67/statey/workflows/Upload%20to%20PyPI/badge.svg
+    :target: https://github.com/cfeenstra67/statey/actions?query=workflow%3A%22Upload+to+PyPI%22
+    :alt: Build Passing
