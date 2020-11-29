@@ -11,39 +11,39 @@ Statey is an infrastructure-as-code framework written in Python. The API is desi
 
 Statey supports pulumi resource providers through `pylumi <https://github.com/cfeenstra67/pylumi>`_, which actually in turn supports Terraform resource providers. This means an entire package index of potential resources is available*.
 
-_NOTE_: Terraform resource providers communicate their type information via [code]`JSONSchema`, which supports higher-level type operations such as [code]`oneOf`. At the moment [code]`statey` does not support anything except basic [code]`JSONSchema` types (objects, strings, numbers, arrays, booleans, etc.)
+_NOTE_: Terraform resource providers communicate their type information via ``JSONSchema``, which supports higher-level type operations such as ``oneOf``. At the moment ``statey`` does not support anything except basic ``JSONSchema`` types (objects, strings, numbers, arrays, booleans, etc.)
 
-The core engine is lightweight and has just a few pure-python dependencies, and it is built from the ground up for extensibility. One of the core data strucrues in statey is the [code]`Registry`, which is built on top of the excellent plugin engine `pluggy <https://github.com/pytest-dev/pluggy>`_. Nearly all of the core functions of statey are hook-based and can be extended or overridden very easily.
+The core engine is lightweight and has just a few pure-python dependencies, and it is built from the ground up for extensibility. One of the core data strucrues in statey is the ``Registry``, which is built on top of the excellent plugin engine `pluggy <https://github.com/pytest-dev/pluggy>`_. Nearly all of the core functions of statey are hook-based and can be extended or overridden very easily.
 
 Installation
 #############
 
-[code]`statey` and all of its core extension modules can be installed using the following terminal command:
+``statey`` and all of its core extension modules can be installed using the following terminal command:
 
 .. code-block:: bash
 
    $ pip install statey[all]
 
-_NOTE_: If you are using Zshell you will have to put [code]`statey[all]` in quotes i.e. [code]`"statey[all]"`.
+_NOTE_: If you are using Zshell you will have to put ``statey[all]`` in quotes i.e. ``"statey[all]"``.
 
-To install only the core [code]`statey` engine the command is:
+To install only the core ``statey`` engine the command is:
 
 .. code-block:: bash
 
     $ pip install statey
 
-There are a number of possible [code]`extras` to install, depending on the use-case:
+There are a number of possible ``extras`` to install, depending on the use-case:
 
-- [code]`fmt` - This enables the [code]`st.f('{some_ref.abc} and other things')` format-string function.
-- [code]`pickle` - This adds extra [code]`pickle` extension packages so that functions can be more reliably pickled.
-- [code]`cli` - This include requirements required to run the statey CLI.
-- [code]`pulumi` - This includes requirements to utilize pulumi resourc providers.
-- [code]`all` - This includes requirements from all of the above.
-- [code]`core` - This includes the requirements from the [code]`fmt` and [code]`cli` extras.
-- [code]`tests` - This includes requirements to run the tests.
-- [code]`dev` - This includes miscellaneous requirements required for development such as `black`.
+- ``fmt`` - This enables the ``st.f('{some_ref.abc} and other things')`` format-string function.
+- ``pickle`` - This adds extra ``pickle`` extension packages so that functions can be more reliably pickled.
+- ``cli`` - This include requirements required to run the statey CLI.
+- ``pulumi`` - This includes requirements to utilize pulumi resourc providers.
+- ``all`` - This includes requirements from all of the above.
+- ``core`` - This includes the requirements from the ``fmt`` and ``cli`` extras.
+- ``tests`` - This includes requirements to run the tests.
+- ``dev`` - This includes miscellaneous requirements required for development such as `black`.
 
-For most users, installing [code]`statey[all]` will be the proper entry point.
+For most users, installing ``statey[all]`` will be the proper entry point.
 
 Usage Example
 ###############
@@ -54,7 +54,7 @@ Usage Example
 
     $ statey install pulumi/aws==2.13.1
 
-A typical statey module might look something like the following (in a file called [code]`statey_module.py`):
+A typical statey module might look something like the following (in a file called ``statey_module.py``):
 
 .. code-block:: python
 
@@ -78,14 +78,14 @@ A typical statey module might look something like the following (in a file calle
             content=st.f('This is in a bucket named {bucket.bucket}')
         )
 
-Next, simply run the following in the same directory as your [code]`statey_module.py` file:
+Next, simply run the following in the same directory as your ``statey_module.py`` file:
 
 .. code-block:: bash
 
     $ export AWS_DEFAULT_REGION=<my_default_region>
     $ statey up
 
-The [code]`export AWS_DEFAULT_REGION` command is essential because setting the region is required for the Pulumi AWS provider. As an alternative and more general solution to statey configuration one could create a [code]`statey_conf.py` file in the same directory with the following content:
+The ``export AWS_DEFAULT_REGION`` command is essential because setting the region is required for the Pulumi AWS provider. As an alternative and more general solution to statey configuration one could create a ``statey_conf.py`` file in the same directory with the following content:
 
 .. code-block:: python
     
@@ -93,9 +93,9 @@ The [code]`export AWS_DEFAULT_REGION` command is essential because setting the r
 
     st.helpers.set_provider_defaults("pulumi/aws", {"region": "<my_default_region>"})
 
-The conf file will always be run before the [code]`statey_module.py` module is loaded, and it is intended to register hooks to change statey's behavior.
+The conf file will always be run before the ``statey_module.py`` module is loaded, and it is intended to register hooks to change statey's behavior.
 
-After running [code]`statey up`, the application will display a confirmation message, and if confirmed will subsequently execute the operations displayed in the plan. At this point the `statey` application is fully aware of and managing the infrastructure defined in `statey_module.py`. You can edit, remove, add to or delete this infrastructure fluently and incrementally without interrupting your existing resources. For example, perhaps we want to change the naming scheme for our s3 objects:
+After running ``statey up``, the application will display a confirmation message, and if confirmed will subsequently execute the operations displayed in the plan. At this point the `statey` application is fully aware of and managing the infrastructure defined in `statey_module.py`. You can edit, remove, add to or delete this infrastructure fluently and incrementally without interrupting your existing resources. For example, perhaps we want to change the naming scheme for our s3 objects:
 
 .. code-block:: python
 
@@ -129,14 +129,14 @@ You should get an output something like the following:
      /                
     * object_1:config:task:create  
 
-Since you are changing the key of each object, [code]`statey` detects that each one needs to be deleted and recreated, and understands the order those things need to be done in. The same goes for any update you make to your configuration, or tearing down all of your infrastructure altogether.
+Since you are changing the key of each object, ``statey`` detects that each one needs to be deleted and recreated, and understands the order those things need to be done in. The same goes for any update you make to your configuration, or tearing down all of your infrastructure altogether.
 
 Compatibility
 ###############
 
 Tests are passing on Mac OS X and Ubuntu, see recent test runs in `Actions <https://github.com/cfeenstra67/pylumi/actions>`_ for details.
 
-Right now [code]`statey` is only tested with Python 3.8. There are known imcompatabilities with Python 3.6, and they should be addressed. Python 3.7 has not been tested but may very well work as intended.
+Right now ``statey`` is only tested with Python 3.8. There are known imcompatabilities with Python 3.6, and they should be addressed. Python 3.7 has not been tested but may very well work as intended.
 
 
 Contact
