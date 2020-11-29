@@ -15,8 +15,8 @@ Getting Started
    :maxdepth: 2
    :caption: Statey Documentation:
 
-   index.rst
-   .. reference.rst
+   index
+   reference/index
 
 
 Indices and tables
