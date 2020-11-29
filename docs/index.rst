@@ -16,6 +16,8 @@ Getting Started
    :caption: Statey Documentation:
 
    index
+   install
+   tutorials/index
    reference/index
 
 

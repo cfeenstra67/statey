@@ -26,24 +26,9 @@ Installation
 
 _NOTE_: If you are using Zshell you will have to put ``statey[all]`` in quotes i.e. ``"statey[all]"``.
 
-To install only the core ``statey`` engine the command is:
-
-.. code-block:: bash
-
-    $ pip install statey
-
-There are a number of possible ``extras`` to install, depending on the use-case:
-
-- ``fmt`` - This enables the ``st.f('{some_ref.abc} and other things')`` format-string function.
-- ``pickle`` - This adds extra ``pickle`` extension packages so that functions can be more reliably pickled.
-- ``cli`` - This include requirements required to run the statey CLI.
-- ``pulumi`` - This includes requirements to utilize pulumi resourc providers.
-- ``all`` - This includes requirements from all of the above.
-- ``core`` - This includes the requirements from the ``fmt`` and ``cli`` extras.
-- ``tests`` - This includes requirements to run the tests.
-- ``dev`` - This includes miscellaneous requirements required for development such as `black`.
-
 For most users, installing ``statey[all]`` will be the proper entry point.
+
+For more details about optional dependencies and available extras please see INSTALL.rst for details.
 
 Usage Example
 ###############
