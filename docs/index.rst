@@ -3,13 +3,20 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to statey's documentation!
-==================================
+################
+Getting Started
+################
+
+.. include:: ../README.rst
+	:start-after: Introduction
+	:end-before: Contact
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Statey Documentation:
 
+   index.rst
+   .. reference.rst
 
 
 Indices and tables
