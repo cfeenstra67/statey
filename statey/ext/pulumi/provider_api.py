@@ -60,7 +60,9 @@ providers = ProvidersAPI()
 class ProviderAPI(APIMixin):
     """"""
 
-    def __init__(self, name: str, provider: PulumiProvider, parent: Optional[Any] = None) -> None:
+    def __init__(
+        self, name: str, provider: PulumiProvider, parent: Optional[Any] = None
+    ) -> None:
         self.name = name
         self.provider = provider
         self.parent = parent
