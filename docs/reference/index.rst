@@ -14,3 +14,4 @@ These sections provide an introduction to most of the core ``statey`` data struc
    providers
    registry
    hooks
+   pulumi
