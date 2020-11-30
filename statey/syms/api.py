@@ -44,7 +44,7 @@ def declarative(
     ignore: Callable[[str], str] = lambda x: x.startswith("_"),
 ) -> Callable[[Any], Any]:
     """
-    Wrap the given function as a function that declares statey objects
+    Wrap the given function as a function that declares statey objects.
     """
 
     def dec(_func):

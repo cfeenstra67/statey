@@ -12,9 +12,7 @@ class APIMixin:
     """
 
     def path(self) -> str:
-        if self.parent is None:
-            return ""
-        return ".".join(filter(None, [self.parent.path(), self.name]))
+        return ".".join(filter(None, [self.parent and self.parent.path(), self.name]))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.path()})"
@@ -29,6 +27,7 @@ class ProvidersAPI(APIMixin):
         if registry is None:
             registry = st.registry
         self.registry = registry
+        self.name = None
         self.parent = None
         self._providers = set()
 
@@ -61,11 +60,11 @@ providers = ProvidersAPI()
 class ProviderAPI(APIMixin):
     """"""
 
-    def __init__(self, name: str, provider: PulumiProvider, parent: Any) -> None:
+    def __init__(self, name: str, provider: PulumiProvider, parent: Optional[Any] = None) -> None:
         self.name = name
         self.provider = provider
         self.parent = parent
-        self.modules = self._build_modules(provider)
+        self.modules = None
 
     def _build_modules(self, provider: PulumiProvider) -> Dict[str, Dict[str, str]]:
         names = {}
@@ -78,15 +77,20 @@ class ProviderAPI(APIMixin):
 
         return names
 
+    def _get_modules(self) -> Dict[str, Dict[str, str]]:
+        if self.modules is None:
+            self.modules = self._build_modules(self.provider)
+        return self.modules
+
     def get_module(self, name: str) -> "ModuleAPI":
         """"""
-        if name not in self.modules:
+        if name not in self._get_modules():
             raise KeyError(name)
         return ModuleAPI(name, self.modules[name], self.provider, self)
 
     def __dir__(self) -> Sequence[str]:
         """"""
-        return dir(super()) + list(self.modules)
+        return dir(super()) + list(self._get_modules())
 
     def __getattr__(self, attr: str) -> "ModuleAPI":
         """"""

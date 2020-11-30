@@ -150,11 +150,6 @@ class PulumiProviderSchemaParser:
 
         fixed_data = self._fix_broken_refs(data)
 
-        import json
-
-        with open("get_schema_test.json", "w+") as f:
-            json.dump(fixed_data, f, indent=2, sort_keys=True)
-
         out = {}
         for key, schema in resources.items():
             input_type = {
