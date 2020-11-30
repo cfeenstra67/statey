@@ -9,34 +9,35 @@ Types
 	:inherited-members:
 
 .. autoclass:: statey.StringType
-	:inherited-members:
 
 .. autodata:: statey.String
+	:no-value:
 
 .. autoclass:: statey.IntegerType
-	:inherited-members:
 
 .. autodata:: statey.Integer
+	:no-value:
 
 .. autoclass:: statey.FloatType
-	:inherited-members:
 
 .. autodata:: statey.Float
+	:no-value:
 
 .. autoclass:: statey.BooleanType
-	:inherited-members:
 
 .. autodata:: statey.Boolean
+	:no-value:
 
+.. autoclass:: statey.Struct
+.. autoclass:: statey.StructType
+   	:members: with_fields
+
+.. autoclass:: statey.Array
 .. autoclass:: statey.ArrayType
-	:inherited-members:
+	:members: with_element_type
 
-.. autodata:: statey.Array
-
+.. autoclass:: statey.Map
 .. autoclass:: statey.MapType
-	:inherited-members:
-
-.. autodata:: statey.Map
+	:members: with_key_type, with_value_type
 
 .. autoclass:: statey.EmptyType
-	:inherited-members:

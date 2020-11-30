@@ -7,3 +7,4 @@ venv2/
 build/
 dist/
 *.egg-info
+_build/

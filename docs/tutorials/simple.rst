@@ -6,13 +6,17 @@ Basic Tutorial
 
 This tutorial walks through creation of resources with a simple ``statey`` project and discusses some of the core concepts to understand along the way.
 
-**NOTE**: this is an extension of the example from :ref:`Getting Started`.
+.. note::
+    
+    This is an extension of the example from :ref:`Getting Started`.
 
-**NOTE**: to run this example you must have the pulumi aws provider installed. This can be done by running the following if it is not already installed:
+.. note:: 
+    
+    To run this example you must have the pulumi aws provider installed. This can be done by running the following if it is not already installed:
 
-.. code-block:: bash
+    .. code-block:: bash
 
-    $ statey install pulumi/aws==2.13.1
+        $ statey install pulumi/aws==2.13.1
 
 A Statey Module file
 ##########################

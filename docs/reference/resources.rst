@@ -6,28 +6,26 @@ Resources
 ===========
 
 .. autoclass:: statey.Resource
-	:inherited-members:
+    :inherited-members:
 
+.. autoclass:: statey.State
+    :inherited-members:
 
-..autoclass:: statey.State
-	:inherited-members:
+.. autoclass:: statey.ResourceState
+    :inherited-members:
 
-..autoclass:: statey.ResourceState
-	:inherited-members:
+.. autoclass:: statey.BoundState
+    :inherited-members:
 
-..autoclass:: statey.BoundState
-	:inherited-members:
+.. autoclass:: statey.Machine
 
-..autoclass:: statey.Machine
-	:inherited-members:
+.. autofunction:: statey.transition
 
-..autofunction:: statey.transition
+.. autoclass:: statey.SingleStateMachine
+    :inherited-members:
 
-..autoclass:: statey.SingleStateMachine
-	:inherited-members:
+.. autoclass:: statey.SimpleMachine
+    :inherited-members:
 
-..autoclass:: statey.SimpleMachine
-	:inherited-members:
-
-..autoclass:: statey.ResourceGraph
-	:inherited-members:
+.. autoclass:: statey.ResourceGraph
+    :inherited-members:
