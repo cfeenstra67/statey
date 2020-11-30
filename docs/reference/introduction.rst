@@ -22,19 +22,19 @@ You can easily write your own typed functions to use with statey objects by usin
 
 .. code-block:: python
 
-	import statey as st
+    import statey as st
 
-	@st.function
-	def my_add(first: int, second: int, third: int) -> int:
-		return first + second + third
+    @st.function
+    def my_add(first: int, second: int, third: int) -> int:
+        return first + second + third
 
-	...
+    ...
 
-	# The function can be inspected
-	>>> my_add.type                   # λ[[first:integer, second:integer, third:integer] => integer]
-	>>> obj3 = my_add(obj1, obj2, 17) 
-	>>> print("OBJ", obj3)            # NativeFunctionCall(my_add(first=Data(1), third=Data(17), second=NativeFunctionCall(__add__(other=Data(1), inst=Data(1)))))
-	>>> obj3 = my_add(obj1, obj2, object()) # NOTE: this throws a validation error!
+    # The function can be inspected
+    >>> my_add.type                   # λ[[first:integer, second:integer, third:integer] => integer]
+    >>> obj3 = my_add(obj1, obj2, 17) 
+    >>> print("OBJ", obj3)            # NativeFunctionCall(my_add(first=Data(1), third=Data(17), second=NativeFunctionCall(__add__(other=Data(1), inst=Data(1)))))
+    >>> obj3 = my_add(obj1, obj2, object()) # NOTE: this throws a validation error!
 
 A ``Session`` refers to a namespace that may or may not data associated with its keys. It is also the way to resolve concrete object values. A standard session can be created with the ``st.create_session`` method, and the primary way to insert data into a session is using the ``<<`` operator, which will return a session reference rather than just the object being inserted. An example of basic session usage can be seen below:
 
@@ -53,10 +53,10 @@ A ``Session`` refers to a namespace that may or may not data associated with its
     >>> print("REFS", ref_a, ref_b, ref_c) # Reference(a) Reference(b) Reference(c)
     >>> session.resolve(st.Object(1))      # 1
     >>> session.resolve(ref_a)             # 3
-    >>> session.resolve(ref_b) 		       # 12
-    >>> session.resolve(ref_c)			   # 15
+    >>> session.resolve(ref_b)             # 12
+    >>> session.resolve(ref_c)             # 15
     # Updating data in the sesssion
     >>> session.set_data("a", 101)
     # Resolving dependent objects makes use
     # of the new value!
-    >>> session.resolve(ref_c)			   # 113
+    >>> session.resolve(ref_c)             # 113
