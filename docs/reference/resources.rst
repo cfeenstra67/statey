@@ -28,3 +28,6 @@ Resources
 
 ..autoclass:: statey.SimpleMachine
 	:inherited-members:
+
+..autoclass:: statey.ResourceGraph
+	:inherited-members:
