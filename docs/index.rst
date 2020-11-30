@@ -14,6 +14,11 @@ Getting Started
 	:start-after: Introduction
 	:end-before: Contact
 
+Next Steps
+###########
+
+If you're interested in trying out ``statey``, head to the :ref:`Installation` or :ref:`Basic Tutorial` pages to learn more and start building!
+
 .. toctree::
    :maxdepth: 2
    :caption: Statey Documentation:

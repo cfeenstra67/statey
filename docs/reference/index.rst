@@ -8,3 +8,4 @@ Reference
    objects
    sessions
    types
+   hooks
