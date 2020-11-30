@@ -8,4 +8,7 @@ Reference
    objects
    sessions
    types
+   resources
+   providers
+   registry
    hooks

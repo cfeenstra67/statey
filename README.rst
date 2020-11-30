@@ -119,10 +119,7 @@ Since you are changing the key of each object, ``statey`` detects that each one 
 Compatibility
 ###############
 
-Tests are passing on Mac OS X and Ubuntu, see recent test runs in `Actions <https://github.com/cfeenstra67/pylumi/actions>`_ for details.
-
-Right now ``statey`` is only tested with Python 3.8. There are known imcompatabilities with Python 3.6, and they should be addressed. Python 3.7 has not been tested but may very well work as intended.
-
+Tests are passing on Mac OS X and Ubuntu with Python 3.7 and 3.8. See recent test runs in `Actions <https://github.com/cfeenstra67/statey/actions>`_ for details. There are known incompatabilities with Python 3.6 at the moment.
 
 Contact
 #########
