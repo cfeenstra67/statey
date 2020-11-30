@@ -26,6 +26,7 @@ If you're interested in trying out ``statey``, head to the :ref:`Installation` o
    index
    install
    tutorials/index
+   cli
    reference/index
 
 
