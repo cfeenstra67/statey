@@ -1,3 +1,9 @@
+.. _Types:
+
+.. automodule:: statey
+
 Types
-========
-TODO
+===========
+
+.. autoclass:: statey.Type
+	:inherited-members:

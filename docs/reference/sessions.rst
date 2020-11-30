@@ -1,3 +1,9 @@
+.. _Sessions:
+
+.. automodule:: statey
+
 Sessions
 ===========
-TODO
+
+.. autoclass:: statey.Session
+	:inherited-members:

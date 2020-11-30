@@ -1,3 +1,9 @@
+.. _Objects:
+
+.. automodule:: statey
+
 Objects
-=========
-TODO
+===========
+
+.. autoclass:: statey.Object
+	:private-members: _impl, _type, _registry, _frame

@@ -1,5 +1,9 @@
 .. _Hooks:
 
+.. automodule:: statey.registry
+
 Hooks
-#########
-TODO
+===========
+
+.. autoclass:: statey.registry.RegistryHooks
+	:inherited-members:
