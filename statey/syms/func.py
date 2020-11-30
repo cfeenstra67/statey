@@ -35,7 +35,7 @@ class NativeFunction(Function):
     """
 
     type: types.FunctionType
-    func: Callable[[Any], Any]
+    func: Callable[[Any], Any] = dc.field(repr=False)
     name: str = "<function>"
 
     @property

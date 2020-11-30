@@ -197,9 +197,9 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
     """
 
     value: Any
-    value_type: Optional[types.Type] = None
-    encoded_value: Any = utils.MISSING
-    encoded_value_type: Optional[types.Type] = None
+    value_type: Optional[types.Type] = dc.field(default=None, repr=False, compare=False, hash=False)
+    encoded_value: Any = dc.field(default=utils.MISSING, repr=False, compare=False, hash=False)
+    encoded_value_type: Optional[types.Type] = dc.field(default=None, repr=False, compare=False, hash=False)
 
     def get_encoded_value(self, type: types.Type, registry: "Registry") -> Any:
         """
