@@ -37,6 +37,9 @@ from statey.syms import encoders
             ),
             id="map",
         ),
+        pytest.param(
+            st.TypeType(), lambda x: isinstance(x, encoders.TypeEncoder), id="type"
+        ),
     ],
 )
 def test_get_encoder(type, check, registry):
@@ -109,6 +112,17 @@ RAISES = object()
             {"nullable": None, "non_nullable": False},
             id="struct_nullable_nested_obj",
         ),
+        pytest.param(st.TypeType(), st.Integer, {"type": "integer"}, id="type_int"),
+        pytest.param(
+            st.TypeType(),
+            st.Struct["a":int, "b":bool],
+            {
+                "type": "object",
+                "properties": {"a": {"type": "integer"}, "b": {"type": "boolean"}},
+                "required": ["a", "b"],
+            },
+            id="type_struct",
+        ),
     ],
 )
 def test_encode(type, data, result, session, registry):
@@ -118,7 +132,6 @@ def test_encode(type, data, result, session, registry):
         with pytest.raises(st.exc.InputValidationError):
             encoder.encode(data)
     else:
-        actual_result = encoder.encode(data)
-        obj = st.Object[type](actual_result)
-        resolved = session.resolve(obj)
+        obj = st.Object[type](data)
+        resolved = session.resolve(obj, decode=False)
         assert result == resolved

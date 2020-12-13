@@ -129,20 +129,6 @@ class DataClassMixin(abc.ABC):
         return dc.replace(self, meta=meta)
 
 
-class ValueType(Type):
-    """
-    Base class for types that just have a single instance
-    """
-
-    nullable: bool
-    meta: Dict[str, Any]
-
-    @property
-    @abc.abstractmethod
-    def name(self) -> str:
-        raise NotImplementedError
-
-
 @dc.dataclass(frozen=True, repr=False)
 class AnyType(DataClassMixin, Type):
     """
@@ -159,7 +145,7 @@ class AnyType(DataClassMixin, Type):
     __hash__ = Type.__hash__
 
 
-class NumberType(ValueType):
+class NumberType(Type):
     """
     Base class for numeric types
     """
@@ -184,7 +170,7 @@ class FloatType(DataClassMixin, NumberType):
 
 
 @dc.dataclass(frozen=True, repr=False)
-class BooleanType(DataClassMixin, ValueType):
+class BooleanType(DataClassMixin, Type):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="boolean")
@@ -193,7 +179,7 @@ class BooleanType(DataClassMixin, ValueType):
 
 
 @dc.dataclass(frozen=True, repr=False)
-class StringType(DataClassMixin, ValueType):
+class StringType(DataClassMixin, Type):
     nullable: bool = False
     meta: Dict[str, Any] = dc.field(default_factory=dict)
     name: str = dc.field(init=False, repr=False, default="string")
@@ -551,6 +537,22 @@ class MapType(DataClassMixin, Type):
                 self.value_type,
             )
         )
+
+
+@dc.dataclass(frozen=True)
+class TypeType(DataClassMixin, Type):
+    """
+    Wraps a statey type object
+    """
+
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        return "type"
+
+    __hash__ = Type.__hash__
 
 
 # Some exported objects

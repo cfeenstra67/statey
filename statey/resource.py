@@ -569,3 +569,63 @@ class ResourceGraph:
             instance.add_dependencies(to_node, from_nodes)
 
         return instance
+
+    # def to_object(self, registry: Optional["Registry"] = None) -> "Object":
+    #     """
+
+    #     """
+    #     if registry is None:
+    #         registry = st.registry
+
+    #     fields = []
+
+    #     for node in self.graph.nodes:
+    #         typ = self.graph.nodes[node]["type"]
+    #         node_type = ResourceGraphNodeType(typ)
+    #         fields.append(st.Field(node, node_type))
+
+    #     typ = st.StructType(fields)
+
+    #     dict_val = self.to_dict()
+
+    #     for val in dict_val.values():
+    #         del val["type"]
+    #         if val["state"] is not None:
+    #             val["state"] = val["state"]["name"]
+
+    #     return st.Object(dict_val, typ)
+
+    # @classmethod
+    # def from_object(cls, obj: "Object", session: "Session") -> "ResourceGraph":
+    #     """
+
+    #     """
+    #     resolved = session.resolve(obj)
+
+    #     inst = cls()
+
+    #     for field in obj._type.fields:
+    #         state_name = resolved[field.name]["state"]
+    #         # TODO(cam): does it matter to drop the input type here? Otherwise we'll need to
+    #         # store it somehow. Should figure out how to fix this eventually.
+    #         state_val = st.State(state_name, st.EmptyType, field.type)
+    #         inst.set(field.name, resolved[field.name]["data"], field.type, state_val)
+
+
+#         pass
+
+
+# StateType = lambda intype, outtype: st.Struct[
+#     "name": str,
+#     "input_type":
+# ]
+
+
+# ResourceGraphNodeType = lambda typ: st.Struct[
+#     "data": typ,
+#     "state": str,
+#     "depends_on": Sequence[str]
+# ]
+
+
+# def encode_rg(rg: ResourceGraph) ->

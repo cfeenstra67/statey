@@ -114,6 +114,16 @@ class AnyTypeSerializer(ValueTypeSerializer):
 
 
 @dc.dataclass(frozen=True)
+class TypeTypeSerializer(ValueTypeSerializer):
+    """
+    Value type serializer for TypeType
+    """
+
+    type_cls = types.TypeType
+    type_name = "type"
+
+
+@dc.dataclass(frozen=True)
 class ArrayTypeSerializer(TypeSerializer):
     """
     Type serializer for arrays
@@ -375,6 +385,7 @@ TYPE_SERIALIZER_CLASSES = [
     BooleanTypeSerializer,
     StringTypeSerializer,
     AnyTypeSerializer,
+    TypeTypeSerializer,
     ArrayTypeSerializer,
     MapTypeSerializer,
     StructTypeSerializer,

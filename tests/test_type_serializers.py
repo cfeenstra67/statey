@@ -92,6 +92,10 @@ import statey as st
             },
             id="map_nullable",
         ),
+        pytest.param(st.TypeType(), {"type": "type"}, id="type_non_nullable"),
+        pytest.param(
+            ~st.TypeType(), {"type": "type", "nullable": True}, id="type_nullable"
+        ),
     ],
 )
 def test_serialize_type(type, serialized, registry):

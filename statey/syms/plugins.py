@@ -29,12 +29,12 @@ class HandleOptionalPlugin:
 @dc.dataclass(frozen=True)
 class ValuePredicatePlugin:
     """
-    Simple predicate plugin that will may an annotation to a ValueType subclass (or any
-    whos constructor is just the nullable argument)
+    Simple predicate plugin that will may an annotation to any subclass
+    whos constructor is just the nullable and meta arguments
     """
 
     predicate: Union[Callable[[Any], bool], PyType]
-    type_cls: PyType[types.ValueType]
+    type_cls: PyType[types.Type]
 
     @st.hookimpl(tryfirst=True)
     def get_type(

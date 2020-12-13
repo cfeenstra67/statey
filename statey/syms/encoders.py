@@ -20,14 +20,14 @@ class Encoder(abc.ABC):
     type: types.Type
 
     @abc.abstractmethod
-    def encode(self, type: types.Type, value: Any) -> Any:
+    def encode(self, value: Any) -> Any:
         """
-        Given a type and some _non-validated_ value, convert it to a serializable value
+        Given some _non-validated_ value, convert it to a serializable value
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def decode(self, type: types.Type, value: Any) -> Any:
+    def decode(self, value: Any) -> Any:
         """
         Given a freshly deserialized dictionary, potentially apply some post-processing or wrap
         it in a native type
@@ -390,6 +390,72 @@ class MapEncoder(MarshmallowEncoder):
         return instance
 
 
+@dc.dataclass(frozen=True)
+class TypeEncoder(HookHandlingEncoder):
+    """
+    encodes a types.TypeType
+    """
+
+    type: types.Type
+    registry: "Registry"
+    pm: pluggy.PluginManager = dc.field(
+        init=False,
+        compare=False,
+        repr=False,
+        default_factory=create_encoder_plugin_manager,
+    )
+
+    def encode(self, value: Any) -> Any:
+        super_encoded = super().encode(value)
+        if value is None:
+            if self.type.nullable:
+                return None
+            raise st.exc.InputValidationError({"_schema": ["Invalid input type."]})
+
+        if isinstance(value, dict):
+            return value
+
+        try:
+            type_serializer = self.registry.get_type_serializer(value)
+        except st.exc.NoTypeSerializerFound as err:
+            raise st.exc.InputValidationError(
+                {"_schema": ["Unable to find type serializer."]}
+            )
+
+        return type_serializer.serialize(value)
+
+    def decode(self, value: Any) -> Any:
+        if value is None:
+            if self.type.nullable:
+                return super().decode(value)
+            raise st.exc.InputValidationError({"_schema": ["Invalid input type."]})
+
+        if isinstance(value, types.Type):
+            return super().decode(value)
+
+        try:
+            type_serializer = self.registry.get_type_serializer_from_data(value)
+        except st.exc.NoTypeSerializerFound as err:
+            raise st.exc.InputValidationError(
+                {"_schema": ["Unable to find type serializer."]}
+            )
+
+        typ = type_serializer.deserialize(value)
+        return super().decode(typ)
+
+    @classmethod
+    @st.hookimpl
+    def get_encoder(
+        cls, type: types.Type, registry: "Registry", serializable: bool
+    ) -> Encoder:
+        if not isinstance(type, types.TypeType):
+            return None
+        instance = cls(type, registry)
+        for plugin in type.meta.get("plugins", []):
+            instance.pm.register(plugin)
+        return instance
+
+
 ENCODER_CLASSES = [
     DefaultEncoder,
     IntegerEncoder,
@@ -400,6 +466,7 @@ ENCODER_CLASSES = [
     StructEncoder,
     NativeFunctionEncoder,
     MapEncoder,
+    TypeEncoder,
 ]
 
 

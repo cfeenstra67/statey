@@ -80,6 +80,7 @@ from statey.syms.types import (
     Boolean,
     Any,
     Map,
+    TypeType,
 )
 
 from statey.syms.api import (
