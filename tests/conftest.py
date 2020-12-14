@@ -1,3 +1,6 @@
+import shutil
+import tempfile
+
 import pytest
 import statey as st
 
@@ -12,5 +15,29 @@ def session():
 
 
 @pytest.fixture
+def resource_session():
+    return st.create_resource_session()
+
+
+@pytest.fixture
+def executor():
+    return st.AsyncIOGraphExecutor()
+
+
+@pytest.fixture
+def migrator():
+    return st.DefaultMigrator()
+
+
+@pytest.fixture
 def registry(session):
-    return session.ns.registry
+    return st.registry
+
+
+@pytest.fixture
+def tmpdir():
+    value = tempfile.mkdtemp()
+    try:
+        yield value
+    finally:
+        shutil.rmtree(value)

@@ -407,7 +407,7 @@ class Unknown(ObjectImplementation):
         import statey as st
 
         typ = st.registry.get_type(item)
-        return st.Object(Unknown(return_type=typ))
+        return st.Object(Unknown(return_type=typ), frame=stack.frame_snapshot(1))
 
     obj: Optional[Object] = None
     refs: Sequence[Object] = ()

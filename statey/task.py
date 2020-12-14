@@ -304,9 +304,10 @@ class SessionTask(Task):
 
 
 @dc.dataclass(frozen=True)
-class SessionSwitch(Task):
+class SessionSwitchAction:
     """
-    A session switch resolves a key in one session, and sets that in another session
+    Encapsulates information about a single component of a session switch. Intended
+    to allow grouping multiple session operations into a single session switch task.
     """
 
     input_session: session.Session
@@ -314,6 +315,15 @@ class SessionSwitch(Task):
     output_session: session.Session
     output_key: str
     allow_unknowns: bool = True
+
+
+@dc.dataclass(frozen=True)
+class SessionSwitch(Task):
+    """
+    A session switch resolves a key in one session, and sets that in another session
+    """
+
+    actions: Sequence[SessionSwitchAction]
     description: Optional[str] = None
 
     def always_eager(self) -> bool:
@@ -323,10 +333,11 @@ class SessionSwitch(Task):
         return True
 
     async def run(self) -> None:
-        resolved_input = self.input_session.resolve(
-            self.input_symbol, allow_unknowns=self.allow_unknowns, decode=False
-        )
-        self.output_session.set_data(self.output_key, resolved_input)
+        for action in self.actions:
+            resolved_input = action.input_session.resolve(
+                action.input_symbol, allow_unknowns=action.allow_unknowns, decode=False
+            )
+            action.output_session.set_data(action.output_key, resolved_input)
 
 
 @dc.dataclass(frozen=True)
@@ -447,7 +458,7 @@ class GraphSetKeySpec(ResourceGraphOperationSpec):
         )
 
 
-class TaskSession(session.Session):
+class TaskSession(session.WriteableSession):
     """
     Session subclass that wraps a regular session but handles resources in a special manner.
     """

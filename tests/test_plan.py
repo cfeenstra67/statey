@@ -1,8 +1,6 @@
 import json
 import os
-import shutil
 import textwrap as tw
-import tempfile
 from datetime import datetime, date
 
 import pytest
@@ -29,12 +27,12 @@ def files_test_1(session, tmpdir):
         data=st.f(
             tw.dedent(
                 """
-            Copy of {file_1.location}:
-            --------------------------
-            {file_1.data}
-            --------------------------
-            Copied {today()}
-        """
+                Copy of {file_1.location}:
+                --------------------------
+                {file_1.data}
+                --------------------------
+                Copied {today()}
+                """
             ).strip()
         ),
     )
@@ -54,43 +52,70 @@ def files_test_2(session, tmpdir):
         data=st.f(
             tw.dedent(
                 """
-            Copy of {file_1.location}:
-            --------------------------
-            {file_1.data}
-            --------------------------
-            Copied {today()}
-        """
+                Copy of {file_1.location}:
+                --------------------------
+                {file_1.data}
+                --------------------------
+                Copied {today()}
+                """
             ).strip()
         ),
     )
 
 
-@pytest.fixture
-def tmpdir():
-    value = tempfile.mkdtemp()
-    try:
-        yield value
-    finally:
-        shutil.rmtree(value)
+@st.declarative
+def files_test_3(session, tmpdir):
+    file_1 = File(location=tmpdir + "/test-3.txt", data="Hello, world! 2")
+    file_2 = File(
+        location=tmpdir + "/test-2.txt.backup",
+        data=st.f(
+            tw.dedent(
+                """
+                Copy of {file_1.location}:
+                --------------------------
+                {file_1.data}
+                --------------------------
+                Copied {today()}
+                """
+            ).strip()
+        ),
+    )
 
 
 def assert_depends(a, b, graph):
     assert b in graph.pred[a]
 
 
-@pytest.mark.asyncio
-async def test_plan(tmpdir):
-
-    tmpdir = tempfile.mkdtemp()
+async def setup_state(func, *args, **kwargs):
 
     session = st.create_resource_session()
-    files_test_1(session, tmpdir)
+    func(session, *args, **kwargs)
 
     migrator = st.DefaultMigrator()
 
     plan = await migrator.plan(session)
 
-    plan.build_task_graph()
+    executor = st.AsyncIOGraphExecutor()
+
+    exec_info = await executor.execute_async(plan.task_graph)
+
+    exec_info.raise_for_failure()
+
+    rg = plan.task_graph.resource_graph
+
+    async for _ in rg.refresh():
+        pass
+
+    return rg
+
+
+@pytest.mark.asyncio
+async def test_plan_create(tmpdir, resource_session, migrator, executor):
+
+    session = resource_session
+    files_test_1(session, tmpdir)
+
+    plan = await migrator.plan(session)
 
     assert not plan.is_empty()
 
@@ -118,8 +143,6 @@ async def test_plan(tmpdir):
 
     assert_depends("file_2:input", "file_1:output", task_graph)
     assert_depends("file_3:input", "file_1:output", task_graph)
-
-    executor = st.AsyncIOGraphExecutor()
 
     exec_info = await executor.execute_async(plan.task_graph)
 
@@ -189,13 +212,17 @@ async def test_plan(tmpdir):
 
     assert plan_post_update.is_empty()
 
-    # Now we'll try an update
 
-    session_2 = st.create_resource_session()
+@pytest.mark.asyncio
+async def test_update_recreate(tmpdir, resource_session, migrator, executor):
+
+    resource_graph = await setup_state(files_test_1, tmpdir)
+    keys = ["file_1", "file_2", "file_3"]
+
+    session_2 = resource_session
     files_test_2(session_2, tmpdir)
 
     plan_2 = await migrator.plan(session_2, resource_graph)
-    plan_2.build_task_graph()
 
     task_graph = plan_2.task_graph.task_graph
     resource_graph = plan_2.task_graph.resource_graph
@@ -279,9 +306,88 @@ async def test_plan(tmpdir):
     plan_post_update_2 = await migrator.plan(session_2, resource_graph)
     assert plan_post_update_2.is_empty()
 
-    # Now finally tear everything down
 
-    session_3 = st.create_resource_session()
+@pytest.mark.asyncio
+async def test_update(tmpdir, resource_session, migrator, executor):
+
+    current_rg = await setup_state(files_test_2, tmpdir)
+    keys = list(current_rg.graph.nodes)
+
+    files_test_3(resource_session, tmpdir)
+
+    plan = await migrator.plan(resource_session, current_rg)
+
+    task_graph = plan.task_graph.task_graph
+    resource_graph = plan.task_graph.resource_graph
+
+    assert {node.key for node in plan.nodes} == set(keys)
+
+    assert set(task_graph.nodes) == {
+        "file_1:input",
+        "file_1:task:rename_file",
+        "file_1:output",
+        "file_1:state",
+        "file_2:input",
+        "file_2:task:update_file",
+        "file_2:output",
+        "file_2:state",
+    }
+
+    assert_depends("file_2:input", "file_1:output", task_graph)
+
+    exec_info = await executor.execute_async(plan.task_graph)
+
+    assert exec_info.is_success()
+
+    data = resource_graph.graph.nodes
+
+    assert set(data) == set(keys)
+
+    file_1_data = data["file_1"]["value"]
+    file_1_content = "Hello, world! 2"
+
+    assert file_1_data["location"] == os.path.realpath(tmpdir + "/test-3.txt")
+    assert file_1_data["data"] == ""
+    with open(file_1_data["location"]) as f:
+        assert f.read() == file_1_content
+
+    file_2_data = data["file_2"]["value"]
+    file_2_content = tw.dedent(
+        f"""
+        Copy of {file_1_data["location"]}:
+        --------------------------
+        {file_1_content}
+        --------------------------
+        Copied {date.today().isoformat()}
+        """
+    ).strip()
+
+    assert file_2_data["location"] == os.path.realpath(tmpdir + "/test-2.txt.backup")
+    assert file_2_data["data"] == ""
+    with open(file_2_data["location"]) as f:
+        assert f.read() == file_2_content
+
+    async for _ in resource_graph.refresh():
+        pass
+
+    keys = ["file_1", "file_2"]
+
+    for key in keys:
+        file_data = data[key]["value"]
+        with open(file_data["location"]) as f:
+            assert f.read() == file_data["data"]
+
+    plan_post_update = await migrator.plan(resource_session, resource_graph)
+    assert plan_post_update.is_empty()
+
+
+@pytest.mark.asyncio
+async def test_teardown(tmpdir, resource_session, migrator, executor):
+
+    resource_graph = await setup_state(files_test_2, tmpdir)
+    keys = ["file_1", "file_2"]
+
+    session_3 = resource_session
 
     plan_3 = await migrator.plan(session_3, resource_graph)
 

@@ -21,10 +21,11 @@ from statey.resource import (
     StateConfig,
     StateSnapshot,
 )
-from statey.syms import session, types, Object, stack, utils
+from statey.syms import session, types, Object, stack, utils, impl
 from statey.task import (
     TaskSession,
     SessionSwitch,
+    SessionSwitchAction,
     GraphDeleteKey,
     GraphSetKey,
     create_task_session,
@@ -43,6 +44,7 @@ class PlanAction(abc.ABC):
         prefix: str,
         resource_graph: ResourceGraph,
         output_session: session.Session,
+        state_session: session.Session,
         # Dependencies of the configuration
         dependencies: Sequence[str],
     ) -> None:
@@ -75,6 +77,7 @@ class ExecuteTaskSession(PlanAction):
 
     task_session: TaskSession
     task_input_key: str
+    task_state_key: str
     output_ref: Object
     graph_ref: Object
     output_key: str
@@ -82,6 +85,8 @@ class ExecuteTaskSession(PlanAction):
     previous_state: ResourceState
     resource: Resource
     input_symbol: Object
+    state_symbol: Object
+    state_allow_unknowns: bool = False
 
     def input_task(self, prefix: str) -> str:
         return f"{prefix}:input"
@@ -95,15 +100,26 @@ class ExecuteTaskSession(PlanAction):
         prefix: str,
         resource_graph: ResourceGraph,
         output_session: session.Session,
-        # Dependencies of the configuration
+        state_session: session.Session,
         dependencies: Sequence[str],
     ) -> None:
 
         input_switch_task = SessionSwitch(
-            input_session=output_session,
-            input_symbol=self.input_symbol,
-            output_session=self.task_session,
-            output_key=self.task_input_key,
+            [
+                SessionSwitchAction(
+                    input_session=output_session,
+                    input_symbol=self.input_symbol,
+                    output_session=self.task_session,
+                    output_key=self.task_input_key,
+                ),
+                SessionSwitchAction(
+                    input_session=state_session,
+                    input_symbol=self.state_symbol,
+                    output_session=self.task_session,
+                    output_key=self.task_state_key,
+                    allow_unknowns=self.state_allow_unknowns,
+                ),
+            ]
         )
 
         input_key = self.input_task(prefix)
@@ -133,10 +149,14 @@ class ExecuteTaskSession(PlanAction):
             graph.add_node(output_key, task=output_graph_task, source=prefix)
 
             output_switch_task = SessionSwitch(
-                input_session=self.task_session,
-                input_symbol=self.output_ref,
-                output_session=output_session,
-                output_key=self.output_key,
+                [
+                    SessionSwitchAction(
+                        input_session=self.task_session,
+                        input_symbol=self.output_ref,
+                        output_session=output_session,
+                        output_key=self.output_key,
+                    )
+                ]
             )
             output_switch_key = self.output_task(prefix)
             graph.add_node(output_switch_key, task=output_switch_task, source=prefix)
@@ -210,7 +230,7 @@ class SetValue(PlanAction):
         prefix: str,
         resource_graph: ResourceGraph,
         output_session: session.Session,
-        # Dependencies of the configuration
+        state_session: session.Session,
         dependencies: Sequence[str],
     ) -> None:
 
@@ -228,10 +248,14 @@ class SetValue(PlanAction):
         session_task_name = self.session_switch_task(prefix)
         if self.set_session:
             session_task = SessionSwitch(
-                input_session=output_session,
-                input_symbol=self.output_symbol,
-                output_session=output_session,
-                output_key=self.output_key,
+                [
+                    SessionSwitchAction(
+                        input_session=output_session,
+                        input_symbol=self.output_symbol,
+                        output_session=output_session,
+                        output_key=self.output_key,
+                    )
+                ]
             )
             graph.add_node(session_task_name, task=session_task, source=prefix)
             if self.set_graph:
@@ -267,16 +291,20 @@ class ResourceSetValue(PlanAction):
         prefix: str,
         resource_graph: ResourceGraph,
         output_session: session.Session,
-        # Dependencies of the configuration
+        state_session: session.Session,
         dependencies: Sequence[str],
     ) -> None:
 
         session_task_name = self.session_switch_task(prefix)
         session_task = SessionSwitch(
-            input_session=output_session,
-            input_symbol=self.output_symbol,
-            output_session=output_session,
-            output_key=self.output_key,
+            [
+                SessionSwitchAction(
+                    input_session=output_session,
+                    input_symbol=self.output_symbol,
+                    output_session=output_session,
+                    output_key=self.output_key,
+                )
+            ]
         )
         graph.add_node(session_task_name, task=session_task, source=prefix)
 
@@ -313,13 +341,27 @@ class DeleteValue(PlanAction):
         prefix: str,
         resource_graph: ResourceGraph,
         output_session: session.Session,
-        # Dependencies of the configuration
+        state_session: session.Session,
         dependencies: Sequence[str],
     ) -> None:
 
         graph_task_name = self.input_task(prefix)
         graph_task = GraphDeleteKey(key=self.delete_key, resource_graph=resource_graph)
         graph.add_node(graph_task_name, task=graph_task, source=prefix)
+
+
+@dc.dataclass(frozen=True)
+class PlanNodeState:
+    """
+    Encapsulates information about one the key associated with a plan node, and
+    the transition required to get there
+    """
+
+    data: Any
+    type: types.Type
+    state: Optional[ResourceState]
+    depends_on: Sequence[str]
+    action: PlanAction
 
 
 @dc.dataclass(frozen=True)
@@ -332,18 +374,8 @@ class PlanNode:
     """
 
     key: str
-    # This will always be fully resolved
-    current_data: Any
-    current_type: types.Type
-    current_state: Optional[ResourceState]
-    current_depends_on: Sequence[str]
-    current_action: Optional[PlanAction]
-    # This may contain unknowns
-    config_data: Any
-    config_type: types.Type
-    config_state: Optional[ResourceState]
-    config_depends_on: Sequence[str]
-    config_action: Optional[PlanAction]
+    current: Optional[PlanNodeState] = None
+    config: Optional[PlanNodeState] = None
     enforce_dependencies: bool = True
 
     def input_task(self) -> Optional[str]:
@@ -356,13 +388,23 @@ class PlanNode:
 
     def current_prefix(self) -> str:
         """"""
-        if self.current_action is not None and self.config_action is not None:
+        if (
+            self.current is not None
+            and self.current.action is not None
+            and self.config is not None
+            and self.config.action is not None
+        ):
             return f"{self.key}:current"
         return self.key
 
     def config_prefix(self) -> str:
         """"""
-        if self.current_action is not None and self.config_action is not None:
+        if (
+            self.current is not None
+            and self.current.action is not None
+            and self.config is not None
+            and self.config.action is not None
+        ):
             return f"{self.key}:config"
         return self.key
 
@@ -373,28 +415,36 @@ class PlanNode:
         only exists in one of the previous of configured namespaces or when it is a single
         resource whose state is being migrated.
         """
-        action = self.current_action or self.config_action
+        action = (self.current and self.current.action) or (
+            self.config and self.config.action
+        )
         if action is None:
             return None
         return action.output_task(self.current_prefix())
 
     def config_output_task(self) -> Optional[str]:
         """"""
-        action = self.config_action or self.current_action
+        action = (self.config and self.config.action) or (
+            self.current and self.current.action
+        )
         if action is None:
             return None
         return action.output_task(self.config_prefix())
 
     def config_input_task(self) -> str:
         """"""
-        action = self.config_action or self.current_action
+        action = (self.config and self.config.action) or (
+            self.current and self.current.action
+        )
         if action is None:
             return None
         return action.input_task(self.config_prefix())
 
     def current_input_task(self) -> str:
         """"""
-        action = self.current_action or self.config_action
+        action = (self.current and self.current.action) or (
+            self.config and self.config.action
+        )
         if action is None:
             return None
         return action.input_task(self.current_prefix())
@@ -419,14 +469,14 @@ class PlanNode:
         current_output_task = self.current_output_task()
         config_output_task = self.config_output_task()
 
-        for upstream in self.config_depends_on:
+        for upstream in self.config and self.config.depends_on or []:
             node = other_nodes[upstream]
             ref = node.output_task()
             if ref is None:
                 continue
             edges[ref, config_input_task] = {"optional": False}
 
-        for downstream in self.current_depends_on:
+        for downstream in self.current and self.current.depends_on or []:
             node = other_nodes[downstream]
             current_ref = node.current_output_task()
             config_ref = node.config_output_task()
@@ -445,7 +495,7 @@ class PlanNode:
 
             check_set = (
                 {(current_ref, current_input_task)}
-                if self.current_action
+                if self.current and self.current.action
                 else {(config_ref, config_input_task)}
             )
 
@@ -456,7 +506,10 @@ class PlanNode:
         return [(*key, val) for key, val in edges.items()]
 
     def get_task_graph(
-        self, resource_graph: ResourceGraph, output_session: session.Session
+        self,
+        resource_graph: ResourceGraph,
+        output_session: session.Session,
+        state_session: session.Session,
     ) -> nx.DiGraph:
         """
         Render a task graph for this specific node of the plan. The names specified
@@ -464,39 +517,48 @@ class PlanNode:
         """
         tasks = nx.DiGraph()
 
-        if self.current_action is not None and self.config_action is not None:
-            self.current_action.render(
+        if (
+            self.current
+            and self.current.action is not None
+            and self.config
+            and self.config.action is not None
+        ):
+            self.current.action.render(
                 graph=tasks,
                 prefix=self.current_prefix(),
                 resource_graph=resource_graph,
                 output_session=output_session,
+                state_session=state_session,
                 # The current task will always have a null result
                 dependencies=(),
             )
-            self.config_action.render(
+            self.config.action.render(
                 graph=tasks,
                 prefix=self.config_prefix(),
                 resource_graph=resource_graph,
                 output_session=output_session,
-                dependencies=self.config_depends_on,
+                dependencies=self.config.depends_on,
+                state_session=state_session,
             )
             # Make these two graphs depend on one another
             tasks.add_edge(self.current_output_task(), self.config_input_task())
-        elif self.current_action:
-            self.current_action.render(
+        elif self.current and self.current.action:
+            self.current.action.render(
                 graph=tasks,
                 prefix=self.current_prefix(),
                 resource_graph=resource_graph,
                 output_session=output_session,
+                state_session=state_session,
                 dependencies=(),
             )
-        elif self.config_action:
-            self.config_action.render(
+        elif self.config and self.config.action:
+            self.config.action.render(
                 graph=tasks,
                 prefix=self.config_prefix(),
                 resource_graph=resource_graph,
                 output_session=output_session,
-                dependencies=self.config_depends_on,
+                state_session=state_session,
+                dependencies=self.config.depends_on,
             )
 
         return tasks
@@ -512,6 +574,7 @@ class Plan:
     nodes: Sequence[PlanNode]
     providers: Sequence[Provider]
     config_session: ResourceSession
+    state_session: ResourceSession
     state_graph: ResourceGraph
     task_graph: "ResourceTaskGraph" = dc.field(init=False, default=None)
 
@@ -547,7 +610,6 @@ class Plan:
         """
         from statey.executor import ResourceTaskGraph
 
-        state_graph = self.state_graph.clone()
         output_session = self.config_session.clone()
 
         node_dict = {node.key: node for node in self.nodes}
@@ -558,7 +620,9 @@ class Plan:
         for node in self.nodes:
             graphs.append(
                 node.get_task_graph(
-                    resource_graph=state_graph, output_session=output_session
+                    resource_graph=self.state_graph,
+                    output_session=output_session,
+                    state_session=self.state_session,
                 )
             )
             node_edges = node.get_edges(node_dict)
@@ -577,7 +641,7 @@ class Plan:
 
         self.check_dag(full_graph, strict)
 
-        return ResourceTaskGraph(full_graph, output_session, state_graph)
+        return ResourceTaskGraph(full_graph, output_session, self.state_graph)
 
     def build_task_graph(self, force: bool = False, **kwargs) -> None:
         """
@@ -608,14 +672,6 @@ class Migrator(abc.ABC):
     """
 
     @abc.abstractmethod
-    def create_task_session(self) -> TaskSession:
-        """
-        Create a new instance of a TaskSession, used by resource classes to coordinate one
-        or more actions in a grap symbollically
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
     async def plan(
         self,
         config_session: ResourceSession,
@@ -633,14 +689,274 @@ class DefaultMigrator(Migrator):
     simple default Migrator implementation
     """
 
-    def create_task_session(self) -> TaskSession:
-        return create_task_session()
+    @contextlib.contextmanager
+    def error_ctx(self) -> None:
+        with stack.rewrite_ctx():
+            try:
+                yield
+            except Exception as err:
+                raise exc.ErrorDuringPlanning(err, sys.exc_info()[2]) from err
+
+    @contextlib.contextmanager
+    def node_error_ctx(
+        self, key: str, snapshot: StateSnapshot, config: StateConfig
+    ) -> None:
+        with stack.rewrite_ctx():
+            try:
+                yield
+            except Exception as err:
+                raise exc.ErrorDuringPlanningNode(
+                    key, snapshot, config, err, sys.exc_info()[2]
+                ) from err
+
+    def create_task_session(
+        self, data: Optional[Dict[str, Object]] = None
+    ) -> TaskSession:
+        if data is None:
+            data = {}
+        session = create_task_session()
+        for key, val in data.items():
+            session.set(key, val)
+        return session
+
+    async def get_or_create_provider(
+        self,
+        id: ProviderId,
+        providers: Dict[ProviderId, Provider],
+        registry: "Registry",
+    ) -> Provider:
+        """"""
+        provider = providers.get(id)
+        if provider is None:
+            provider = providers[id] = registry.get_provider(*id)
+            await provider.setup()
+
+        return provider
+
+    async def plan_node_migrate_states(
+        self,
+        node: str,
+        config_session: ResourceSession,
+        state_session: ResourceSession,
+        config_dep_graph: nx.DiGraph,
+        state_dep_graph: nx.DiGraph,
+        output_session: ResourceSession,
+        providers: Dict[ProviderId, Provider],
+    ) -> Sequence[PlanNode]:
+        """"""
+        config_bound_state = output_session.get_state(node)
+        config_state = config_bound_state.state
+        previous_state = state_session.get_state(node).state
+
+        current_depends_on = list(state_dep_graph.pred[node])
+        config_depends_on = list(config_dep_graph.pred[node])
+
+        provider = await self.get_or_create_provider(
+            config_state.provider, providers, config_session.ns.registry
+        )
+
+        resource = provider.get_resource(config_state.resource)
+
+        previous_ref = state_session.ns.ref(node)
+        previous_resolved = state_session.resolve(
+            previous_ref, decode=False, allow_unknowns=True
+        )
+        config_partial_resolved = output_session.resolve(
+            config_bound_state.input, decode=False, allow_unknowns=True
+        )
+
+        task_session = self.create_task_session(
+            {
+                "input": Object[config_state.input_type](config_partial_resolved),
+                "state": Object[previous_state.output_type](previous_resolved),
+            }
+        )
+
+        input_ref = task_session.ns.ref("input")
+        task_state_ref = task_session.ns.ref("state")
+
+        previous_snapshot = StateSnapshot(task_state_ref, previous_state)
+        bound_config = StateConfig(input_ref, config_state)
+
+        current_action = None
+        state_symbol = previous_ref
+
+        with self.node_error_ctx(node, previous_snapshot, bound_config):
+
+            try:
+                plan_output = await resource.plan(
+                    previous_snapshot, bound_config, task_session
+                )
+            except exc.NullRequired:
+                null_bound_config = StateConfig({}, resource.null_state)
+
+                old_task_session = self.create_task_session(
+                    {
+                        "input": Object[resource.null_state.input_type]({}),
+                        "state": Object[previous_state.output_type](previous_resolved),
+                    }
+                )
+                old_state_ref = old_task_session.ns.ref("state")
+
+                old_previous_snapshot = StateSnapshot(old_state_ref, previous_state)
+
+                # old_task_session = task_session_base.clone()
+                og_plan_output = await resource.plan(
+                    old_previous_snapshot, null_bound_config, old_task_session
+                )
+
+                if isinstance(og_plan_output, tuple) and len(og_plan_output) == 2:
+                    og_output_ref, og_graph_ref = og_plan_output
+                else:
+                    og_output_ref, og_graph_ref = og_plan_output, og_plan_output
+
+                null_snapshot = StateSnapshot({}, resource.null_state)
+
+                task_session = self.create_task_session(
+                    {
+                        "input": Object[config_state.input_type](
+                            config_partial_resolved
+                        ),
+                        "state": Object[resource.null_state.output_type]({}),
+                    }
+                )
+
+                plan_output = await resource.plan(
+                    null_snapshot, bound_config, task_session
+                )
+
+                current_action = ExecuteTaskSession(
+                    task_session=old_task_session,
+                    task_input_key="input",
+                    task_state_key="state",
+                    output_key=node,
+                    output_ref=og_output_ref,
+                    graph_ref=og_graph_ref,
+                    config_state=resource.null_state,
+                    previous_state=previous_state,
+                    resource=resource,
+                    input_symbol=null_snapshot.obj,
+                    state_symbol=previous_ref,
+                )
+                state_symbol = Object({})
+
+        # Allow different refs for graph vs. session by returning a tuple of refs
+        if isinstance(plan_output, tuple) and len(plan_output) == 2:
+            output_ref, graph_ref = plan_output
+        else:
+            output_ref, graph_ref = plan_output, plan_output
+
+        output_partial_resolved = task_session.resolve(
+            output_ref, allow_unknowns=True, decode=False
+        )
+        output_session.set_data(node, output_partial_resolved)
+
+        test_graph = task_session.task_graph(ResourceGraph(), node)
+        # This indicates there are no tasks in the session.
+        if not test_graph.nodes:
+            try:
+                resolved_graph_ref = task_session.resolve(graph_ref, decode=False)
+            # The graph reference isn't fully resolved yet, we still need
+            # to execute the task session
+            except exc.UnknownError:
+                pass
+            else:
+                state_obj = Object(
+                    resolved_graph_ref,
+                    config_state.state.output_type,
+                    config_session.ns.registry,
+                )
+                # Since we are not setting this key in the graph, we can
+                # act like the configuration has no dependencies during
+                # planning. This essentially lets us avoid circular
+                # dependencies because these no-op resources will never
+                # depend on anything.
+                plan_node = PlanNode(
+                    key=node,
+                    current=PlanNodeState(
+                        data=previous_resolved,
+                        type=previous_state.state.output_type,
+                        state=previous_state,
+                        depends_on=current_depends_on,
+                        action=None,
+                    ),
+                    config=PlanNodeState(
+                        data=resolved_graph_ref,
+                        type=config_state.state.output_type,
+                        state=config_state,
+                        depends_on=config_depends_on,
+                        action=ResourceSetValue(
+                            node, state_obj, resource, config_state
+                        ),
+                    ),
+                    enforce_dependencies=False,
+                )
+                return [plan_node]
+
+        action = ExecuteTaskSession(
+            task_session=task_session,
+            task_input_key="input",
+            task_state_key="state",
+            output_key=node,
+            output_ref=output_ref,
+            graph_ref=graph_ref,
+            config_state=config_state,
+            previous_state=previous_state,
+            resource=resource,
+            input_symbol=config_bound_state.input,
+            state_symbol=state_symbol,
+        )
+
+        plan_node = PlanNode(
+            key=node,
+            current=PlanNodeState(
+                data=previous_resolved,
+                type=previous_state.state.output_type,
+                state=previous_state,
+                depends_on=current_depends_on,
+                action=current_action,
+            ),
+            config=PlanNodeState(
+                data=output_partial_resolved,
+                type=config_state.state.output_type,
+                state=config_state,
+                depends_on=config_depends_on,
+                action=action,
+            ),
+        )
+        return [plan_node]
+
+    async def plan_node_previous(
+        self,
+        node: str,
+        config_session: ResourceSession,
+        state_session: ResourceSession,
+        config_dep_graph: nx.DiGraph,
+        state_dep_graph: nx.DiGraph,
+        output_session: ResourceSession,
+        providers: Dict[ProviderId, Provider],
+    ) -> Sequence[PlanNode]:
+
+        pass
+
+    async def plan_node_config(
+        self,
+        node: str,
+        config_session: ResourceSession,
+        state_session: ResourceSession,
+        config_dep_graph: nx.DiGraph,
+        state_dep_graph: nx.DiGraph,
+        output_session: ResourceSession,
+        providers: Dict[ProviderId, Provider],
+    ) -> Sequence[PlanNode]:
+
+        pass
 
     async def plan_node(
         self,
         node: str,
         config_session: ResourceSession,
-        state_graph: ResourceGraph,
+        state_session: ResourceSession,
         config_dep_graph: nx.DiGraph,
         state_dep_graph: nx.DiGraph,
         output_session: ResourceSession,
@@ -649,8 +965,13 @@ class DefaultMigrator(Migrator):
         """"""
         previous_exists = node in state_dep_graph.nodes
         previous_state = None
-        if node in state_dep_graph.nodes:
-            previous_state = state_dep_graph.nodes[node]["state"]
+        previous_bound_state = None
+        try:
+            previous_bound_state = state_session.get_state(node)
+        except exc.SymbolKeyError:
+            pass
+        else:
+            previous_state = previous_bound_state.state
 
         config_exists = node in config_dep_graph.nodes
         config_bound_state = None
@@ -674,214 +995,50 @@ class DefaultMigrator(Migrator):
             and previous_state is not None
             and config_state.resource == previous_state.resource
         ):
-            provider = providers.get(config_state.provider)
-            if provider is None:
-                provider = providers[
-                    config_state.provider
-                ] = output_session.ns.registry.get_provider(*config_state.provider)
-                await provider.setup()
-
-            resource = provider.get_resource(config_state.resource)
-            previous_resolved = state_dep_graph.nodes[node]["value"]
-
-            config_partial_resolved = output_session.resolve(
-                config_bound_state.input, decode=False, allow_unknowns=True
-            )
-            previous_snapshot = StateSnapshot(previous_resolved, previous_state)
-
-            task_session_base = self.create_task_session()
-            input_ref = task_session_base.ns.new("input", config_state.state.input_type)
-            task_session_base.set_data("input", config_partial_resolved)
-
-            task_session = task_session_base.clone()
-
-            bound_config = StateConfig(input_ref, config_state)
-
-            # A bunch of junk to handle errors nicely
-            error, tb = None, None
-            current_action = None
-            try:
-
-                try:
-                    plan_output = await resource.plan(
-                        previous_snapshot, bound_config, task_session
-                    )
-                except exc.NullRequired:
-                    null_bound_config = StateConfig({}, resource.null_state)
-
-                    old_task_session = self.create_task_session()
-                    old_task_session.ns.new("input", resource.null_state.input_type)
-                    old_task_session.set_data("input", {})
-                    # old_task_session = task_session_base.clone()
-                    og_plan_output = await resource.plan(
-                        previous_snapshot, null_bound_config, old_task_session
-                    )
-
-                    if isinstance(og_plan_output, tuple) and len(og_plan_output) == 2:
-                        og_output_ref, og_graph_ref = og_plan_output
-                    else:
-                        og_output_ref, og_graph_ref = og_plan_output, og_plan_output
-
-                    null_snapshot = StateSnapshot({}, resource.null_state)
-                    task_session = task_session_base.clone()
-                    plan_output = await resource.plan(
-                        null_snapshot, bound_config, task_session
-                    )
-
-                    current_action = ExecuteTaskSession(
-                        task_session=old_task_session,
-                        task_input_key="input",
-                        output_key=node,
-                        output_ref=og_output_ref,
-                        graph_ref=og_graph_ref,
-                        config_state=resource.null_state,
-                        previous_state=previous_state,
-                        resource=resource,
-                        input_symbol=null_snapshot.obj,
-                    )
-
-            except Exception as err:
-                _, _, tb = sys.exc_info()
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, bound_config, err, tb
-                )
-            if error:
-                try:
-                    raise error.with_traceback(tb)
-                except Exception:
-                    stack.rewrite_tb(*sys.exc_info())
-            # End error junk
-
-            # Allow different refs for graph vs. session by returning a tuple of refs
-            if isinstance(plan_output, tuple) and len(plan_output) == 2:
-                output_ref, graph_ref = plan_output
-            else:
-                output_ref, graph_ref = plan_output, plan_output
-
-            output_partial_resolved = task_session.resolve(
-                output_ref, allow_unknowns=True, decode=False
-            )
-            output_session.set_data(node, output_partial_resolved)
-
-            test_graph = task_session.task_graph(ResourceGraph(), node)
-            # This indicates there are no tasks in the session.
-            if not test_graph.nodes:
-                try:
-                    resolved_graph_ref = task_session.resolve(graph_ref, decode=False)
-                # The graph reference isn't fully resolved yet, we still need
-                # to execute the task session
-                except exc.UnknownError:
-                    pass
-                else:
-                    state_obj = Object(
-                        resolved_graph_ref,
-                        config_state.state.output_type,
-                        config_session.ns.registry,
-                    )
-                    # Since we are not setting this key in the graph, we can
-                    # act like the configuration has no dependencies during
-                    # planning. This essentially lets us avoid circular
-                    # dependencies because these no-op resources will never
-                    # depend on anything.
-                    plan_node = PlanNode(
-                        key=node,
-                        current_data=previous_resolved,
-                        current_type=previous_state.state.output_type,
-                        current_state=previous_state,
-                        current_depends_on=current_depends_on,
-                        current_action=None,
-                        config_data=resolved_graph_ref,
-                        config_type=config_state.state.output_type,
-                        config_state=config_state,
-                        config_depends_on=config_depends_on,
-                        config_action=ResourceSetValue(
-                            node, state_obj, resource, config_state
-                        ),
-                        enforce_dependencies=False,
-                    )
-                    plan_nodes.append(plan_node)
-                    return plan_nodes
-
-            action = ExecuteTaskSession(
-                task_session=task_session,
-                task_input_key="input",
-                output_key=node,
-                output_ref=output_ref,
-                graph_ref=graph_ref,
-                config_state=config_state,
-                previous_state=previous_state,
-                resource=resource,
-                input_symbol=config_bound_state.input,
+            return await self.plan_node_migrate_states(
+                node=node,
+                config_session=config_session,
+                state_session=state_session,
+                config_dep_graph=config_dep_graph,
+                state_dep_graph=state_dep_graph,
+                output_session=output_session,
+                providers=providers,
             )
 
-            plan_node = PlanNode(
-                key=node,
-                current_data=previous_resolved,
-                current_type=previous_state.state.output_type,
-                current_state=previous_state,
-                current_depends_on=current_depends_on,
-                current_action=current_action,
-                config_data=output_partial_resolved,
-                config_type=config_state.state.output_type,
-                config_state=config_state,
-                config_depends_on=config_depends_on,
-                config_action=action,
-            )
-            plan_nodes.append(plan_node)
-            return plan_nodes
-
-        args = {
-            "key": node,
-            "current_data": None,
-            "current_type": None,
-            "current_state": None,
-            "current_depends_on": current_depends_on,
-            "current_action": None,
-            "config_data": None,
-            "config_type": None,
-            "config_state": None,
-            "config_depends_on": config_depends_on,
-            "config_action": None,
-        }
+        current_node_state = None
+        config_node_state = None
 
         if previous_state:
-            provider = providers.get(previous_state.provider)
-            if provider is None:
-                provider = providers[
-                    previous_state.provider
-                ] = config_session.ns.registry.get_provider(*previous_state.provider)
-                await provider.setup()
+            provider = await self.get_or_create_provider(
+                previous_state.provider, providers, state_session.ns.registry
+            )
 
             resource = provider.get_resource(previous_state.resource)
-            previous_resolved = state_dep_graph.nodes[node]["value"]
-
-            previous_snapshot = StateSnapshot(previous_resolved, previous_state)
-
-            null_state = resource.null_state
 
             task_session = self.create_task_session()
-            input_ref = task_session.ns.new("input", null_state.input_type)
 
-            config_bound = StateConfig(input_ref, null_state)
-            task_session.set_data("input", {})
+            previous_ref = state_session.ns.ref(node)
+            previous_resolved = state_session.resolve(
+                previous_ref, decode=False, allow_unknowns=True
+            )
 
-            # A bunch of junk to handle errors nicely
-            error, tb = None, None
-            try:
+            task_session = self.create_task_session(
+                {
+                    "state": Object[previous_state.output_type](previous_resolved),
+                    "input": Object[resource.null_state.input_type]({}),
+                }
+            )
+
+            state_ref = task_session.ns.ref("state")
+            previous_snapshot = StateSnapshot(state_ref, previous_state)
+
+            input_ref = task_session.ns.ref("input")
+            config_bound = StateConfig(input_ref, resource.null_state)
+
+            with self.error_ctx():
                 plan_output = await resource.plan(
                     previous_snapshot, config_bound, task_session
                 )
-            except Exception as err:
-                _, _, tb = sys.exc_info()
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, config_bound, err, tb
-                )
-            if error:
-                try:
-                    raise error.with_traceback(tb)
-                except Exception:
-                    stack.rewrite_tb(*sys.exc_info())
-            # End error junk
 
             # Allow different refs for graph vs. session by returning a tuple of refs
             if isinstance(plan_output, tuple) and len(plan_output) == 2:
@@ -889,55 +1046,43 @@ class DefaultMigrator(Migrator):
             else:
                 output_ref, graph_ref = plan_output, plan_output
 
-            error, tb = None, None
-            try:
+            with self.error_ctx():
                 # In theory this should _not_ allow unknowns, but keeping it less strict for now.
                 # Update: removed unknowns, they should not be needed
                 # Update2: These are needed for now
                 output_resolved = task_session.resolve(
                     output_ref, decode=False, allow_unknowns=True
                 )
-            except Exception as err:
-                _, _, tb = sys.exc_info()
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, config_bound, err, tb
-                )
-            if error:
-                try:
-                    raise error.with_traceback(tb)
-                except Exception:
-                    stack.rewrite_tb(*sys.exc_info())
 
             action = ExecuteTaskSession(
                 task_session=task_session,
                 task_input_key="input",
+                task_state_key="state",
                 output_key=node,
                 output_ref=output_ref,
                 graph_ref=graph_ref,
                 config_state=resource.null_state,
                 previous_state=previous_state,
                 resource=resource,
-                input_symbol=Object({}, config_bound.type, task_session.ns.registry),
+                input_symbol=Object({}, types.EmptyType()),
+                state_symbol=previous_ref,
             )
 
-            args.update(
-                {
-                    "current_data": previous_resolved,
-                    "current_type": previous_state.output_type,
-                    "current_state": previous_state,
-                    "current_action": action,
-                }
+            current_node_state = PlanNodeState(
+                data=previous_resolved,
+                type=previous_state.output_type,
+                state=previous_state,
+                action=action,
+                depends_on=current_depends_on,
             )
         elif previous_exists and not config_exists:
-            args.update(
-                {
-                    "current_data": state_dep_graph.nodes[node]["value"],
-                    "current_type": state_dep_graph.nodes[node]["type"],
-                    "current_state": None,
-                    "current_action": DeleteValue(node),
-                    # If the old value is not stateful, there are no dependencies to deleting it.
-                    "current_depends_on": [],
-                }
+            current_node_state = PlanNodeState(
+                data=state_dep_graph.nodes[node]["value"],
+                type=state_dep_graph.nodes[node]["type"],
+                state=None,
+                action=DeleteValue(node),
+                # If the old value is not stateful, there are no dependencies to deleting it.
+                depends_on=[],
             )
 
         if config_state:
@@ -953,30 +1098,26 @@ class DefaultMigrator(Migrator):
                 config_bound_state.input, decode=False, allow_unknowns=True
             )
 
-            previous_snapshot = StateSnapshot({}, resource.null_state)
+            task_session = self.create_task_session(
+                {
+                    "state": Object[resource.null_state.output_type]({}),
+                    "input": Object[config_state.state.input_type](
+                        config_partial_resolved
+                    ),
+                }
+            )
 
-            task_session = self.create_task_session()
-            input_ref = task_session.ns.new("input", config_state.state.input_type)
-            task_session.set_data("input", config_partial_resolved)
+            state_ref = task_session.ns.ref("state")
+            previous_snapshot = StateSnapshot(state_ref, resource.null_state)
 
+            input_ref = task_session.ns.ref("input")
             config_bound = StateConfig(input_ref, config_state)
 
-            # A bunch of junk to handle errors nicely
-            error, tb = None, None
-            try:
+            with self.error_ctx():
                 plan_output = await resource.plan(
                     previous_snapshot, config_bound, task_session
                 )
-            except Exception as err:
-                _, _, tb = sys.exc_info()
-                error = exc.ErrorDuringPlanningNode(
-                    node, previous_snapshot, config_bound, err, tb
-                )
-            if error:
-                try:
-                    raise error.with_traceback(tb)
-                except Exception:
-                    stack.rewrite_tb(*sys.exc_info())
+
             # End error junk
             # Allow different refs for graph vs. session by returning a tuple of refs
             if isinstance(plan_output, tuple) and len(plan_output) == 2:
@@ -993,6 +1134,7 @@ class DefaultMigrator(Migrator):
             action = ExecuteTaskSession(
                 task_session=task_session,
                 task_input_key="input",
+                task_state_key="state",
                 output_key=node,
                 output_ref=output_ref,
                 graph_ref=graph_ref,
@@ -1000,32 +1142,28 @@ class DefaultMigrator(Migrator):
                 previous_state=resource.null_state,
                 resource=resource,
                 input_symbol=config_bound_state.input,
+                state_symbol=Object({}),
             )
 
-            args.update(
-                {
-                    "config_data": output_partial_resolved,
-                    "config_type": config_state.state.output_type,
-                    "config_state": config_state,
-                    "config_action": action,
-                }
+            config_node_state = PlanNodeState(
+                data=output_partial_resolved,
+                type=config_state.state.output_type,
+                state=config_state,
+                action=action,
+                depends_on=config_depends_on,
             )
         elif config_exists:
             ref = config_session.ns.ref(node)
-            action = SetValue(node, ref)
 
-            args.update(
-                {
-                    "config_data": config_session.resolve(
-                        ref, decode=False, allow_unknowns=True
-                    ),
-                    "config_type": config_session.ns.resolve(node),
-                    "config_state": None,
-                    "config_action": action,
-                }
+            config_node_state = PlanNodeState(
+                data=config_session.resolve(ref, decode=False, allow_unknowns=True),
+                type=config_session.ns.resolve(node),
+                state=None,
+                action=SetValue(node, ref),
+                depends_on=config_depends_on,
             )
 
-        plan_node = PlanNode(**args)
+        plan_node = PlanNode(node, current_node_state, config_node_state)
         plan_nodes.append(plan_node)
 
         return plan_nodes
@@ -1034,6 +1172,7 @@ class DefaultMigrator(Migrator):
         self,
         config_session: ResourceSession,
         state_graph: Optional[ResourceGraph] = None,
+        state_session: Optional[ResourceSession] = None,
     ) -> Plan:
 
         from statey.executor import AsyncIOTaskGraph, AsyncIOGraphExecutor
@@ -1041,20 +1180,14 @@ class DefaultMigrator(Migrator):
         if state_graph is None:
             state_graph = ResourceGraph()
 
-        # Ugly error handling :(
-        error, tb = None, None
-        try:
-            config_dep_graph = config_session.dependency_graph()
-        except Exception as err:
-            _, _, tb = sys.exc_info()
-            error = exc.ErrorDuringPlanning(err, tb)
-        if error:
-            try:
-                raise error.with_traceback(tb)
-            except Exception:
-                stack.rewrite_tb(*sys.exc_info())
+        if state_session is None:
+            state_session = state_graph.to_session()
 
-        state_dep_graph = state_graph.graph
+        with self.error_ctx():
+            config_dep_graph = config_session.dependency_graph()
+
+        with self.error_ctx():
+            state_dep_graph = state_session.dependency_graph()
 
         # For planning we need a copy of the config session that we will partially resolve
         # (maybe w/ unknowns) as we go
@@ -1075,7 +1208,7 @@ class DefaultMigrator(Migrator):
                 await self.plan_node(
                     node=node,
                     config_session=config_session,
-                    state_graph=state_graph,
+                    state_session=state_session,
                     config_dep_graph=config_dep_graph,
                     state_dep_graph=state_dep_graph,
                     output_session=output_session,
@@ -1095,20 +1228,13 @@ class DefaultMigrator(Migrator):
         finally:
             providers = tuple(providers.values())
             await asyncio.gather(*(provider.teardown() for provider in providers))
-        # Ugly error handling :(
-        error, tb = None, None
-        try:
-            exec_info.raise_for_failure()
-        except Exception as err:
-            _, _, tb = sys.exc_info()
-            error = exc.ErrorDuringPlanning(err, tb)
-        if error:
-            try:
-                raise error.with_traceback(tb)
-            except Exception:
-                stack.rewrite_tb(*sys.exc_info())
 
-        plan = Plan(tuple(plan_nodes), providers, config_session, state_graph)
+        with self.error_ctx():
+            exec_info.raise_for_failure()
+
+        plan = Plan(
+            tuple(plan_nodes), providers, config_session, state_session, state_graph
+        )
         # This will ensure that the task graph is a valid DAG, not perfect but it will
         # do for now
         plan.build_task_graph()

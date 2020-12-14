@@ -126,6 +126,58 @@ class Session(abc.ABC):
         self.pm = st.create_plugin_manager()
         self.pm.add_hookspecs(SessionHooks)
 
+    # Abstract methods
+    @abc.abstractmethod
+    def resolve(
+        self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
+    ) -> Any:
+        """
+        Resolve the given symbol with the given input data.
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def dependency_graph(self) -> nx.MultiDiGraph:
+        """
+        Return a graph whose nodes are the top-level names registered in this session's namespace
+        and whose edges are the dependencies between those nodes within this session. Each edge should
+        include `path` as a property with the relative path reference that the dependency represents.
+        Note that all paths in this result should be returned as tuples so that they are not dependent
+        on this session's path parser implementation.
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def clone(self) -> "Session":
+        """
+        Return a copy of this session that can be modified without affecting this one
+        """
+        raise NotImplementedError
+
+
+class WriteableSession(Session):
+    """
+    Session that allows read/write functionality
+    """
+
+    def __setitem__(self, key: Union[slice, str], value: Any) -> None:
+        """
+        Allow dictionary syntax for adding items to the session
+        """
+        annotation = utils.MISSING
+        if isinstance(key, slice):
+            key, annotation = key.start, key.stop
+        self.set(key, value, annotation)
+
+    def __getitem__(self, key: Union[slice, str]) -> NamedSessionSetter:
+        """
+        Return a special object to provide better syntax for certain operations
+        """
+        annotation = utils.MISSING
+        if isinstance(key, slice):
+            key, annotation = key.start, key.stop
+        return NamedSessionSetter(key, annotation, self)
+
     def set(self, key: str, value: Any, annotation: Any = utils.MISSING) -> Object:
         """
         Set the given data, using the given registry to determine a schema for value
@@ -157,54 +209,6 @@ class Session(abc.ABC):
         self.ns.delete(key)
         self.delete_data(key)
 
-    def symbolify(self, data: Any, type: types.Type = utils.MISSING) -> Object:
-        """
-        Convert the input data into a symbol, optionally with the given type.
-        If it is already a symbol, it will be returned unchanged.
-        """
-        if isinstance(data, Object):
-            return data
-
-        if type is utils.MISSING:
-            type = self.ns.registry.infer_type(data)
-        semantics = self.ns.registry.get_semantics(type)
-        return Object(impl.Data(data), type, self.ns.registry)
-
-    def __lshift__(self, other: Any) -> Object:
-        """
-        lshift on the top level of a session will simply convert the input to a symbol
-        using symbolify()
-        """
-        return self.symbolify(other)
-
-    def __setitem__(self, key: Union[slice, str], value: Any) -> None:
-        """
-        Allow dictionary syntax for adding items to the session
-        """
-        annotation = utils.MISSING
-        if isinstance(key, slice):
-            key, annotation = key.start, key.stop
-        self.set(key, value, annotation)
-
-    def __getitem__(self, key: Union[slice, str]) -> NamedSessionSetter:
-        """
-        Return a special object to provide better syntax for certain operations
-        """
-        annotation = utils.MISSING
-        if isinstance(key, slice):
-            key, annotation = key.start, key.stop
-        return NamedSessionSetter(key, annotation, self)
-
-    # Abstract methods
-    @abc.abstractmethod
-    def resolve(
-        self, symbol: Object, allow_unknowns: bool = False, decode: bool = True
-    ) -> Any:
-        """
-        Resolve the given symbol with the given input data.
-        """
-        raise NotImplementedError
-
     @abc.abstractmethod
     def set_data(self, key: str, data: Any) -> None:
         """
@@ -217,23 +221,5 @@ class Session(abc.ABC):
     def delete_data(self, key: str) -> None:
         """
         Delete the data at the given key
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def dependency_graph(self) -> nx.MultiDiGraph:
-        """
-        Return a graph whose nodes are the top-level names registered in this session's namespace
-        and whose edges are the dependencies between those nodes within this session. Each edge should
-        include `path` as a property with the relative path reference that the dependency represents.
-        Note that all paths in this result should be returned as tuples so that they are not dependent
-        on this session's path parser implementation.
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def clone(self) -> "Session":
-        """
-        Return a copy of this session that can be modified without affecting this one
         """
         raise NotImplementedError

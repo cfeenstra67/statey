@@ -20,7 +20,7 @@ from statey import exc
 from statey.helpers import async_providers_context
 from statey.provider import ProviderId, Provider, ProviderIdSchema
 from statey.task import TaskSession
-from statey.syms import types, utils, session, impl, Object
+from statey.syms import types, utils, session, impl, Object, py_session
 
 
 class StateSchema(ma.Schema):
@@ -324,15 +324,20 @@ class Resource(abc.ABC):
         return data
 
 
-class ResourceSession(session.Session):
+class ResourceSession(session.WriteableSession):
     """
     Session subclass that wraps a regular session but handles resources in a special manner.
     """
 
-    def __init__(self, session: session.Session) -> None:
+    def __init__(
+        self, session: session.Session, states: Optional[Dict[str, BoundState]] = None
+    ) -> None:
+        if states is None:
+            states = {}
+
         super().__init__(session.ns)
         self.session = session
-        self.states = {}
+        self.states = states
         self.pm.register(self)
 
     @st.hookimpl
@@ -396,7 +401,7 @@ class ResourceSession(session.Session):
         return self.states[name]
 
     def clone(self) -> "ResourceSession":
-        new_inst = ResourceSession(self.session.clone())
+        new_inst = type(self)(self.session.clone())
         new_inst.states = self.states.copy()
         for plugin in self.pm.get_plugins():
             if plugin is not self:
@@ -447,6 +452,18 @@ class ResourceGraph:
 
         self.graph.add_node(key, value=value, type=type, state=state)
 
+    def get(self, key: str) -> Dict[str, Any]:
+        """
+        Get the data about this key stored in the resource graph
+        """
+        return self.graph.nodes[key]
+
+    def keys(self) -> Sequence[str]:
+        """
+        Get a list of keys currently stored in this graph
+        """
+        return list(self.graph.nodes)
+
     def delete(self, key: str) -> None:
         """
         Delete the given key from this graph. Will raise KeyError if it doesn't exist
@@ -468,12 +485,14 @@ class ResourceGraph:
         self.graph.add_edges_from([(dep, key) for dep in dependencies])
 
     async def refresh(
-        self, registry: st.Registry, finalize: bool = False
+        self, registry: Optional[st.Registry] = None, finalize: bool = False
     ) -> Iterator[str]:
         """
         Refresh the current state of all resources in the graph. Returns an asynchronous
         generator that yields keys as they finish refreshing successfully.
         """
+        if registry is None:
+            registry = st.registry
 
         providers = {}
 
@@ -570,62 +589,42 @@ class ResourceGraph:
 
         return instance
 
-    # def to_object(self, registry: Optional["Registry"] = None) -> "Object":
-    #     """
+    def to_session(self) -> ResourceSession:
+        """
+        Construct a session with the same data and dependencies as this ResourceGraph
+        """
+        core_session = ResourceGraphSession(py_session.PythonNamespace(), graph=self)
+        states = {}
 
-    #     """
-    #     if registry is None:
-    #         registry = st.registry
+        for key in self.keys():
+            data = self.get(key)
+            core_session.ns.new(key, data["type"])
+            state = data["state"]
+            if state is not None:
+                states[key] = BoundState(state, st.Unknown[state.input_type])
 
-    #     fields = []
-
-    #     for node in self.graph.nodes:
-    #         typ = self.graph.nodes[node]["type"]
-    #         node_type = ResourceGraphNodeType(typ)
-    #         fields.append(st.Field(node, node_type))
-
-    #     typ = st.StructType(fields)
-
-    #     dict_val = self.to_dict()
-
-    #     for val in dict_val.values():
-    #         del val["type"]
-    #         if val["state"] is not None:
-    #             val["state"] = val["state"]["name"]
-
-    #     return st.Object(dict_val, typ)
-
-    # @classmethod
-    # def from_object(cls, obj: "Object", session: "Session") -> "ResourceGraph":
-    #     """
-
-    #     """
-    #     resolved = session.resolve(obj)
-
-    #     inst = cls()
-
-    #     for field in obj._type.fields:
-    #         state_name = resolved[field.name]["state"]
-    #         # TODO(cam): does it matter to drop the input type here? Otherwise we'll need to
-    #         # store it somehow. Should figure out how to fix this eventually.
-    #         state_val = st.State(state_name, st.EmptyType, field.type)
-    #         inst.set(field.name, resolved[field.name]["data"], field.type, state_val)
+        return ResourceSession(core_session, states)
 
 
-#         pass
+class ResourceGraphSession(py_session.PythonSession):
+    """"""
 
+    def __init__(self, *args, graph: ResourceGraph, **kwargs) -> None:
+        self.graph = graph
+        super().__init__(*args, **kwargs)
 
-# StateType = lambda intype, outtype: st.Struct[
-#     "name": str,
-#     "input_type":
-# ]
+    def get_encoded_root(self, key: str) -> Any:
+        return self.graph.get(key)["value"]
 
+    def dependency_graph(self) -> nx.MultiDiGraph:
+        out = nx.MultiDiGraph()
 
-# ResourceGraphNodeType = lambda typ: st.Struct[
-#     "data": typ,
-#     "state": str,
-#     "depends_on": Sequence[str]
-# ]
+        for key in self.graph.keys():
+            out.add_node(key)
 
+        out.add_edges_from(self.graph.graph.edges)
 
-# def encode_rg(rg: ResourceGraph) ->
+        return out
+
+    def clone(self) -> "ResourceGraphSession":
+        return type(self)(self.ns.clone(), graph=self.graph)

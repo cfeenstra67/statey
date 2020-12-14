@@ -1,3 +1,4 @@
+import abc
 import copy
 import dataclasses as dc
 import sys
@@ -60,7 +61,7 @@ class PythonNamespace(session.Namespace):
         return semantics.type
 
     def clone(self) -> session.Namespace:
-        new_inst = PythonNamespace(self.registry, self.path_parser)
+        new_inst = type(self)(self.registry, self.path_parser)
         new_inst.types = self.types.copy()
         return new_inst
 
@@ -134,50 +135,21 @@ class ResolutionStack:
 
 class PythonSession(session.Session):
     """
-    A pure python session implementation for resolving objects.
+    A session implementation for resolving python objects
     """
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.data = {}
-
-    def set_data(self, key: str, data: Any) -> None:
-        """
-        Set the given data for the given key.
-        """
-        typ = self.ns.resolve(key)
-
-        encoder = self.ns.registry.get_encoder(typ, serializable=True)
-        try:
-            encoded_data = encoder.encode(data)
-
-            root, *rel_path = self.ns.path_parser.split(key)
-            if rel_path:
-                raise ValueError("Data can only be set on the root level.")
-        except Exception as err:
-            raise exc.InvalidDataError(key, err) from err
-
-        self.data[key] = encoded_data
-
-    def delete_data(self, key: str) -> None:
-        if key not in self.data:
-            raise exc.SymbolKeyError(key, self.ns)
-        del self.data[key]
-
     def get_encoded_data(self, key: str) -> Any:
-        """
-        Return the data or symbol at the given key, with a boolean is_symbol also returned indicating
-        whether that key points to a symbol. If the key has not been set, syms.exc.MissingDataError
-        will be raised
-        """
         typ = self.ns.resolve(key)
         base, *rel_path = self.ns.path_parser.split(key)
-        if base not in self.data:
-            raise exc.MissingDataError(key, typ, self)
 
         base_type = self.ns.resolve(base)
         base_semantics = self.ns.registry.get_semantics(base_type)
-        value = self.data[base]
+
+        try:
+            value = self.get_encoded_root(base)
+        except KeyError as err:
+            raise exc.MissingDataError(key, typ, self) from err
+
         for idx, attr in enumerate(rel_path):
             try:
                 value = base_semantics.get_attr(value, attr)
@@ -347,7 +319,6 @@ class PythonSession(session.Session):
         return encoder.decode(encoded)
 
     def dependency_graph(self) -> nx.MultiDiGraph:
-        graph = nx.MultiDiGraph()
 
         dag = self._digraph()
 
@@ -364,7 +335,7 @@ class PythonSession(session.Session):
 
             obj_ids.add(ref._impl.id)
 
-        self._raise_not_dag(graph, list(obj_ids))
+        self._raise_not_dag(dag, list(obj_ids))
 
         # Make a copy of `dag` since it will be mutated
         dag = dag.copy()
@@ -376,6 +347,8 @@ class PythonSession(session.Session):
                 ref_symbol_ids.add(node)
 
         utils.subgraph_retaining_dependencies(dag, ref_symbol_ids)
+
+        graph = nx.MultiDiGraph()
 
         for node in list(nx.topological_sort(dag)):
             ref = dag.nodes[node]["symbol"]
@@ -395,8 +368,53 @@ class PythonSession(session.Session):
 
         return graph
 
+    @abc.abstractmethod
+    def get_encoded_root(self, key: str) -> Any:
+        """
+        Return the data or symbol at the given key, with a boolean is_symbol also returned indicating
+        whether that key points to a symbol. If the key has not been set, syms.exc.MissingDataError
+        will be raised
+        """
+        raise NotImplementedError
+
+
+class WriteablePythonSession(PythonSession, session.WriteableSession):
+    """
+    A read/write python session
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.data = {}
+
+    def get_encoded_root(self, key: str) -> Any:
+        return self.data[key]
+
+    def set_data(self, key: str, data: Any) -> None:
+        """
+        Set the given data for the given key.
+        """
+        typ = self.ns.resolve(key)
+
+        encoder = self.ns.registry.get_encoder(typ, serializable=True)
+        try:
+            encoded_data = encoder.encode(data)
+
+            root, *rel_path = self.ns.path_parser.split(key)
+            if rel_path:
+                raise ValueError("Data can only be set on the root level.")
+        except Exception as err:
+            raise exc.InvalidDataError(key, err) from err
+
+        self.data[key] = encoded_data
+
+    def delete_data(self, key: str) -> None:
+        if key not in self.data:
+            raise exc.SymbolKeyError(key, self.ns)
+        del self.data[key]
+
     def clone(self) -> session.Session:
-        new_inst = PythonSession(self.ns.clone())
+        new_inst = type(self)(self.ns.clone())
         # Since data can only be set at the root level and is immutable while in the
         # session, a shallow copy works fine here.
         new_inst.data = self.data.copy()
@@ -406,7 +424,7 @@ class PythonSession(session.Session):
         return new_inst
 
 
-class CachingPythonSession(PythonSession):
+class CachingPythonSession(WriteablePythonSession):
     """
     PythonSession that holds a single graph per instance
     """
