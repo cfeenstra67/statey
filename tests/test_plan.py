@@ -423,3 +423,45 @@ async def test_teardown(tmpdir, resource_session, migrator, executor):
     assert not resource_graph.graph.nodes
 
     assert not os.listdir(tmpdir)
+
+
+@pytest.mark.asyncio
+async def test_plan_chain(tmpdir, resource_session, migrator, executor):
+
+    session = resource_session
+    files_test_1(session, tmpdir)
+
+    plan = await migrator.plan(session)
+
+    rg = plan.state_graph
+
+    session_2 = st.create_resource_session()
+    files_test_2(session_2, tmpdir)
+
+    plan_2 = await migrator.plan(session_2, rg, plan.task_graph.output_session)
+
+    session_3 = st.create_resource_session()
+
+    plan_3 = await migrator.plan(session_3, rg, plan_2.task_graph.output_session)
+
+    exec_info = await executor.execute_async(plan.task_graph)
+
+    assert exec_info.is_success()
+
+    assert set(os.listdir(tmpdir)) == {
+        "test-1.txt",
+        "test-1.txt.backup",
+        "test-1.txt.backup.json",
+    }
+
+    exec_info_2 = await executor.execute_async(plan_2.task_graph)
+
+    assert exec_info_2.is_success()
+
+    assert set(os.listdir(tmpdir)) == {"test-2.txt", "test-2.txt.backup"}
+
+    exec_info_3 = await executor.execute_async(plan_3.task_graph)
+
+    assert exec_info_3.is_success()
+
+    assert os.listdir(tmpdir) == []
