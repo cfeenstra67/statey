@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install .[tests,dev,core]
+          pip install .[tests,dev]
       - name: Check Formatting
         run: |
           make check
