@@ -52,7 +52,7 @@ extra_reqs = {
 
 extra_reqs['all'] = sum(extra_reqs.values(), [])
 extra_reqs['core'] = extra_reqs['fmt'] + extra_reqs['cli']
-extra_reqs['tests'] = requirements_tests
+extra_reqs['tests'] = requirements_tests + extra_reqs['core']
 extra_reqs['dev'] = requirements_dev
 
 setup(

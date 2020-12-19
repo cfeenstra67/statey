@@ -442,7 +442,7 @@ async def test_plan_chain(tmpdir, resource_session, migrator, executor):
 
     session_3 = st.create_resource_session()
 
-    # Equivalent to plan_2.plan(...)
+    # Equivalent
     # plan_3 = await migrator.plan(session_3, rg, plan_2.task_graph.output_session)
     plan_3 = (await plan_2.plan(session_3)).second
 
@@ -495,3 +495,10 @@ async def test_compound_plan(tmpdir, resource_session, migrator, executor):
     assert set(rg.keys()) == {"file_1", "file_2"}
 
     assert set(os.listdir(tmpdir)) == {"test-3.txt", "test-2.txt.backup"}
+
+    async for _ in rg.refresh():
+        pass
+
+    finished_plan = await migrator.plan(session_2, rg)
+
+    assert finished_plan.is_empty()
