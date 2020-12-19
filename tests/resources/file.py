@@ -134,6 +134,7 @@ class FileMachine(Machine):
 
         current_as_config = st.filter_struct(current.obj, config.type)
         diff = differ.diff(current_as_config, config.obj, session, diffconfig)
+
         if not diff:
             return current.obj
 

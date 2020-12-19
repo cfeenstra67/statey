@@ -438,15 +438,19 @@ async def test_plan_chain(tmpdir, resource_session, migrator, executor):
     session_2 = st.create_resource_session()
     files_test_2(session_2, tmpdir)
 
-    plan_2 = await migrator.plan(session_2, rg, plan.task_graph.output_session)
+    plan_2 = (await plan.plan(session_2)).second
 
     session_3 = st.create_resource_session()
 
-    plan_3 = await migrator.plan(session_3, rg, plan_2.task_graph.output_session)
+    # Equivalent to plan_2.plan(...)
+    # plan_3 = await migrator.plan(session_3, rg, plan_2.task_graph.output_session)
+    plan_3 = (await plan_2.plan(session_3)).second
 
     exec_info = await executor.execute_async(plan.task_graph)
 
     assert exec_info.is_success()
+
+    assert set(rg.keys()) == {"file_1", "file_2", "file_3"}
 
     assert set(os.listdir(tmpdir)) == {
         "test-1.txt",
@@ -458,10 +462,36 @@ async def test_plan_chain(tmpdir, resource_session, migrator, executor):
 
     assert exec_info_2.is_success()
 
+    assert set(rg.keys()) == {"file_1", "file_2"}
+
     assert set(os.listdir(tmpdir)) == {"test-2.txt", "test-2.txt.backup"}
 
     exec_info_3 = await executor.execute_async(plan_3.task_graph)
 
     assert exec_info_3.is_success()
 
-    assert os.listdir(tmpdir) == []
+    assert os.listdir(tmpdir) == rg.keys() == []
+
+
+@pytest.mark.asyncio
+async def test_compound_plan(tmpdir, resource_session, migrator, executor):
+
+    session = resource_session
+    files_test_2(session, tmpdir)
+
+    plan = await migrator.plan(session)
+
+    rg = plan.state_graph
+
+    session_2 = st.create_resource_session()
+    files_test_3(session_2, tmpdir)
+
+    plan_2 = await plan.plan(session_2)
+
+    exec_info = await executor.execute_async(plan_2.task_graph)
+
+    assert exec_info.is_success()
+
+    assert set(rg.keys()) == {"file_1", "file_2"}
+
+    assert set(os.listdir(tmpdir)) == {"test-3.txt", "test-2.txt.backup"}

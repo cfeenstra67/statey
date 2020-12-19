@@ -357,6 +357,9 @@ class ResourceSession(session.WriteableSession):
     def set_data(self, key: str, data: Any) -> None:
         return self.session.set_data(key, data)
 
+    def get_data(self, key: str) -> Any:
+        return self.session.get_data(key)
+
     def delete_data(self, key: str) -> None:
         return self.session.delete_data(key)
 

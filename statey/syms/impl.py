@@ -145,7 +145,7 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
 
     def depends_on(self, obj: Object, session: "Session") -> Iterable[Object]:
         semantics = obj._registry.get_semantics(obj._type)
-        data = session.get_encoded_data(self.path)
+        data = session.get_data(self.path)
         expanded = semantics.expand(data)
 
         syms = []
@@ -154,7 +154,7 @@ class Reference(FunctionalMappingMixin, ObjectImplementation):
         return syms
 
     def apply(self, obj: Object, dag: nx.DiGraph, session: "Session") -> Any:
-        return session.get_encoded_data(self.path)
+        return session.get_data(self.path)
 
     @property
     def id(self) -> Any:
@@ -248,15 +248,17 @@ class Data(FunctionalMappingMixin, StandaloneObjectImplementation):
         # return f"{type(self).__name__}[{obj._type}]({repr(self.value)})"
 
     def get_attr(self, obj: Object, attr: str) -> Any:
-        encoded_value = self.get_encoded_value(obj._type, obj._registry)
         semantics = obj._registry.get_semantics(obj._type)
+
+        attr_semantics = semantics.attr_semantics(attr)
+        if attr_semantics is None:
+            raise exc.SymbolAttributeError(obj, attr)
+
+        encoded_value = self.get_encoded_value(obj._type, obj._registry)
         if encoded_value is None:
             new_data = None
         else:
             new_data = semantics.get_attr(encoded_value, attr)
-        attr_semantics = semantics.attr_semantics(attr)
-        if attr_semantics is None:
-            raise exc.SymbolAttributeError(obj, attr)
 
         new_impl = new_data
         attr_type = attr_semantics.type

@@ -260,8 +260,6 @@ class StructSemantics(Semantics):
     def get_attr(self, value: Any, attr: Any) -> Any:
         if value is None:
             return None
-        if isinstance(value, Object):
-            return value[attr]
         return value[attr]
 
     def map_objects(self, func: Callable[[Any], Any], value: Any) -> Any:

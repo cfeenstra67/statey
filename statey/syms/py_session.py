@@ -138,7 +138,7 @@ class PythonSession(session.Session):
     A session implementation for resolving python objects
     """
 
-    def get_encoded_data(self, key: str) -> Any:
+    def get_data(self, key: str) -> Any:
         typ = self.ns.resolve(key)
         base, *rel_path = self.ns.path_parser.split(key)
 

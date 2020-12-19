@@ -154,6 +154,13 @@ class Session(abc.ABC):
         """
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def get_data(self, key: str) -> Any:
+        """
+        Get encoded data at the given key with no resolution
+        """
+        raise NotImplementedError
+
 
 class WriteableSession(Session):
     """
