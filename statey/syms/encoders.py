@@ -1,5 +1,6 @@
 import abc
 import base64
+from datetime import date, datetime
 
 import dataclasses as dc
 from typing import Type as PyType, Any, Dict, Optional
@@ -224,6 +225,85 @@ class BooleanEncoder(MarshmallowValueEncoder):
 class StringEncoder(MarshmallowValueEncoder):
     type_cls = types.StringType
     base_field = ma.fields.Str()
+    serializable = True
+
+
+class DateLikeFuzzyDeserialize:
+    """"""
+
+    def _deserialize(self, value, attr, data, **kwargs):
+        error = None
+        try:
+            return super()._deserialize(value, attr, data, **kwargs)
+        except ma.ValidationError as err:
+            error = err
+
+        fmt = self.format
+
+        try:
+            for new_fmt, func in self.DESERIALIZATION_FUNCS.items():
+                self.format = new_fmt
+                try:
+                    return super()._deserialize(value, attr, data, **kwargs)
+                except ma.ValidationError:
+                    pass
+        finally:
+            self.format = fmt
+
+        raise error
+
+
+class DateField(DateLikeFuzzyDeserialize, ma.fields.Date):
+    """"""
+
+    def from_date(value: Any) -> date:
+        if isinstance(value, date):
+            return value
+        raise ma.ValidationError("Not a valid date.")
+
+    def from_datetime(value: Any) -> date:
+        if isinstance(value, datetime):
+            return value.date()
+        raise ma.ValidationError("Not a valid date.")
+
+    DESERIALIZATION_FUNCS = {
+        **ma.fields.Date.DESERIALIZATION_FUNCS,
+        "date": from_date,
+        "datetime": from_datetime,
+    }
+
+
+class DateTimeField(DateLikeFuzzyDeserialize, ma.fields.DateTime):
+    """"""
+
+    def from_datetime(value: Any) -> datetime:
+        if isinstance(value, datetime):
+            return value
+        raise ma.ValidationError("Not a valid datetime.")
+
+    def from_date(value: Any) -> datetime:
+        if isinstance(value, date):
+            return datetime(value.year, value.month, value.day)
+        raise ma.ValidationError("Not a valid datetime.")
+
+    DESERIALIZATION_FUNCS = {
+        **ma.fields.DateTime.DESERIALIZATION_FUNCS,
+        "datetime": from_datetime,
+        "date": from_date,
+    }
+
+
+@dc.dataclass(frozen=True, repr=False)
+class DateEncoder(MarshmallowValueEncoder):
+    type_cls = types.DateType
+    base_field = DateField()
+    serializable = True
+
+
+@dc.dataclass(frozen=True, repr=False)
+class DateTimeEncoder(MarshmallowValueEncoder):
+    type_cls = types.DateTimeType
+    base_field = DateTimeField()
     serializable = True
 
 
@@ -467,6 +547,8 @@ ENCODER_CLASSES = [
     NativeFunctionEncoder,
     MapEncoder,
     TypeEncoder,
+    DateEncoder,
+    DateTimeEncoder,
 ]
 
 

@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 import pytest
 import statey as st
 
@@ -15,6 +17,8 @@ import statey as st
         pytest.param(
             {"a": {"b": "c"}}, st.Struct["a" : st.Struct["b":str]], id="struct_dict"
         ),
+        pytest.param(date(2020, 1, 1), st.Date, id="date"),
+        pytest.param(datetime(2020, 11, 1), st.DateTime, id="datetime"),
     ],
 )
 def test_infer_type(input, result, registry):

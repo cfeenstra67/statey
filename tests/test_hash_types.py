@@ -16,6 +16,8 @@ import statey as st
         pytest.param(st.Array[str], True, id="array"),
         pytest.param(st.Struct["a":int], True, id="struct"),
         pytest.param(st.Map[str, st.Array[int]], True, id="map"),
+        pytest.param(st.Date, True, id="date"),
+        pytest.param(st.DateTime, True, id="datetime"),
     ],
 )
 def test_hash_type(type, success, registry):

@@ -91,6 +91,10 @@ from statey.syms.types import (
     Any,
     Map,
     TypeType,
+    Date,
+    DateType,
+    DateTime,
+    DateTimeType,
 )
 
 from statey.syms.api import (

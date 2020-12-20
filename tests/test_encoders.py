@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from typing import Optional
 
 import pytest
@@ -39,6 +40,14 @@ from statey.syms import encoders
         ),
         pytest.param(
             st.TypeType(), lambda x: isinstance(x, encoders.TypeEncoder), id="type"
+        ),
+        pytest.param(
+            st.DateType(), lambda x: isinstance(x, encoders.DateEncoder), id="date"
+        ),
+        pytest.param(
+            st.DateTimeType(),
+            lambda x: isinstance(x, encoders.DateTimeEncoder),
+            id="datetime",
         ),
     ],
 )
@@ -122,6 +131,22 @@ RAISES = object()
                 "required": ["a", "b"],
             },
             id="type_struct",
+        ),
+        pytest.param(st.DateType(), date(2020, 1, 1), "2020-01-01", id="date"),
+        pytest.param(
+            st.DateTimeType(),
+            datetime(2020, 11, 2, 11, 5),
+            "2020-11-02T11:05:00",
+            id="datetime",
+        ),
+        pytest.param(
+            st.DateTime,
+            date(2020, 11, 2),
+            "2020-11-02T00:00:00",
+            id="datetime_from_date",
+        ),
+        pytest.param(
+            st.Date, datetime(2020, 1, 1, 23, 59), "2020-01-01", id="date_from_datetime"
         ),
     ],
 )

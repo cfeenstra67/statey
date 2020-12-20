@@ -188,6 +188,24 @@ class StringType(DataClassMixin, Type):
 
 
 @dc.dataclass(frozen=True, repr=False)
+class DateType(DataClassMixin, Type):
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
+    name: str = dc.field(init=False, repr=False, default="date")
+
+    __hash__ = Type.__hash__
+
+
+@dc.dataclass(frozen=True, repr=False)
+class DateTimeType(DataClassMixin, Type):
+    nullable: bool = False
+    meta: Dict[str, Any] = dc.field(default_factory=dict)
+    name: str = dc.field(init=False, repr=False, default="datetime")
+
+    __hash__ = Type.__hash__
+
+
+@dc.dataclass(frozen=True, repr=False)
 class ArrayType(DataClassMixin, Type):
     """
     An array with some element type
@@ -571,3 +589,7 @@ Boolean = BooleanType()
 Any = AnyType()
 
 String = StringType()
+
+Date = DateType()
+
+DateTime = DateTimeType()

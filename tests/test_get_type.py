@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from typing import Sequence, Optional, Any, Dict
 
 import pytest
@@ -24,6 +25,8 @@ import statey as st
         pytest.param(
             Dict[str, Sequence[int]], st.Map[str, st.Array[int]], id="dict_to_map"
         ),
+        pytest.param(date, st.Date, id="date"),
+        pytest.param(datetime, st.DateTime, id="datetime"),
     ],
 )
 def test_get_type(input, result, registry):

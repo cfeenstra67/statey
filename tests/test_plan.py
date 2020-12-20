@@ -488,6 +488,25 @@ async def test_compound_plan(tmpdir, resource_session, migrator, executor):
 
     plan_2 = await plan.plan(session_2)
 
+    assert set(plan_2.task_graph.task_graph.nodes) == {
+        "first:file_1:input",
+        "first:file_1:task:create_file",
+        "first:file_1:output",
+        "first:file_1:state",
+        "first:file_2:input",
+        "first:file_2:task:create_file",
+        "first:file_2:output",
+        "first:file_2:state",
+        "second:file_1:input",
+        "second:file_1:task:rename_file",
+        "second:file_1:output",
+        "second:file_1:state",
+        "second:file_2:input",
+        "second:file_2:task:update_file",
+        "second:file_2:output",
+        "second:file_2:state",
+    }
+
     exec_info = await executor.execute_async(plan_2.task_graph)
 
     assert exec_info.is_success()

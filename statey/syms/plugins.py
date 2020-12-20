@@ -1,6 +1,7 @@
 import collections
 import dataclasses as dc
 import operator
+from datetime import date, datetime
 from functools import reduce, partial
 from typing import Type as PyType, Dict, Any, Union, Callable, Sequence, Optional
 
@@ -277,6 +278,8 @@ DEFAULT_PLUGINS = [
     ValuePredicatePlugin(list, partial(types.ArrayType, types.Any)),
     ValuePredicatePlugin(str, types.StringType),
     ValuePredicatePlugin(bool, types.BooleanType),
+    ValuePredicatePlugin(date, types.DateType),
+    ValuePredicatePlugin(datetime, types.DateTimeType),
     ValuePredicatePlugin(range, partial(types.ArrayType, types.Integer)),
     ValuePredicatePlugin((lambda x: x is Any), types.AnyType),
     LiteralPlugin(),

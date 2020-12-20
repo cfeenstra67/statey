@@ -39,7 +39,7 @@ class PathParser(BasePathParser):
     """
     A path parser joins path components into a string and back again
 
-    Paths like a[:1]/b/cdefa[*]/g
+    Paths like a[:1].b.cdefa[*].g
 
     supports encoding/decoding of utils.EXPLODE, strings, integers and slices
     """
