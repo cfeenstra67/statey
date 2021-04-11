@@ -221,7 +221,7 @@ class Controller:
             session = st.create_resource_session()
 
             try:
-                self.session = session_factory(session)
+                result = session_factory(session)
             except Exception as err:
                 self.logger.exception(
                     "Error loading session '%s' from factory %r: %s: %s",
@@ -232,6 +232,10 @@ class Controller:
                 )
                 raise click.Abort from err
             else:
+                if result is not None:
+                    self.session = result
+                else:
+                    self.session = session
                 self.logger.debug(
                     "Loaded %s from %s successfully.",
                     self.session_name,
@@ -346,7 +350,7 @@ class Controller:
         """"""
         self.setup_plan()
 
-        ctx = st.helpers.providers_context(self.plan.providers)
+        ctx = st.helpers.providers_context(self.plan.providers.values())
         try:
             ctx.__enter__()
         except Exception as err:

@@ -440,9 +440,9 @@ def subgraph_retaining_dependencies(dag: nx.DiGraph, keep_nodes: Sequence[str]) 
     Remove nodes while retaining any indirect dependencies between them. Modifies the graph
     in place.
     """
-    for node in list(nx.topological_sort(dag)):
-        if node in keep_nodes:
-            continue
+    nodes_to_remove = set(dag.nodes) - set(keep_nodes)
+
+    for node in nodes_to_remove:
         for predecessor, successor in product(dag.pred[node], dag.succ[node]):
             dag.add_edge(predecessor, successor)
         dag.remove_node(node)

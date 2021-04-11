@@ -41,7 +41,7 @@ def map(
 def declarative(
     func: Callable[[Any], Any] = utils.MISSING,
     name_key: Callable[[str], str] = lambda x: x,
-    ignore: Callable[[str], str] = lambda x: x.startswith("_"),
+    ignore: Callable[[str], bool] = lambda x: x.startswith("_"),
 ) -> Callable[[Any], Any]:
     """
     Wrap the given function as a function that declares statey objects.

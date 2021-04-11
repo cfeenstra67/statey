@@ -48,6 +48,9 @@ extra_reqs = {
 		'pylumi==1.2.2',
 		'jsonschema==3.2.0'
 	],
+    'graphviz': [
+        'graphviz==0.16'
+    ]
 }
 
 extra_reqs['all'] = sum(extra_reqs.values(), [])

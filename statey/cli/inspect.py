@@ -136,13 +136,17 @@ class PlanNodeSummary:
         """
         creating, updating, deleting = 0, 0, 0
 
-        if self.plan_node.current_action:
-            if self.plan_node.current_state:
+        if self.plan_node.current and self.plan_node.current.action:
+            if self.plan_node.current.state:
                 deleting += 1
 
-            if self.plan_node.config_action and self.plan_node.config_state:
+            if (
+                self.plan_node.config
+                and self.plan_node.config.action
+                and self.plan_node.config.state
+            ):
                 creating += 1
-        elif self.plan_node.current_state:
+        elif self.plan_node.current and self.plan_node.current.state:
             for node in task_graph.nodes:
                 if node.startswith(self.plan_node.key + ":"):
                     task = task_graph.nodes[node]["task"]
@@ -165,10 +169,8 @@ class PlanNodeSummary:
         )
 
     def _current_summary(self) -> str:
-        if (
-            not self.plan_node.current_type
-            or self.plan_node.current_type == types.EmptyType
-        ):
+        current_type = self.plan_node.current and self.plan_node.current.type
+        if not current_type or current_type == types.EmptyType:
             return "<none>"
         return data_to_string(
             self.plan_node.current_data, name_func=self._style_current_name
@@ -177,21 +179,14 @@ class PlanNodeSummary:
     def data_to_string(self, max_width: int) -> str:
 
         should_diff = False
-        if (
-            self.plan_node.current_type == self.plan_node.config_type
-            and self.plan_node.current_type != types.EmptyType
-        ):
+        current_type = self.plan_node.current and self.plan_node.current.type
+        config_type = self.plan_node.config and self.plan_node.config.type
+        if current_type == config_type and current_type != types.EmptyType:
             should_diff = True
 
-        if (
-            not should_diff
-            and self.plan_node.current_type
-            and self.plan_node.config_type
-        ):
+        if not should_diff and current_type and config_type:
             try:
-                caster = st.registry.get_caster(
-                    self.plan_node.current_type, self.plan_node.config_type
-                )
+                caster = st.registry.get_caster(current_type, config_type)
             except st.exc.NoCasterFound:
                 pass
             else:
@@ -201,18 +196,18 @@ class PlanNodeSummary:
                     should_diff = True
 
         if should_diff:
-            differ = st.registry.get_differ(self.plan_node.current_type)
+            differ = st.registry.get_differ(current_type)
             config_differ = None
-            if self.plan_node.config_state:
+            if self.plan_node.config and self.plan_node.config.state:
                 config_differ = st.registry.get_differ(
-                    self.plan_node.config_state.input_type
+                    self.plan_node.config.state.input_type
                 )
 
-            diff = differ.diff(self.plan_node.current_data, self.plan_node.config_data)
+            diff = differ.diff(self.plan_node.current.data, self.plan_node.config.data)
             config_diff = []
             if config_differ is not None:
                 config_diff = config_differ.diff(
-                    self.plan_node.current_data, self.plan_node.config_data
+                    self.plan_node.current.data, self.plan_node.config.data
                 )
 
             current_lines = []
@@ -337,30 +332,31 @@ class PlanNodeSummary:
 
         type_lines = []
         renderer = ColoredTypeRenderer()
-        if (
-            self.plan_node.current_type is not None
-            and self.plan_node.current_type != self.plan_node.config_type
-        ):
-            rendered = self.plan_node.current_type.render_type_string(renderer)
+        current_type = self.plan_node.current and self.plan_node.current.type
+        config_type = self.plan_node.config and self.plan_node.config.type
+
+        if current_type is not None and current_type != config_type:
+            rendered = current_type.render_type_string(renderer)
             type_string = f'- {style_key("type (current)")}: {rendered}'
             type_lines.append(type_string)
 
         state_lines = []
-        if self.plan_node.current_state is not None and (
-            self.plan_node.config_state is None
-            or self.plan_node.current_state.state.name
-            != self.plan_node.config_state.state.name
+        current_state = self.plan_node.current and self.plan_node.current.state
+        config_state = self.plan_node.config and self.plan_node.config.state
+
+        if current_state is not None and (
+            config_state is None or current_state.state.name != config_state.state.name
         ):
-            state = renderer.render_state(self.plan_node.current_state.state.name)
+            state = renderer.render_state(current_state.state.name)
             state_lines.append(f'- {style_key("state (current)")}: {state}')
 
-        if self.plan_node.config_type is not None:
-            rendered = self.plan_node.config_type.render_type_string(renderer)
+        if config_type is not None:
+            rendered = config_type.render_type_string(renderer)
             type_string = f'- {style_key("type")}: {rendered}'
             type_lines.append(type_string)
 
-        if self.plan_node.config_state is not None:
-            state = renderer.render_state(self.plan_node.config_state.state.name)
+        if config_state is not None:
+            state = renderer.render_state(config_state.state.name)
             state_lines.append(f'- {style_key("state")}: {state}')
 
         type_string = "\n".join(type_lines)
@@ -370,11 +366,7 @@ class PlanNodeSummary:
             [f'- {style_key("data")}:', tw.indent(data_string, indent_str * 2)]
         )
 
-        resource = (
-            self.plan_node.config_state.resource
-            if self.plan_node.config_state
-            else self.plan_node.current_state.resource
-        )
+        resource = config_state.resource if config_state else current_state.resource
 
         data_string = tw.indent(data_string, indent_str * 2)
         lines = [

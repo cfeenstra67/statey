@@ -340,7 +340,6 @@ class SessionSwitch(Task):
             action.output_session.set_data(action.output_key, resolved_input)
 
 
-@dc.dataclass(frozen=True)
 class ResourceGraphOperation(Task):
     """
     Defines some operation to perform against a resource graph
@@ -369,6 +368,8 @@ class GraphSetKey(ResourceGraphOperation):
     Set some key in a resource graph
     """
 
+    key: str
+    resource_graph: "ResourceGraph"
     input_session: session.Session
     input_symbol: Object
     dependencies: Sequence[str] = ()
@@ -401,6 +402,8 @@ class GraphDeleteKey(ResourceGraphOperation):
     Delete some key in a resource graph.
     """
 
+    key: str
+    resource_graph: "ResourceGraph"
     input_session: Optional[session.Session] = None
     input_symbol: Optional[Object] = None
     description: Optional[str] = None
@@ -413,49 +416,59 @@ class GraphDeleteKey(ResourceGraphOperation):
         self.resource_graph.delete(self.key)
 
 
-class ResourceGraphOperationSpec(abc.ABC):
+@dc.dataclass(frozen=True)
+class StateSnapshot(ResourceGraphOperation):
     """
-    Factory for creating resource graph tasks
+    Take a snapshot of all values currently in the resource graph and store it
+    as a value in the graph
     """
 
-    def bind(
-        self,
-        session: "TaskSession",
-        resource_graph: "ResourceGraph",
-        checkpoint_key: str,
-    ) -> ResourceGraphOperation:
-        """
-        Bind this spec to a task session and resource graph, producing
-        a resource graph task
-        """
-        raise NotImplementedError
+    resource_graph: "ResourceGraph"
+    key: str = "_snapshot"
+
+    async def run(self) -> None:
+
+        data = {}
+        fields = []
+
+        for key in self.resource_graph.keys():
+            # Ignore existing snapshots
+            if key == self.key:
+                continue
+            item = self.resource_graph.get(key)
+            fields.append(st.Field(key, item["type"]))
+            data[key] = item["value"]
+
+        value_type = st.StructType(fields)
+        self.resource_graph.set(self.key, data, value_type)
 
 
 @dc.dataclass(frozen=True)
-class GraphSetKeySpec(ResourceGraphOperationSpec):
+class SnapshotSwitch(ResourceGraphOperation):
     """
-    Spec to overwrite a state key
+    Update a session with a state snapshot
     """
 
-    state: "ResourceState"
-    remove_dependencies: bool = False
+    resource_graph: "ResourceGraph"
+    output_session: session.WriteableSession
+    key: str = "_snapshot"
 
-    def bind(
-        self,
-        session: "TaskSession",
-        resource_graph: "ResourceGraph",
-        checkpoint_key: str,
-    ) -> ResourceGraphOperation:
-        resource = session.ns.registry.get_resource(self.state.resource)
-        return GraphSetKey(
-            input_session=session,
-            input_symbol=self.state.obj,
-            remove_dependencies=self.remove_dependencies,
-            state=self.state.state,
-            key=checkpoint_key,
-            resource_graph=resource_graph,
-            finalize=resource.finalize,
-        )
+    async def run(self) -> None:
+        data = self.resource_graph.get(self.key)["value"]
+        self.output_session.set_data(self.key, data)
+
+
+@dc.dataclass(frozen=True)
+class SetGraphState(ResourceGraphOperation):
+    """
+    Update a session with a state snapshot
+    """
+
+    resource_graph: "StatefulResourceGraph"
+    state: str
+
+    async def run(self) -> None:
+        self.resource_graph.set_state(self.state)
 
 
 class TaskSession(session.WriteableSession):

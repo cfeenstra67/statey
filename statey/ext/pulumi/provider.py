@@ -23,7 +23,7 @@ class PulumiProvider(st.Provider):
         self,
         id: st.ProviderId,
         schema: PulumiProviderSchema,
-        operation_timeout: int = 3600,
+        operation_timeout: int = 900,
     ) -> None:
 
         self.id = id

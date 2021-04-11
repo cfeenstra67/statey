@@ -16,9 +16,15 @@ from statey.plan.actions import (
     DeleteValue,
     ResourceSetValue,
 )
-from statey.plan.plans import Plan, DefaultPlan, PlanNode, PlanNodeState
+from statey.plan.plans import Plan, DefaultPlan, PlanNode, PlanNodeState, StatefulPlan
 from statey.provider import Provider, ProviderId
-from statey.resource import ResourceSession, ResourceGraph, StateConfig, StateSnapshot
+from statey.resource import (
+    ResourceSession,
+    ResourceGraph,
+    StateConfig,
+    StateSnapshot,
+    DefaultResourceGraph,
+)
 from statey.syms import Object, stack, types
 from statey.task import TaskSession, create_task_session
 
@@ -210,7 +216,7 @@ class DefaultMigrator(Migrator):
         )
         output_session.set_data(node, output_partial_resolved)
 
-        test_graph = task_session.task_graph(ResourceGraph(), node)
+        test_graph = task_session.task_graph(DefaultResourceGraph(), node)
         # This indicates there are no tasks in the session.
         if not test_graph.nodes:
             try:
@@ -537,7 +543,7 @@ class DefaultMigrator(Migrator):
         from statey.executor import AsyncIOTaskGraph, AsyncIOGraphExecutor
 
         if state_graph is None:
-            state_graph = ResourceGraph()
+            state_graph = DefaultResourceGraph()
 
         if state_session is None:
             state_session = state_graph.to_session()
@@ -585,8 +591,9 @@ class DefaultMigrator(Migrator):
         try:
             exec_info = await executor.execute_async(task_graph_obj)
         finally:
-            providers = tuple(providers.values())
-            await asyncio.gather(*(provider.teardown() for provider in providers))
+            await asyncio.gather(
+                *(provider.teardown() for provider in providers.values())
+            )
 
         with self.error_ctx():
             exec_info.raise_for_failure()
@@ -615,3 +622,22 @@ class DefaultMigrator(Migrator):
         # do for now
         plan.build_task_graph()
         return plan
+
+
+class StatefulMigrator(DefaultMigrator):
+    """
+    Migrator that wraps the plan in a StatefulPlan and accepts an addition "state" keyword
+    argument to the plan() method.
+    """
+
+    async def plan(
+        self,
+        config_session: ResourceSession,
+        state_graph: Optional[ResourceGraph] = None,
+        state_session: Optional[ResourceSession] = None,
+        *,
+        state: str
+    ) -> Plan:
+
+        plan = await super().plan(config_session, state_graph, state_session)
+        return StatefulPlan(plan, state, self)

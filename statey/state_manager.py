@@ -5,7 +5,7 @@ import os
 from typing import Optional
 
 from statey.hooks import hookimpl
-from statey.resource import ResourceGraph
+from statey.resource import ResourceGraph, DefaultResourceGraph
 
 
 class StateManager(abc.ABC):
@@ -38,10 +38,10 @@ class FileStateManager(StateManager):
 
     def load(self, registry: "Registry") -> ResourceGraph:
         if not os.path.exists(self.path):
-            return ResourceGraph()
+            return DefaultResourceGraph()
         with open(self.path) as f:
             graph_dict = json.load(f)
-        return ResourceGraph.from_dict(graph_dict, registry)
+        return DefaultResourceGraph.from_dict(graph_dict, registry)
 
     def dump(self, graph: ResourceGraph, registry: "Registry") -> None:
         graph_as_dict = graph.to_dict(registry)

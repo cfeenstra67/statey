@@ -264,7 +264,8 @@ class ResourceSetValue(PlanAction):
         return f"{prefix}:output"
 
     def input_task(self, prefix: str) -> str:
-        return self.graph_update_task(prefix)
+        return None
+        # return self.graph_update_task(prefix)
 
     def output_task(self, prefix: str) -> str:
         return self.session_switch_task(prefix)

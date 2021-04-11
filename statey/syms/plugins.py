@@ -270,6 +270,7 @@ class BasicObjectBehaviors:
 
 DEFAULT_PLUGINS = [
     AnyPlugin(),
+    ValuePredicatePlugin(types.Type, types.TypeType),
     HandleOptionalPlugin(),
     ParseSequencePlugin(types.ArrayType),
     ParseMappingPlugin(types.MapType),

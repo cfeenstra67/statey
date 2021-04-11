@@ -371,7 +371,7 @@ class ResourceSession(session.WriteableSession):
         Return a fully-rendered ResourceGraph for this session. Will fail with a resolution
         error if data is missing or there are unknowns or unresolved futures in the session.
         """
-        graph = ResourceGraph()
+        graph = DefaultResourceGraph()
         dep_graph = self.dependency_graph()
 
         for key in self.ns.keys():
@@ -425,13 +425,97 @@ def create_resource_session(
     return ResourceSession(session)
 
 
-@dc.dataclass(frozen=True)
-class ResourceGraph:
+class ResourceGraph(abc.ABC):
     """
     A resource graph is a wrapper around a simple graph that stores similar information
     to a resource session, but without objects. Resource graphs are serializable. Note that
     not every node in a resource graph is necessarily a resource, it can contain any name
     just like a session.
+    """
+
+    @abc.abstractmethod
+    def set(
+        self,
+        key: str,
+        value: Any,
+        type: types.Type,
+        state: Optional[ResourceState] = None,
+        remove_dependencies: bool = True,
+    ) -> None:
+        """
+        Set the given value in the graph, with a state optionally specified for resources. Note
+        that this operation will remove the current upstream edges of `key` unless
+        remove_upstreams=False is specified as an argument
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get(self, key: str) -> Dict[str, Any]:
+        """
+        Get the data about this key stored in the resource graph
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def keys(self) -> Sequence[str]:
+        """
+        Get a list of keys currently stored in this graph
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def add_dependencies(self, key: str, dependencies: Sequence[str]) -> None:
+        """
+        Add dependencies to the given key
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def refresh(
+        self, registry: Optional[st.Registry] = None, finalize: bool = False
+    ) -> Iterator[str]:
+        """
+        Refresh the current state of all resources in the graph. Returns an asynchronous
+        generator that yields keys as they finish refreshing successfully.
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def clone(self) -> "ResourceGraph":
+        """
+        Return a copy of this resource graph
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def to_dict(self, registry: Optional["Registry"] = None) -> Dict[str, Any]:
+        """
+        Return a JSON-serializable dictionary representation of this resource graph.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    @abc.abstractmethod
+    def from_dict(
+        cls, data: Any, registry: Optional["Registry"] = None
+    ) -> "ResourceGraph":
+        """
+        Render a ResourceGraph from a JSON-serializable representation
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def to_session(self) -> ResourceSession:
+        """
+        Construct a session with the same data and dependencies as this ResourceGraph
+        """
+        raise NotImplementedError
+
+
+@dc.dataclass(frozen=True)
+class DefaultResourceGraph(ResourceGraph):
+    """
+    Default python-based resource graph implementation
     """
 
     graph: nx.DiGraph = dc.field(default_factory=nx.DiGraph)
@@ -539,10 +623,13 @@ class ResourceGraph:
     def clone(self) -> "ResourceGraph":
         return type(self)(self.graph.copy())
 
-    def to_dict(self, registry: "Registry") -> Dict[str, Any]:
+    def to_dict(self, registry: Optional["Registry"] = None) -> Dict[str, Any]:
         """
         Return a JSON-serializable dictionary representation of this resource graph.
         """
+        if registry is None:
+            registry = st.registry
+
         nodes = {}
 
         for node in self.graph.nodes:
@@ -564,10 +651,15 @@ class ResourceGraph:
         return nodes
 
     @classmethod
-    def from_dict(cls, data: Any, registry: "Registry") -> "ResourceGraph":
+    def from_dict(
+        cls, data: Any, registry: Optional["Registry"] = None
+    ) -> "ResourceGraph":
         """
         Render a ResourceGraph from a JSON-serializable representation
         """
+        if registry is None:
+            registry = st.registry
+
         deps = {}
         instance = cls()
 
@@ -610,7 +702,9 @@ class ResourceGraph:
 
 
 class ResourceGraphSession(py_session.PythonSession):
-    """"""
+    """
+    Read-only session implementation that resolved values from a ResourceGraph instance
+    """
 
     def __init__(self, *args, graph: ResourceGraph, **kwargs) -> None:
         self.graph = graph

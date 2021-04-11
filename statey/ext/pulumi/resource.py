@@ -124,11 +124,12 @@ class PulumiResourceMachine(st.SingleStateMachine):
 
         loop = asyncio.get_running_loop()
 
+        current_data = object_to_pulumi_json(current.obj, session)
         check_resp, errs = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.check,
             pylumi.URN(self.name),
-            current.data,
+            current_data,
             object_to_pulumi_json(config.obj, session),
         )
         check_resp = self.clean_check_resp(
@@ -137,14 +138,14 @@ class PulumiResourceMachine(st.SingleStateMachine):
         if errs:
             raise PulumiValidationError(errs)
 
-        current_data = current.data.copy()
-        pulumi_id = current_data.pop(PULUMI_ID)
+        current_data_copy = current_data.copy()
+        pulumi_id = current_data_copy.pop(PULUMI_ID, "")
         diff_resp = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.diff,
             pylumi.URN(self.name, pulumi_id),
             pulumi_id,
-            current_data,
+            current_data_copy,
             check_resp,
         )
 
@@ -177,11 +178,12 @@ class PulumiResourceMachine(st.SingleStateMachine):
             return {}
 
         config_json = object_to_pulumi_json(config.obj, session)
+        current_data = object_to_pulumi_json(current.obj, session)
         check_resp, errs = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.check,
             pylumi.URN(self.name),
-            current.data,
+            current_data,
             config_json,
             True,
         )
@@ -208,18 +210,18 @@ class PulumiResourceMachine(st.SingleStateMachine):
             )
             return self.make_expected_output(props, config, self.UP.output_type)
 
-        current_data = current.data.copy()
-        pulumi_id = current_data.pop(PULUMI_ID)
+        current_data_copy = current_data.copy()
+        pulumi_id = current_data_copy.pop(PULUMI_ID)
         diff_resp = await loop.run_in_executor(
             self.provider.thread_pool,
             self.provider.pulumi_provider.diff,
             pylumi.URN(self.name, pulumi_id),
             pulumi_id,
-            current_data,
+            current_data_copy,
             check_resp,
         )
 
-        output = current.data.copy()
+        output = current_data.copy()
         for key in diff_resp["ChangedKeys"]:
             output.pop(key, None)
 

@@ -159,6 +159,8 @@ class ResourceTaskGraph(TaskGraph):
     task_graph: nx.DiGraph
     output_session: session.Session
     resource_graph: ResourceGraph
+    # This includes any optional edges that were dropped; only for inspection purposes
+    original_task_graph: Optional[nx.DiGraph] = None
 
     def __post_init__(self) -> None:
         """

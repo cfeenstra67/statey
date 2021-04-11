@@ -225,6 +225,11 @@ async def test_update_recreate(tmpdir, resource_session, migrator, executor):
     plan_2 = await migrator.plan(session_2, resource_graph)
 
     task_graph = plan_2.task_graph.task_graph
+    print(
+        "EDGES\n",
+        "\n".join(map(" => ".join, plan_2.task_graph.original_task_graph.edges)),
+    )
+    print()
     resource_graph = plan_2.task_graph.resource_graph
 
     nodes_by_key = {node.key: node for node in plan_2.nodes}
@@ -248,6 +253,13 @@ async def test_update_recreate(tmpdir, resource_session, migrator, executor):
             "config:task:create_file",
         ]
     }
+
+    print(
+        "NODES\n",
+        "\n".join(sorted(task_graph.nodes)),
+        "\n\nEDGES\n",
+        "\n".join(map(" => ".join, task_graph.edges)),
+    )
 
     assert_depends("file_1:current:input", "file_3:output", task_graph)
     assert_depends("file_1:current:input", "file_2:current:output", task_graph)

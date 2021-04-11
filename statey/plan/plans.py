@@ -10,6 +10,7 @@ from statey.plan.actions import PlanAction
 from statey.provider import Provider
 from statey.resource import ResourceState, ResourceSession, ResourceGraph
 from statey.syms import types, session
+from statey.task import StateSnapshot, SnapshotSwitch, SetGraphState
 
 
 def check_dag(graph: nx.DiGraph, strict: bool = False) -> None:
@@ -69,11 +70,11 @@ class PlanNode:
 
     def input_task(self) -> Optional[str]:
         """"""
-        return self.current_input_task()
+        return self.current_input_task() or self.config_input_task()
 
     def output_task(self) -> Optional[str]:
         """"""
-        return self.config_output_task()
+        return self.config_output_task() or self.current_output_task()
 
     def current_prefix(self) -> str:
         """"""
@@ -104,36 +105,28 @@ class PlanNode:
         only exists in one of the previous of configured namespaces or when it is a single
         resource whose state is being migrated.
         """
-        action = (self.current and self.current.action) or (
-            self.config and self.config.action
-        )
+        action = self.current and self.current.action
         if action is None:
             return None
         return action.output_task(self.current_prefix())
 
     def config_output_task(self) -> Optional[str]:
         """"""
-        action = (self.config and self.config.action) or (
-            self.current and self.current.action
-        )
+        action = self.config and self.config.action
         if action is None:
             return None
         return action.output_task(self.config_prefix())
 
     def config_input_task(self) -> str:
         """"""
-        action = (self.config and self.config.action) or (
-            self.current and self.current.action
-        )
+        action = self.config and self.config.action
         if action is None:
             return None
         return action.input_task(self.config_prefix())
 
     def current_input_task(self) -> str:
         """"""
-        action = (self.current and self.current.action) or (
-            self.config and self.config.action
-        )
+        action = self.current and self.current.action
         if action is None:
             return None
         return action.input_task(self.current_prefix())
@@ -149,48 +142,25 @@ class PlanNode:
         if not self.enforce_dependencies:
             return []
 
-        # input_task = self.input_task()
-        current_input_task = self.config_input_task()
-        if current_input_task is None:
+        if self.input_task() is None:
             return []
 
         config_input_task = self.config_input_task()
-        current_output_task = self.current_output_task()
-        config_output_task = self.config_output_task()
+        current_output_task = self.current_output_task() or self.output_task()
 
         for upstream in self.config and self.config.depends_on or []:
             node = other_nodes[upstream]
             ref = node.output_task()
-            if ref is None:
+            if ref is None or config_input_task is None:
                 continue
             edges[ref, config_input_task] = {"optional": False}
 
         for downstream in self.current and self.current.depends_on or []:
             node = other_nodes[downstream]
-            current_ref = node.current_output_task()
-            config_ref = node.config_output_task()
-            if config_ref is None:
+            input_ref = node.input_task()
+            if input_ref is None or current_output_task is None:
                 continue
-            # So we are checking if our input/config currently depends on the _current_
-            # output of the other task. If not, we'll make the other input dependent
-            # on the _current output task_
-            # if not {(current_ref, current_input_task)} & edges:
-            #     input_ref = node.current_input_task()
-            #     edges.add((current_output_task, input_ref))
-
-            # if not {(config_ref, config_input_task), (current_ref, )} & edges:
-            #     input_ref = node.config_input_task()
-            #     edges.add((config_output_task, input_ref))
-
-            check_set = (
-                {(current_ref, current_input_task)}
-                if self.current and self.current.action
-                else {(config_ref, config_input_task)}
-            )
-
-            if not check_set & set(edges):
-                input_ref = node.current_input_task()
-                edges[current_output_task, input_ref] = {"optional": True}
+            edges[current_output_task, input_ref] = {"optional": True}
 
         return [(*key, val) for key, val in edges.items()]
 
@@ -276,7 +246,10 @@ class Plan(abc.ABC):
 
     @abc.abstractmethod
     async def plan(
-        self, config_session: ResourceSession, migrator: Optional["Migrator"] = None
+        self,
+        config_session: ResourceSession,
+        migrator: Optional["Migrator"] = None,
+        **kwargs,
     ) -> "Plan":
         """
         Create a plan from the output of this plan and a new session
@@ -334,9 +307,13 @@ class DefaultPlan(Plan):
         full_graph = reduce(nx.union, graphs) if graphs else nx.DiGraph()
         full_graph.add_edges_from(edges)
 
+        original_graph = full_graph.copy()
+
         check_dag(full_graph, strict)
 
-        return ResourceTaskGraph(full_graph, output_session, self.state_graph)
+        return ResourceTaskGraph(
+            full_graph, output_session, self.state_graph, original_graph
+        )
 
     def build_task_graph(self, force: bool = False, **kwargs) -> None:
         """
@@ -360,7 +337,10 @@ class DefaultPlan(Plan):
         return True
 
     async def plan(
-        self, config_session: ResourceSession, migrator: Optional["Migrator"] = None
+        self,
+        config_session: ResourceSession,
+        migrator: Optional["Migrator"] = None,
+        **kwargs,
     ) -> "Plan":
         """
         Create a new plan from the output of this plan to the new `config_session`.
@@ -373,7 +353,10 @@ class DefaultPlan(Plan):
 
         self.build_task_graph()
         new_plan = await migrator.plan(
-            config_session, self.state_graph, self.task_graph.output_session
+            config_session,
+            self.task_graph.resource_graph,
+            self.task_graph.output_session,
+            **kwargs,
         )
         compound = CompoundPlan(self, new_plan)
         compound.build_task_graph()
@@ -445,16 +428,78 @@ class CompoundPlan(Plan):
 
         graph.add_edges_from(edges)
 
+        original_graph = graph.copy()
+
         check_dag(graph, strict)
 
         return ResourceTaskGraph(
             task_graph=graph,
             output_session=self.second.task_graph.output_session,
             resource_graph=self.second.task_graph.resource_graph,
+            original_task_graph=original_graph,
         )
 
     def is_empty(self, include_metatasks: bool = False) -> bool:
         return self.first.is_empty() and self.second.is_empty()
+
+    # Same build_task_graph() and plan() behavior as DefaultPlan
+    build_task_graph = DefaultPlan.build_task_graph
+
+    plan = DefaultPlan.plan
+
+
+@dc.dataclass(frozen=True)
+class StatefulPlan(Plan):
+    """"""
+
+    original_plan: Plan
+    output_state: str
+    migrator: Optional["Migrator"] = None
+    task_graph: "ResourceTaskGraph" = dc.field(init=False, default=None)
+
+    def new_task_graph(self, strict: bool = False) -> "ResourceTaskGraph":
+        """
+        Render a full task graph from this plan
+        """
+        from statey.executor import ResourceTaskGraph
+
+        task_graph = self.original_plan.new_task_graph()
+
+        nx_graph = task_graph.task_graph
+
+        heads = {node for node in nx_graph.nodes if not nx_graph.pred[node]}
+
+        before_task = SnapshotSwitch(
+            task_graph.resource_graph, task_graph.output_session
+        )
+        before_task_name = "_snapshot:input"
+
+        state_task = SetGraphState(task_graph.resource_graph, self.output_state)
+        state_task_name = "state"
+
+        nx_graph.add_node(before_task_name, task=before_task)
+        nx_graph.add_node(state_task_name, task=state_task)
+        nx_graph.add_edge(before_task_name, state_task_name)
+        for node in heads:
+            nx_graph.add_edge(state_task_name, node)
+
+        tails = {node for node in nx_graph.nodes if not nx_graph.succ[node]}
+
+        after_task = StateSnapshot(task_graph.resource_graph)
+        after_task_name = "_snapshot:state"
+
+        nx_graph.add_node(after_task_name, task=after_task)
+        for node in tails:
+            nx_graph.add_edge(node, after_task_name)
+
+        return ResourceTaskGraph(
+            nx_graph, task_graph.output_session, task_graph.resource_graph
+        )
+
+    def is_empty(self, include_metatasks: bool = False) -> bool:
+        if include_metatasks:
+            return False
+        return self.original_plan.is_empty()
 
     # Same build_task_graph() and plan() behavior as DefaultPlan
     build_task_graph = DefaultPlan.build_task_graph

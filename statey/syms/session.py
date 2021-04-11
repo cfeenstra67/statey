@@ -51,18 +51,6 @@ class Namespace(abc.ABC):
         """
         raise NotImplementedError
 
-    def ref(self, key: str) -> Object:
-        """
-        Get a reference to a key whose type is already registered in this namespace. Will raise
-        SymbolKeyError is none exists
-        """
-        typ = self.resolve(key)
-        semantics = self.registry.get_semantics(typ)
-        new_impl = impl.Reference(key, self)
-        return Object(
-            new_impl, semantics.type, self.registry, frame=stack.frame_snapshot(1)
-        )
-
     @abc.abstractmethod
     def resolve(self, key: str) -> types.Type:
         """
@@ -76,6 +64,28 @@ class Namespace(abc.ABC):
         Return a copy of this namespace
         """
         raise NotImplementedError
+
+    def ref(self, key: str) -> Object:
+        """
+        Get a reference to a key whose type is already registered in this namespace. Will raise
+        SymbolKeyError is none exists
+        """
+        typ = self.resolve(key)
+        semantics = self.registry.get_semantics(typ)
+        new_impl = impl.Reference(key, self)
+        return Object(
+            new_impl, semantics.type, self.registry, frame=stack.frame_snapshot(1)
+        )
+
+    @property
+    def root(self) -> Object:
+        """
+        Get an object representing the "root" of this namespace
+        """
+        data = {key: self.ref(key) for key in self.keys()}
+        typ = st.StructType([st.Field(key, self.resolve(key)) for key in self.keys()])
+        data_impl = impl.Data(data, typ)
+        return Object(data_impl, frame=stack.frame_snapshot(2))
 
 
 @dc.dataclass(frozen=True)

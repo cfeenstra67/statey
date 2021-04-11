@@ -27,6 +27,7 @@ import statey as st
         ),
         pytest.param(date, st.Date, id="date"),
         pytest.param(datetime, st.DateTime, id="datetime"),
+        pytest.param(st.Type, st.TypeType(), id="type"),
     ],
 )
 def test_get_type(input, result, registry):

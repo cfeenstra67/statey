@@ -127,6 +127,7 @@ from statey.resource import (
     StateConfig,
     ResourceGraph,
     Resource,
+    DefaultResourceGraph,
 )
 
 from statey.task import Task, TaskSession, TaskStatus, create_task_session
